@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, cast
 
 from PIL import Image, ImageDraw
 
-from src.lib.i18n.runtime import tr
+from src.lib.i18n.catalog import tr
 from src.lib.i18n.types import LocaleCode
 
 from .models import (

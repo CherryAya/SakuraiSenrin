@@ -152,7 +152,7 @@ async def test_send_i18n_prefers_delivery_when_matcher_has_bot(
 
     monkeypatch.setattr("src.lib.i18n.runtime.resolve_locale", fake_resolve_locale)
     monkeypatch.setattr(
-        "src.lib.i18n.runtime.deliver_single_message",
+        "src.lib.i18n.delivery.deliver_single_message",
         fake_deliver_single_message,
     )
 
@@ -191,7 +191,7 @@ async def test_finish_i18n_prefers_delivery_when_matcher_has_bot(
 
     monkeypatch.setattr("src.lib.i18n.runtime.resolve_locale", fake_resolve_locale)
     monkeypatch.setattr(
-        "src.lib.i18n.runtime.deliver_single_message",
+        "src.lib.i18n.delivery.deliver_single_message",
         fake_deliver_single_message,
     )
 

@@ -24,7 +24,7 @@ from src.lib.error_context import (
     bind_error_context,
     reset_error_context,
 )
-from src.lib.i18n.runtime import tr
+from src.lib.i18n.catalog import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.plugin_docs import create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata

@@ -16,8 +16,8 @@ from src.lib.admin_notifications import (
     deliver_admin_notification_plan,
     resolve_admin_notification_targets,
 )
+from src.lib.i18n.catalog import tr
 from src.lib.i18n.keys import MessageKey
-from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.message_delivery import DeliveryResult
 from src.lib.message_plan import (

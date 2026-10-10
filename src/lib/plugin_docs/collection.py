@@ -15,7 +15,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from src.lib.consts import MAPLE_FONT_PATH
 from src.lib.demo_theme import DEFAULT_DEMO_THEME, SENRIN_V3_THEME, get_demo_theme
-from src.lib.i18n.runtime import tr
+from src.lib.i18n.catalog import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.plugin_docs.render.demo import draw_shadowed_rect
 

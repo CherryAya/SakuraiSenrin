@@ -27,7 +27,7 @@ class QQAvatar:
 
     @classmethod
     async def fetch_user(cls, uid: str, size: int = 100) -> BuildImage:
-        from src.lib.i18n.runtime import tr
+        from src.lib.i18n.catalog import tr
 
         s_param = 640 if size > 100 else 100
         url = f"https://q1.qlogo.cn/g?b=qq&nk={uid}&s={s_param}"
@@ -35,7 +35,7 @@ class QQAvatar:
 
     @classmethod
     async def fetch_group(cls, gid: str, size: int = 100) -> BuildImage:
-        from src.lib.i18n.runtime import tr
+        from src.lib.i18n.catalog import tr
 
         s_param = 640 if size > 100 else 100
         url = f"https://p.qlogo.cn/gh/{gid}/{gid}/{s_param}"

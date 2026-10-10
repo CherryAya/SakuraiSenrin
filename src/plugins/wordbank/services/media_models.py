@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 import imagehash
 from PIL import Image, ImageSequence, UnidentifiedImageError
 
-from src.lib.i18n.runtime import tr
+from src.lib.i18n.catalog import tr
 from src.logger import logger
 from src.plugins.wordbank.services.errors import WordbankUserError
 

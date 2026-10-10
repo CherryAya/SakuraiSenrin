@@ -11,8 +11,8 @@ from nonebot.plugin import Plugin, PluginMetadata
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
 from src.lib.demo_theme import DEFAULT_IMPRESSION_COLOR, normalize_hex_color
+from src.lib.i18n.catalog import tr
 from src.lib.i18n.keys import MessageKey
-from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.plugin_docs import (
     VirtualPluginDocSpec,

@@ -13,7 +13,7 @@ from nonebot.plugin import PluginMetadata
 
 from src.database.core.consts import Permission
 from src.lib.demo_theme import DEFAULT_IMPRESSION_COLOR, normalize_hex_color
-from src.lib.i18n.runtime import tr
+from src.lib.i18n.catalog import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.types import JsonValue, as_int, as_str_tuple
 

@@ -12,7 +12,7 @@ import unicodedata
 
 from nonebot.adapters.onebot.v11 import Message, MessageSegment
 
-from src.lib.i18n.runtime import tr
+from src.lib.i18n.catalog import tr
 from src.lib.types import JsonValue
 
 MessageAtomKind = Literal["text", "image", "face", "at", "event", "placeholder"]

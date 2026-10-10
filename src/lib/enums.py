@@ -15,7 +15,7 @@ class LocalizedMixin:
         val = member.value if isinstance(member, Enum) else member
         label_keys = getattr(cls, "__label_keys__", {})
         if val in label_keys:
-            from src.lib.i18n.runtime import tr
+            from src.lib.i18n.catalog import tr
 
             return tr("zh-CN", label_keys[val])
         labels = getattr(cls, "__labels__", {})

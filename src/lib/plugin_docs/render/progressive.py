@@ -13,7 +13,7 @@ from typing import ClassVar
 from PIL import Image, ImageChops, ImageDraw
 
 from src.lib.demo_theme import SENRIN_V3_THEME, DemoTheme, get_demo_theme
-from src.lib.i18n.runtime import tr
+from src.lib.i18n.catalog import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.plugin_docs.command_layout import (
     CommandLayout,

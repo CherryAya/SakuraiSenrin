@@ -13,7 +13,7 @@ from src.database.instances import core_db
 from src.lib.admin_notifications import deliver_admin_notification_plan
 from src.lib.cache.field import BlacklistCacheItem
 from src.lib.consts import GLOBAL_GROUP_FLAG, PERMANENT_BAN_FLAG
-from src.lib.i18n.runtime import tr
+from src.lib.i18n.catalog import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.message_plan import DeliveryPlan
 from src.lib.utils.common import get_current_time

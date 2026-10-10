@@ -19,8 +19,8 @@ from src.lib.demo_theme import (
     DEFAULT_IMPRESSION_COLOR,
     normalize_hex_color,
 )
+from src.lib.i18n.catalog import tr
 from src.lib.i18n.keys import MessageKey
-from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.message_plan import (
     MessagePlanEntry,

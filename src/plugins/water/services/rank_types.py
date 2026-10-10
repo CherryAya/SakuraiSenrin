@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
+from src.lib.i18n.catalog import tr
 from src.lib.i18n.keys import MessageKey
-from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 
 WaterRankSubject = Literal["user", "group", "matrix"]

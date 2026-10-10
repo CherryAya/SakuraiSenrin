@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import math
 from typing import Literal, cast
 
-from src.lib.i18n.runtime import tr
+from src.lib.i18n.catalog import tr
 from src.lib.i18n.types import LocaleCode
 from src.plugins.wordbank.database.types import (
     WordbankSearchItem,

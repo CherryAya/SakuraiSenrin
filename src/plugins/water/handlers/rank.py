@@ -8,8 +8,8 @@ from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent
 from nonebot.matcher import Matcher
 
+from src.lib.i18n.catalog import tr
 from src.lib.i18n.keys import MessageKey
-from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.long_task import (
     CompositeProgressSink,

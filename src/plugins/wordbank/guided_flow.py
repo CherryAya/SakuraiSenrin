@@ -18,7 +18,7 @@ from src.lib.guided_state import (
     state_keys_with_prefix,
     state_value,
 )
-from src.lib.i18n.runtime import tr
+from src.lib.i18n.catalog import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.interaction import clear_interaction_errors, reject_or_abort_on_error
 from src.lib.interactive_recall import (

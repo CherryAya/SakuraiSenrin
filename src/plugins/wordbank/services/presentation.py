@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING
 
 import arrow
 
+from src.lib.i18n.catalog import tr
 from src.lib.i18n.keys import MessageKey
-from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.types import as_int, is_object_mapping
 from src.plugins.wordbank.database.types import (

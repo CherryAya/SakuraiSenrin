@@ -849,7 +849,7 @@ class SegmentStore(BaseDB):
         # Store-level safety guard for generic shard scans. Business modules should
         # enforce their own narrower windows before reaching this layer.
         if months_span > MAX_MAP_REDUCE_MONTH_SPAN:
-            from src.lib.i18n.runtime import tr
+            from src.lib.i18n.catalog import tr
 
             raise ValueError(
                 tr(

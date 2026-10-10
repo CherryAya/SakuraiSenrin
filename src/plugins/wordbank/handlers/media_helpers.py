@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 import httpx
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 
-from src.lib.i18n.runtime import tr
+from src.lib.i18n.catalog import tr
 from src.lib.long_task import LongTaskRunner
 from src.plugins.wordbank.message_model import (
     MessageAtom,

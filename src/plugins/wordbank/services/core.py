@@ -9,7 +9,7 @@ import json
 import random
 
 from src.database.consts import WritePolicy
-from src.lib.i18n.runtime import tr
+from src.lib.i18n.catalog import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.types import JsonObject, as_int
 from src.lib.utils.common import get_current_time

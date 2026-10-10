@@ -9,8 +9,8 @@ from nonebot.adapters.onebot.v11.bot import Bot
 from src.config import config as config
 from src.lib.admin_notifications import deliver_admin_notification_plan
 from src.lib.display import fallback_group_name, format_group_label
+from src.lib.i18n.catalog import tr
 from src.lib.i18n.keys import MessageKey
-from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.message_plan import DeliveryPlan
 from src.lib.utils.common import get_current_time

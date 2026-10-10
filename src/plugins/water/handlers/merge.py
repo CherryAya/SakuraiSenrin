@@ -6,7 +6,7 @@ from nonebot.adapters.onebot.v11.event import GroupMessageEvent, MessageEvent
 from nonebot.matcher import Matcher
 
 from src.config import config
-from src.lib.i18n.runtime import tr
+from src.lib.i18n.catalog import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.message_plan import finish_with_message
 from src.lib.types import JsonObject

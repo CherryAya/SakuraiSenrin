@@ -9,8 +9,8 @@ import re
 from nonebot.adapters.onebot.v11.event import MessageEvent
 from nonebot.adapters.onebot.v11.message import Message
 
+from src.lib.i18n.catalog import tr
 from src.lib.i18n.keys import MessageKey
-from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.message_plan import MessagePlanInput
 from src.lib.reply_router import ReplyContextSpec, ResolvedReplyTarget

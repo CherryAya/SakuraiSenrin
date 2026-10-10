@@ -8,8 +8,8 @@ from PIL import Image, ImageDraw
 
 from src.lib.consts import LXGW_FONG_PATH, MAPLE_FONT_PATH
 from src.lib.demo_theme import SENRIN_V3_WORDBANK_TREEMAP_THEME
+from src.lib.i18n.catalog import tr
 from src.lib.i18n.keys import MessageKey
-from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.message_plan import (
     ImageBytesBlock,

@@ -8,8 +8,8 @@ import math
 from nonebot.adapters.onebot.v11.event import GroupMessageEvent, MessageEvent
 from nonebot.adapters.onebot.v11.message import Message
 
+from src.lib.i18n.catalog import tr
 from src.lib.i18n.keys import MessageKey
-from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.long_task import LongTaskRunner
 from src.lib.message_plan import MessagePlanInput

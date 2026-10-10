@@ -14,7 +14,7 @@ from nonebot.rule import to_me
 
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
-from src.lib.i18n.runtime import tr
+from src.lib.i18n.catalog import tr
 from src.lib.plugin_meta import create_plugin_metadata
 from src.lib.reply_router import build_reply_rule
 

@@ -8,7 +8,7 @@ from io import BytesIO
 
 from PIL import Image, ImageDraw, ImageOps
 
-from src.lib.i18n.runtime import tr
+from src.lib.i18n.catalog import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.types import JsonValue, as_int
 from src.plugins.wordbank.database.types import (

@@ -10,7 +10,7 @@ import arrow
 from PIL import Image, ImageDraw
 
 from src.lib.demo_theme import SENRIN_V3_WORDBANK_CARD_THEME
-from src.lib.i18n.runtime import tr
+from src.lib.i18n.catalog import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.message_plan import (
     MessagePlanEntry,

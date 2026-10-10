@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 
-from src.lib.i18n.runtime import tr
+from src.lib.i18n.catalog import tr
 from src.plugins.water.database import water_repo
 from src.plugins.water.img import WaterProfileCardData
 from src.services.info import resolve_group_card, resolve_group_name

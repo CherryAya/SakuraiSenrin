@@ -9,7 +9,7 @@ from nonebot.adapters import MessageTemplate
 from nonebot.adapters.onebot.v11 import Message, MessageSegment
 from nonebot.matcher import Matcher
 
-from src.lib.i18n.runtime import tr
+from src.lib.i18n.catalog import tr
 from src.lib.message_plan import (
     MessagePlanInput,
     finish_with_message,

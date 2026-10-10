@@ -18,8 +18,8 @@ from pil_utils import BuildImage
 from src.config import config as config
 from src.lib.admin_notifications import deliver_admin_notification_plan
 from src.lib.cooldown import CooldownIsolateLevel, MemoryCooldown
+from src.lib.i18n.catalog import tr
 from src.lib.i18n.keys import MessageKey
-from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.long_task import LongTaskRunner
 from src.lib.message_plan import (

@@ -11,7 +11,7 @@ from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent
 from nonebot.adapters.onebot.v11.message import MessageSegment
 
-from src.lib.i18n.runtime import tr
+from src.lib.i18n.catalog import tr
 from src.lib.long_task import LongTaskRunner
 from src.logger import logger
 from src.plugins.wordbank.debug import describe_message_segments, describe_shape

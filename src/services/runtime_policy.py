@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from src.database.core.consts import GroupStatus, InvitationStatus
-from src.lib.i18n.runtime import tr
+from src.lib.i18n.catalog import tr
 
 
 def get_group_block_reason(status: GroupStatus) -> str | None:

@@ -14,7 +14,7 @@ from time import perf_counter
 from pil_utils import BuildImage
 
 from src.lib.consts import MAPLE_FONT_PATH
-from src.lib.i18n.runtime import tr
+from src.lib.i18n.catalog import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.utils.img import QQAvatar
 from src.logger import logger

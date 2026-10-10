@@ -90,7 +90,7 @@ def _rule_error(fallback: str, key: MessageKey, **params: object) -> RuleError:
 
 
 def _default_i18n_text(key: MessageKey, **params: object) -> str:
-    from src.lib.i18n.runtime import tr
+    from src.lib.i18n.catalog import tr
 
     return tr("zh-CN", key, **params)
 

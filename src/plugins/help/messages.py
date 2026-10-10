@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from src.database.core.consts import Permission
-from src.lib.i18n.runtime import tr
+from src.lib.i18n.catalog import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.message_plan import (
     DeliveryPlan,

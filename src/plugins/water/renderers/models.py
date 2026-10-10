@@ -7,7 +7,7 @@ from typing import Literal
 
 from pil_utils import BuildImage
 
-from src.lib.i18n.runtime import tr, tr_template
+from src.lib.i18n.catalog import tr, tr_template
 
 from .report_layout import WaterReportLayoutTier
 

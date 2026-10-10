@@ -20,7 +20,7 @@ from nonebot.adapters.onebot.v11.event import (
 from nonebot.matcher import Matcher
 from nonebot.typing import T_State
 
-from src.lib.i18n.runtime import tr
+from src.lib.i18n.catalog import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.interaction import clear_interaction_errors
 from src.lib.interactive_recall import register_root_message

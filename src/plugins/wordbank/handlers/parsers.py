@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 import re
 
+from src.lib.i18n.catalog import tr
 from src.lib.i18n.keys import MessageKey
-from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.plugins.wordbank.database.types import WordbankRankPeriod
 from src.plugins.wordbank.services.errors import WordbankUserError

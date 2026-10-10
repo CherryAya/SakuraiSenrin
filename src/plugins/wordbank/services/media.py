@@ -9,7 +9,7 @@ from typing import cast
 
 from pybktree import BKTree
 
-from src.lib.i18n.runtime import tr
+from src.lib.i18n.catalog import tr
 from src.lib.types import JsonValue
 from src.lib.utils.common import get_current_time
 from src.logger import logger

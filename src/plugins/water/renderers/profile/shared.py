@@ -8,7 +8,7 @@ from math import floor, sqrt
 import arrow
 from pil_utils import BuildImage
 
-from src.lib.i18n.runtime import tr
+from src.lib.i18n.catalog import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.utils.text_draw import draw_text_in_region
 from src.plugins.water.renderers.common import (

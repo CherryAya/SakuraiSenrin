@@ -11,7 +11,7 @@ import squarify
 
 from src.lib.consts import MAPLE_FONT_NAME
 from src.lib.demo_theme import SENRIN_V3_WATER_IMAGE_THEME, WaterImageTheme
-from src.lib.i18n.runtime import tr
+from src.lib.i18n.catalog import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.utils.common import get_current_time
 from src.lib.utils.text_draw import draw_text_in_region

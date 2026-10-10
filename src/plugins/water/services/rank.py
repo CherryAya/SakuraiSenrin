@@ -11,8 +11,8 @@ from typing import ClassVar, Literal, cast
 import arrow
 from pil_utils import BuildImage
 
+from src.lib.i18n.catalog import tr, tr_template
 from src.lib.i18n.keys import MessageKey
-from src.lib.i18n.runtime import tr, tr_template
 from src.lib.i18n.types import LocaleCode
 from src.lib.utils.common import get_current_time
 from src.logger import logger
