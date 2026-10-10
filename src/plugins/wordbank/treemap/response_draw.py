@@ -22,6 +22,12 @@ from .models import (
     SearchTreemapTile,
 )
 from .render_utils import TreemapFont
+from .response_layout import (
+    _compute_response_card_vertical_layout,
+    _dual_response_rects,
+    _single_text_layout_width,
+    _single_text_line_gap,
+)
 
 if TYPE_CHECKING:
     from .service import SearchTreemapRenderer
@@ -78,7 +84,7 @@ class SearchTreemapResponseDrawMixin:
             return
 
         dual_rects = (
-            repo_self._dual_response_rects(width=width, height=grid_height)
+            _dual_response_rects(width=width, height=grid_height)
             if len(responses) == 2 and tile.item.hidden_response_count <= 0
             else None
         )
@@ -185,8 +191,7 @@ class SearchTreemapResponseDrawMixin:
         width: int,
         height: int,
     ) -> None:
-        repo_self = cast("SearchTreemapRenderer", self)
-        rects = repo_self._dual_response_rects(width=width, height=height)
+        rects = _dual_response_rects(width=width, height=height)
         if rects is None:
             return
         for response, rect in zip(responses[:2], rects):
@@ -274,7 +279,7 @@ class SearchTreemapResponseDrawMixin:
             locale,
             single_text=single_text,
         )
-        card_layout = repo_self._compute_response_card_vertical_layout(
+        card_layout = _compute_response_card_vertical_layout(
             y=y,
             height=height,
             width=width,
@@ -335,7 +340,7 @@ class SearchTreemapResponseDrawMixin:
         height: int,
     ) -> None:
         repo_self = cast("SearchTreemapRenderer", self)
-        layout_width = repo_self._single_text_layout_width(
+        layout_width = _single_text_layout_width(
             width,
             height_cap=height,
             text=text,
@@ -348,7 +353,7 @@ class SearchTreemapResponseDrawMixin:
         if not lines:
             return
         line_height = repo_self._line_height(font)
-        line_gap = repo_self._single_text_line_gap(
+        line_gap = _single_text_line_gap(
             width=width,
             height_cap=height,
             text=text,

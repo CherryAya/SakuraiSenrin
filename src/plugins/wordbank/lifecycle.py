@@ -34,3 +34,11 @@ def reset_wordbank_initialized() -> None:
     """复位初始化标记，供运行时重载流程强制重新初始化。"""
     global _wordbank_initialized
     _wordbank_initialized = False
+
+
+async def reload_wordbank_runtime_state() -> None:
+    """清空运行时状态并重新初始化，供备份恢复后调用。"""
+    wordbank_service.reset_runtime_state()
+    reset_wordbank_initialized()
+    await initialize_wordbank_plugin()
+    await wordbank_media_service.rebuild_cache()

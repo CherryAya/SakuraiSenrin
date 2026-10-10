@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from typing import TYPE_CHECKING, Literal, NotRequired, TypedDict
@@ -460,3 +461,50 @@ class WordbankMessageRefRecord:
     creator_id: str
     has_image: bool
     group_ids: tuple[int, ...]
+
+
+@dataclass(slots=True, frozen=True)
+class WordbankResponseSpec:
+    """写入一条响应所需的全部字段。"""
+
+    trigger_shape: MessageShape
+    response_shape: MessageShape
+    rule: JsonObject
+    scope: str
+    priority: int
+    trigger_probability: float
+    weight: int
+    group_id: str
+    created_by: str
+    status: str = "pending"
+    enabled: int = 1
+    approved_by: str = ""
+    deleted_at: int = 0
+    created_at: int | None = None
+    updated_at: int | None = None
+    response_mode: str = "normal"
+    forward_source_message_id: str | None = None
+    forward_node_count: int = 0
+    review_history_json: str = "[]"
+
+
+@dataclass(slots=True, frozen=True)
+class WordbankMessageRefSpec:
+    """登记一条消息引用所需的全部字段。"""
+
+    ref_kind: WordbankMessageRefKind
+    message_id: str
+    trigger_group_id: int
+    group_id: str
+    user_id: str
+    message_type: str
+    trigger_variant_id: int = 0
+    response_item_id: int = 0
+    source_message_id: str = ""
+    context_type: str = ""
+    current_page: int = 1
+    keyword: str = ""
+    field: str = ""
+    creator_id: str = ""
+    has_image: bool = False
+    group_ids: Sequence[int] = ()

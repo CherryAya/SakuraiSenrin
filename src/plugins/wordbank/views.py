@@ -46,7 +46,7 @@ from src.lib.reply_router import (
 )
 from src.logger import logger
 
-from .database.types import WordbankGroupDetail
+from .database.types import WordbankGroupDetail, WordbankMessageRefSpec
 from .debug import elapsed_ms, log_perf, perf_start
 from .guided_flow import finish_guided_search as _guided_finish_guided_search
 from .handlers import (
@@ -139,19 +139,21 @@ async def record_view_message(
         return
     try:
         await wordbank_service.record_message_ref(
-            ref_kind="view",
-            message_id=message_id,
-            context_type=context_type,
-            trigger_group_id=trigger_group_id,
-            current_page=current_page,
-            keyword=keyword,
-            field=field,
-            creator_id=creator_id,
-            has_image=has_image,
-            group_ids=group_ids,
-            group_id=str(getattr(event, "group_id", "") or ""),
-            user_id=str(event.user_id),
-            message_type=event_message_type(event),
+            spec=WordbankMessageRefSpec(
+                ref_kind="view",
+                message_id=message_id,
+                context_type=context_type,
+                trigger_group_id=trigger_group_id,
+                current_page=current_page,
+                keyword=keyword,
+                field=field,
+                creator_id=creator_id,
+                has_image=has_image,
+                group_ids=group_ids,
+                group_id=str(getattr(event, "group_id", "") or ""),
+                user_id=str(event.user_id),
+                message_type=event_message_type(event),
+            )
         )
         if bot is not None and fallback_message is not None:
             await record_reply_context_from_send_result(
@@ -250,14 +252,16 @@ async def record_passive_response_message(
         return
     try:
         await wordbank_service.record_message_ref(
-            ref_kind="response",
-            message_id=message_id,
-            trigger_group_id=response.trigger_group_id,
-            trigger_variant_id=response.trigger_variant_id,
-            response_item_id=response.response_item_id,
-            group_id=response.group_id,
-            user_id=response.user_id,
-            message_type=response.message_type,
+            spec=WordbankMessageRefSpec(
+                ref_kind="response",
+                message_id=message_id,
+                trigger_group_id=response.trigger_group_id,
+                trigger_variant_id=response.trigger_variant_id,
+                response_item_id=response.response_item_id,
+                group_id=response.group_id,
+                user_id=response.user_id,
+                message_type=response.message_type,
+            )
         )
         if bot is not None and fallback_message is not None:
             await record_reply_context_from_send_result(

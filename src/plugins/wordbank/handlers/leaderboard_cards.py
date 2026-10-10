@@ -8,7 +8,6 @@ from pathlib import Path
 import arrow
 from PIL import Image, ImageDraw, ImageFont
 
-from src.lib.consts import MAPLE_FONT_PATH
 from src.lib.demo_theme import SENRIN_V3_WORDBANK_LEADERBOARD_THEME
 from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import tr
@@ -22,6 +21,7 @@ from src.plugins.wordbank.services.core import (
     WordbankLeaderboardCardData,
     WordbankLeaderboardCardItem,
 )
+from src.plugins.wordbank.text_layout import load_font
 
 CARD_WIDTH = 1320
 PADDING_X = 56
@@ -668,10 +668,7 @@ class WordbankLeaderboardCardRenderer:
 
     @staticmethod
     def _load_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
-        try:
-            return ImageFont.truetype(MAPLE_FONT_PATH, size)
-        except OSError:
-            return ImageFont.load_default()
+        return load_font(size)
 
     @staticmethod
     def _load_mascot_image() -> Image.Image | None:

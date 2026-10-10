@@ -7,10 +7,8 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.lib.db.schema import SchemaPatch
-from src.lib.types import JsonObject
 from src.lib.utils.common import get_current_time
 from src.plugins.wordbank.message_model import (
-    MessageShape,
     fingerprint_shape,
     shape_to_payload,
 )
@@ -34,7 +32,11 @@ from .tables import (
     WordbankMessageRoute,
     WordbankMessageRouteBase,
 )
-from .types import WordbankCreatedResponse, WordbankMessageRoutePayload
+from .types import (
+    WordbankCreatedResponse,
+    WordbankMessageRoutePayload,
+    WordbankResponseSpec,
+)
 
 
 class WordbankRepository(
@@ -91,27 +93,27 @@ class WordbankRepository(
 
     async def create_or_append_response(
         self,
-        *,
-        trigger_shape: MessageShape,
-        response_shape: MessageShape,
-        rule: JsonObject,
-        scope: str,
-        priority: int,
-        trigger_probability: float,
-        weight: int,
-        group_id: str,
-        created_by: str,
-        status: str = "pending",
-        enabled: int = 1,
-        approved_by: str = "",
-        deleted_at: int = 0,
-        created_at: int | None = None,
-        updated_at: int | None = None,
-        response_mode: str = "normal",
-        forward_source_message_id: str | None = None,
-        forward_node_count: int = 0,
-        review_history_json: str = "[]",
+        spec: WordbankResponseSpec,
     ) -> WordbankCreatedResponse:
+        trigger_shape = spec.trigger_shape
+        response_shape = spec.response_shape
+        rule = spec.rule
+        scope = spec.scope
+        priority = spec.priority
+        trigger_probability = spec.trigger_probability
+        weight = spec.weight
+        group_id = spec.group_id
+        created_by = spec.created_by
+        status = spec.status
+        enabled = spec.enabled
+        approved_by = spec.approved_by
+        deleted_at = spec.deleted_at
+        created_at = spec.created_at
+        updated_at = spec.updated_at
+        response_mode = spec.response_mode
+        forward_source_message_id = spec.forward_source_message_id
+        forward_node_count = spec.forward_node_count
+        review_history_json = spec.review_history_json
         now = get_current_time()
         created_at = created_at or now
         updated_at = updated_at or now
@@ -190,48 +192,10 @@ class WordbankRepository(
 
     async def import_message_entry(
         self,
-        *,
-        trigger_shape: MessageShape,
-        response_shape: MessageShape,
-        rule: JsonObject,
-        scope: str,
-        priority: int,
-        trigger_probability: float,
-        weight: int,
-        group_id: str,
-        created_by: str,
-        status: str,
-        enabled: int,
-        approved_by: str,
-        deleted_at: int,
-        created_at: int,
-        updated_at: int,
-        response_mode: str = "normal",
-        forward_source_message_id: str | None = None,
-        forward_node_count: int = 0,
-        review_history_json: str = "[]",
+        spec: WordbankResponseSpec,
     ) -> WordbankCreatedResponse:
-        return await self.create_or_append_response(
-            trigger_shape=trigger_shape,
-            response_shape=response_shape,
-            rule=rule,
-            scope=scope,
-            priority=priority,
-            trigger_probability=trigger_probability,
-            weight=weight,
-            group_id=group_id,
-            created_by=created_by,
-            status=status,
-            enabled=enabled,
-            approved_by=approved_by,
-            deleted_at=deleted_at,
-            created_at=created_at,
-            updated_at=updated_at,
-            response_mode=response_mode,
-            forward_source_message_id=forward_source_message_id,
-            forward_node_count=forward_node_count,
-            review_history_json=review_history_json,
-        )
+        """语义化的迁移入口：与 create_or_append_response 同义。"""
+        return await self.create_or_append_response(spec)
 
     async def _upsert_message_route(
         self,

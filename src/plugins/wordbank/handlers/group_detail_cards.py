@@ -7,9 +7,8 @@ from dataclasses import dataclass
 from io import BytesIO
 
 import arrow
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
-from src.lib.consts import MAPLE_FONT_PATH
 from src.lib.demo_theme import SENRIN_V3_WORDBANK_CARD_THEME
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
@@ -23,6 +22,7 @@ from src.plugins.wordbank.database.types import (
     WordbankResponseItemDetail,
 )
 from src.plugins.wordbank.message_model import MessageShape
+from src.plugins.wordbank.text_layout import line_height, load_font
 from src.plugins.wordbank.treemap.render_utils import TreemapFont
 
 from .group_detail_card_helpers import (
@@ -31,7 +31,6 @@ from .group_detail_card_helpers import (
     display_group_detail,
     format_batch_delete_hint,
     format_response_delete_hint,
-    line_height,
     measure_preview_size,
     paste_rounded_image,
     prepare_preview_image,
@@ -95,6 +94,110 @@ class _ResponseLayout:
         return self.top + CARD_PANEL_PADDING + BADGE_SIZE // 2
 
 
+def _load_font(size: int) -> TreemapFont:
+    return load_font(size)
+
+
+def _trigger_trunk_anchor_offset() -> int:
+    return CARD_PANEL_PADDING + 56
+
+
+def _draw_vertical_dashed_line(
+    draw: ImageDraw.ImageDraw,
+    *,
+    x: int,
+    start_y: int,
+    end_y: int,
+    color: str,
+) -> None:
+    dash = 10
+    gap = 8
+    current_y = start_y
+    while current_y < end_y:
+        draw.line(
+            ((x, current_y), (x, min(current_y + dash, end_y))),
+            fill=color,
+            width=4,
+        )
+        current_y += dash + gap
+
+
+def _wrapped_text_height(
+    text: str,
+    font: TreemapFont,
+    *,
+    max_width: int,
+    max_lines: int | None = None,
+) -> int:
+    lines = wrap_text(
+        text,
+        font,
+        max_width=max_width,
+        max_lines=max_lines,
+    )
+    return len(lines) * line_height(font)
+
+
+def _draw_wrapped_text(
+    draw: ImageDraw.ImageDraw,
+    *,
+    x: int,
+    y: int,
+    text: str,
+    font: TreemapFont,
+    fill: str,
+    max_width: int,
+    max_lines: int | None = None,
+) -> int:
+    lines = wrap_text(
+        text,
+        font,
+        max_width=max_width,
+        max_lines=max_lines,
+    )
+    cursor_y = y
+    for line in lines:
+        draw.text((x, cursor_y), line, font=font, fill=fill)
+        cursor_y += line_height(font)
+    return cursor_y
+
+
+def _prepare_preview_image(
+    image_bytes: bytes,
+    *,
+    max_width: int,
+    max_height: int,
+) -> Image.Image | None:
+    return prepare_preview_image(
+        image_bytes,
+        max_width=max_width,
+        max_height=max_height,
+    )
+
+
+def _empty_state_height() -> int:
+    return 108
+
+
+def _draw_card_panel(
+    draw: ImageDraw.ImageDraw,
+    *,
+    x: int,
+    y: int,
+    width: int,
+    height: int,
+    fill: str,
+    outline: str,
+) -> None:
+    draw.rounded_rectangle(
+        (x, y, x + width, y + height),
+        radius=CARD_RADIUS,
+        fill=fill,
+        outline=outline,
+        width=1,
+    )
+
+
 class GroupDetailCardRenderer:
     THEME = SENRIN_V3_WORDBANK_CARD_THEME
 
@@ -118,13 +221,13 @@ class GroupDetailCardRenderer:
         self.ACCENT_SOFT = self.theme.accent_soft
         self.TEXTURE = self.theme.texture
         self.BADGE_TEXT = self.theme.badge_text
-        self.title_font = self._load_font(42)
-        self.summary_font = self._load_font(24)
-        self.item_title_font = self._load_font(30)
-        self.item_body_font = self._load_font(30)
-        self.item_meta_font = self._load_font(20)
-        self.footer_font = self._load_font(18)
-        self.footer_minor_font = self._load_font(16)
+        self.title_font = _load_font(42)
+        self.summary_font = _load_font(24)
+        self.item_title_font = _load_font(30)
+        self.item_body_font = _load_font(30)
+        self.item_meta_font = _load_font(20)
+        self.footer_font = _load_font(18)
+        self.footer_minor_font = _load_font(16)
         self.preview_bytes = dict(preview_bytes or {})
         self._preview_size_cache: dict[
             tuple[int, int, int],
@@ -177,7 +280,7 @@ class GroupDetailCardRenderer:
         if response_layouts:
             self._draw_tree_trunk(
                 draw,
-                start_y=trigger_top + self._trigger_trunk_anchor_offset(),
+                start_y=trigger_top + _trigger_trunk_anchor_offset(),
                 end_y=response_layouts[-1].connector_y,
             )
             for layout in response_layouts:
@@ -228,7 +331,7 @@ class GroupDetailCardRenderer:
                     total += CARD_SECTION_GAP
             total += CARD_SECTION_GAP
         else:
-            total += self._empty_state_height() + CARD_SECTION_GAP
+            total += _empty_state_height() + CARD_SECTION_GAP
         if page_data.page < page_data.total_pages:
             total += self._page_more_cta_height(page_data, locale) + CARD_SECTION_GAP
         total += CARD_FOOTER_HEIGHT
@@ -344,7 +447,7 @@ class GroupDetailCardRenderer:
             page_data.detail.trigger_shape,
             locale=locale,
         )
-        self._draw_card_panel(
+        _draw_card_panel(
             draw,
             x=TRIGGER_PANEL_X,
             y=top,
@@ -398,7 +501,7 @@ class GroupDetailCardRenderer:
     ) -> int:
         height = self._response_panel_height(response, locale=locale)
         self._draw_horizontal_branch(draw, y=connector_y)
-        self._draw_card_panel(
+        _draw_card_panel(
             draw,
             x=RESPONSE_PANEL_X,
             y=cursor_y,
@@ -466,7 +569,7 @@ class GroupDetailCardRenderer:
         start_y: int,
         end_y: int,
     ) -> None:
-        self._draw_vertical_dashed_line(
+        _draw_vertical_dashed_line(
             draw,
             x=TRUNK_X,
             start_y=start_y,
@@ -488,25 +591,6 @@ class GroupDetailCardRenderer:
                 y + 8,
             ),
             fill=self.ACCENT,
-        )
-
-    def _draw_card_panel(
-        self,
-        draw: ImageDraw.ImageDraw,
-        *,
-        x: int,
-        y: int,
-        width: int,
-        height: int,
-        fill: str,
-        outline: str,
-    ) -> None:
-        draw.rounded_rectangle(
-            (x, y, x + width, y + height),
-            radius=CARD_RADIUS,
-            fill=fill,
-            outline=outline,
-            width=1,
         )
 
     def _draw_page_more_cta(
@@ -567,7 +651,7 @@ class GroupDetailCardRenderer:
             next_page=min(page_data.total_pages, page_data.page + 1),
             group_id=page_data.detail.trigger_group_id,
         )
-        text_height = self._wrapped_text_height(
+        text_height = _wrapped_text_height(
             hint,
             self.item_meta_font,
             max_width=RESPONSE_PANEL_WIDTH - 60,
@@ -581,8 +665,8 @@ class GroupDetailCardRenderer:
         locale: LocaleCode,
         cursor_y: int,
     ) -> int:
-        height = self._empty_state_height()
-        self._draw_card_panel(
+        height = _empty_state_height()
+        _draw_card_panel(
             draw,
             x=RESPONSE_PANEL_X,
             y=cursor_y,
@@ -598,9 +682,6 @@ class GroupDetailCardRenderer:
             fill=self.HEADER,
         )
         return cursor_y + height
-
-    def _empty_state_height(self) -> int:
-        return 108
 
     def _draw_response_meta(
         self,
@@ -634,7 +715,7 @@ class GroupDetailCardRenderer:
         response: WordbankResponseItemDetail,
         locale: LocaleCode,
     ) -> int:
-        return self._wrapped_text_height(
+        return _wrapped_text_height(
             response_meta_text(response, locale=locale),
             self.item_meta_font,
             max_width=RESPONSE_TEXT_WIDTH,
@@ -693,7 +774,7 @@ class GroupDetailCardRenderer:
         *,
         locale: LocaleCode,
     ) -> int:
-        text_height = self._wrapped_text_height(
+        text_height = _wrapped_text_height(
             format_response_delete_hint(
                 response.response_item_id,
                 locale=locale,
@@ -752,7 +833,7 @@ class GroupDetailCardRenderer:
         for index, block in enumerate(blocks):
             kind, text, image_id = block
             if kind == "text" and text:
-                cursor_y = self._draw_wrapped_text(
+                cursor_y = _draw_wrapped_text(
                     draw,
                     x=x,
                     y=cursor_y,
@@ -788,7 +869,7 @@ class GroupDetailCardRenderer:
         for index, block in enumerate(blocks):
             kind, text, image_id = block
             if kind == "text" and text:
-                total += self._wrapped_text_height(
+                total += _wrapped_text_height(
                     text,
                     self.item_body_font,
                     max_width=max_width,
@@ -815,7 +896,7 @@ class GroupDetailCardRenderer:
         image_bytes = self.preview_bytes.get(image_id)
         if not image_bytes:
             return y
-        preview = self._prepare_preview_image(
+        preview = _prepare_preview_image(
             image_bytes,
             max_width=max_width,
             max_height=CARD_PREVIEW_MAX_HEIGHT,
@@ -959,88 +1040,6 @@ class GroupDetailCardRenderer:
                 )
         measured = self._preview_size_cache[cache_key]
         return measured[1] if measured is not None else 0
-
-    def _prepare_preview_image(
-        self,
-        image_bytes: bytes,
-        *,
-        max_width: int,
-        max_height: int,
-    ) -> Image.Image | None:
-        return prepare_preview_image(
-            image_bytes,
-            max_width=max_width,
-            max_height=max_height,
-        )
-
-    def _draw_wrapped_text(
-        self,
-        draw: ImageDraw.ImageDraw,
-        *,
-        x: int,
-        y: int,
-        text: str,
-        font: TreemapFont,
-        fill: str,
-        max_width: int,
-        max_lines: int | None = None,
-    ) -> int:
-        lines = wrap_text(
-            text,
-            font,
-            max_width=max_width,
-            max_lines=max_lines,
-        )
-        cursor_y = y
-        for line in lines:
-            draw.text((x, cursor_y), line, font=font, fill=fill)
-            cursor_y += line_height(font)
-        return cursor_y
-
-    def _wrapped_text_height(
-        self,
-        text: str,
-        font: TreemapFont,
-        *,
-        max_width: int,
-        max_lines: int | None = None,
-    ) -> int:
-        lines = wrap_text(
-            text,
-            font,
-            max_width=max_width,
-            max_lines=max_lines,
-        )
-        return len(lines) * line_height(font)
-
-    def _draw_vertical_dashed_line(
-        self,
-        draw: ImageDraw.ImageDraw,
-        *,
-        x: int,
-        start_y: int,
-        end_y: int,
-        color: str,
-    ) -> None:
-        dash = 10
-        gap = 8
-        current_y = start_y
-        while current_y < end_y:
-            draw.line(
-                ((x, current_y), (x, min(current_y + dash, end_y))),
-                fill=color,
-                width=4,
-            )
-            current_y += dash + gap
-
-    def _trigger_trunk_anchor_offset(self) -> int:
-        return CARD_PANEL_PADDING + 56
-
-    def _load_font(self, size: int) -> TreemapFont:
-        try:
-            return ImageFont.truetype(MAPLE_FONT_PATH, size)
-        except Exception:
-            return ImageFont.load_default()
 
 
 def render_group_detail_card_bytes(

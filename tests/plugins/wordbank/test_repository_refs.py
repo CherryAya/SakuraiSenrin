@@ -10,19 +10,21 @@ async def test_record_message_ref_roundtrip_writes_route_and_shard(
     service = await _build_service(tmp_path, monkeypatch)
 
     await service.record_message_ref(
-        ref_kind="view",
-        message_id="90001",
-        context_type="search_result",
-        trigger_group_id=0,
-        current_page=2,
-        keyword="jrlp",
-        field="all",
-        creator_id="10001",
-        has_image=True,
-        group_ids=(271, 300),
-        group_id="20001",
-        user_id="10001",
-        message_type="group",
+        WordbankMessageRefSpec(
+            ref_kind="view",
+            message_id="90001",
+            context_type="search_result",
+            trigger_group_id=0,
+            current_page=2,
+            keyword="jrlp",
+            field="all",
+            creator_id="10001",
+            has_image=True,
+            group_ids=(271, 300),
+            group_id="20001",
+            user_id="10001",
+            message_type="group",
+        )
     )
     route = await service.repository.get_message_ref_route("90001")
     record = await service.get_message_ref("90001", expected_kind="view")
@@ -44,24 +46,28 @@ async def test_record_message_ref_upsert_reuses_message_id(
     service = await _build_service(tmp_path, monkeypatch)
 
     await service.record_message_ref(
-        ref_kind="response",
-        message_id="90002",
-        trigger_group_id=12,
-        trigger_variant_id=120,
-        response_item_id=300,
-        group_id="20001",
-        user_id="10001",
-        message_type="group",
+        WordbankMessageRefSpec(
+            ref_kind="response",
+            message_id="90002",
+            trigger_group_id=12,
+            trigger_variant_id=120,
+            response_item_id=300,
+            group_id="20001",
+            user_id="10001",
+            message_type="group",
+        )
     )
     await service.record_message_ref(
-        ref_kind="response",
-        message_id="90002",
-        trigger_group_id=12,
-        trigger_variant_id=121,
-        response_item_id=301,
-        group_id="20002",
-        user_id="10002",
-        message_type="private",
+        WordbankMessageRefSpec(
+            ref_kind="response",
+            message_id="90002",
+            trigger_group_id=12,
+            trigger_variant_id=121,
+            response_item_id=301,
+            group_id="20002",
+            user_id="10002",
+            message_type="private",
+        )
     )
 
     route = await service.repository.get_message_ref_route("90002")
@@ -85,14 +91,16 @@ async def test_record_message_ref_roundtrip_supports_approval_kind(
     service = await _build_service(tmp_path, monkeypatch)
 
     await service.record_message_ref(
-        ref_kind="approval",
-        message_id="90003",
-        trigger_group_id=88,
-        response_item_id=501,
-        group_id="20001",
-        user_id="10001",
-        source_message_id="777",
-        message_type="approval",
+        WordbankMessageRefSpec(
+            ref_kind="approval",
+            message_id="90003",
+            trigger_group_id=88,
+            response_item_id=501,
+            group_id="20001",
+            user_id="10001",
+            source_message_id="777",
+            message_type="approval",
+        )
     )
 
     route = await service.repository.get_message_ref_route("90003")

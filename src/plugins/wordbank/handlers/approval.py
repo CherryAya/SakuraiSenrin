@@ -33,6 +33,7 @@ from src.lib.message_plan import (
 )
 from src.lib.reply_router import ReplyContextSpec, record_reply_context_from_send_result
 from src.logger import logger
+from src.plugins.wordbank.database.types import WordbankMessageRefSpec
 from src.plugins.wordbank.message_model import MessageShape
 from src.plugins.wordbank.services import format_add_result
 from src.plugins.wordbank.services.core import (
@@ -51,7 +52,11 @@ from src.plugins.wordbank.services.presentation import (
     response_mode_label,
 )
 
-from .rendering import build_pending_item_plan_entries, build_shape_plan_entry
+from .rendering import (
+    PendingItemSpec,
+    build_pending_item_plan_entries,
+    build_shape_plan_entry,
+)
 
 APPROVAL_APPROVE_ALIASES = {"y", "approve", "通过", "同意", "批准"}
 APPROVAL_REJECT_ALIASES = {"n", "reject", "拒绝", "驳回", "反对"}
@@ -345,24 +350,26 @@ async def _build_pending_approval_detail_plan_entry(
     prefix: str = "",
 ) -> tuple[MessagePlanInput, ...]:
     return await build_pending_item_plan_entries(
-        entry_id=result.response_item_id,
-        scope=result.scope,
-        trigger_text=result.trigger_text,
-        response_text=result.response_text,
-        created_by=result.created_by or "-",
-        created_at=result.created_at,
-        probability=result.probability,
-        weight=result.weight,
-        rule=result.rule,
-        trigger_shape=result.trigger_shape,
-        response_shape=result.response_shape,
+        PendingItemSpec(
+            entry_id=result.response_item_id,
+            scope=result.scope,
+            trigger_text=result.trigger_text,
+            response_text=result.response_text,
+            created_by=result.created_by or "-",
+            created_at=result.created_at,
+            probability=result.probability,
+            weight=result.weight,
+            rule=result.rule,
+            trigger_shape=result.trigger_shape,
+            response_shape=result.response_shape,
+            response_mode=result.response_mode,
+            forward_node_count=result.forward_node_count,
+        ),
         locale=locale,
         media_service=media_service,
         prefix=prefix,
         index=index,
-        response_mode=result.response_mode,
         forward_source_message_id=result.forward_source_message_id,
-        forward_node_count=result.forward_node_count,
     )
 
 
@@ -734,14 +741,16 @@ async def _record_pending_approval_notice_delivery(
             f" source_user_id={user_id}"
         )
         await service.record_message_ref(
-            ref_kind="approval",
-            message_id=message_id,
-            trigger_group_id=result.trigger_group_id,
-            response_item_id=result.response_item_id,
-            group_id=group_id,
-            user_id=user_id,
-            source_message_id=source_message_id,
-            message_type="approval",
+            spec=WordbankMessageRefSpec(
+                ref_kind="approval",
+                message_id=message_id,
+                trigger_group_id=result.trigger_group_id,
+                response_item_id=result.response_item_id,
+                group_id=group_id,
+                user_id=user_id,
+                source_message_id=source_message_id,
+                message_type="approval",
+            )
         )
         if fallback_messages:
             origin_message_type, origin_target_id = _notification_origin_from_target(
@@ -899,16 +908,18 @@ async def _record_pending_batch_approval_notice_delivery(
             f" source_user_id={user_id}"
         )
         await service.record_message_ref(
-            ref_kind="approval",
-            message_id=message_id,
-            trigger_group_id=first_result.trigger_group_id,
-            response_item_id=first_result.response_item_id,
-            group_id=group_id,
-            user_id=user_id,
-            source_message_id=source_message_id,
-            context_type="pending_batch",
-            message_type="approval_batch",
-            group_ids=response_item_ids,
+            spec=WordbankMessageRefSpec(
+                ref_kind="approval",
+                message_id=message_id,
+                trigger_group_id=first_result.trigger_group_id,
+                response_item_id=first_result.response_item_id,
+                group_id=group_id,
+                user_id=user_id,
+                source_message_id=source_message_id,
+                context_type="pending_batch",
+                message_type="approval_batch",
+                group_ids=response_item_ids,
+            )
         )
         if fallback_messages:
             origin_message_type, origin_target_id = _notification_origin_from_target(
@@ -1001,14 +1012,16 @@ async def record_submission_approval_message(
 
     try:
         await service.record_message_ref(
-            ref_kind="approval",
-            message_id=message_id,
-            trigger_group_id=result.trigger_group_id,
-            response_item_id=result.response_item_id,
-            group_id=str(getattr(event, "group_id", "") or ""),
-            user_id=str(event.user_id),
-            source_message_id=str(getattr(event, "message_id", "") or ""),
-            message_type="submission",
+            spec=WordbankMessageRefSpec(
+                ref_kind="approval",
+                message_id=message_id,
+                trigger_group_id=result.trigger_group_id,
+                response_item_id=result.response_item_id,
+                group_id=str(getattr(event, "group_id", "") or ""),
+                user_id=str(event.user_id),
+                source_message_id=str(getattr(event, "message_id", "") or ""),
+                message_type="submission",
+            )
         )
     except Exception as exc:
         logger.warning(f"[Wordbank] submission approval record skipped: {exc}")
@@ -1032,16 +1045,18 @@ async def record_batch_submission_approval_message(
     first_result = pending_results[0]
     try:
         await service.record_message_ref(
-            ref_kind="approval",
-            message_id=message_id,
-            trigger_group_id=first_result.trigger_group_id,
-            response_item_id=first_result.response_item_id,
-            group_id=str(getattr(event, "group_id", "") or ""),
-            user_id=str(event.user_id),
-            source_message_id=str(getattr(event, "message_id", "") or ""),
-            context_type="pending_batch",
-            message_type="submission_batch",
-            group_ids=tuple(result.response_item_id for result in pending_results),
+            spec=WordbankMessageRefSpec(
+                ref_kind="approval",
+                message_id=message_id,
+                trigger_group_id=first_result.trigger_group_id,
+                response_item_id=first_result.response_item_id,
+                group_id=str(getattr(event, "group_id", "") or ""),
+                user_id=str(event.user_id),
+                source_message_id=str(getattr(event, "message_id", "") or ""),
+                context_type="pending_batch",
+                message_type="submission_batch",
+                group_ids=tuple(result.response_item_id for result in pending_results),
+            )
         )
     except Exception as exc:
         logger.warning(f"[Wordbank] batch submission approval record skipped: {exc}")

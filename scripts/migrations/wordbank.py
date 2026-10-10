@@ -11,6 +11,7 @@ from src.database.consts import WritePolicy
 from src.lib.utils.common import get_current_time
 from src.plugins.wordbank.database.instances import wordbank_main_db
 from src.plugins.wordbank.database.repo import WordbankRepository
+from src.plugins.wordbank.database.types import WordbankResponseSpec
 from src.plugins.wordbank.message_model import (
     MessageAtom,
     MessageShape,
@@ -251,21 +252,23 @@ async def migrate_legacy_rows(
             primary_log_target: LegacyImportedLogTarget | None = None
             for target in targets:
                 entry = await repository.import_message_entry(
-                    trigger_shape=trigger_shape,
-                    response_shape=response_shape,
-                    rule=target.rule,
-                    scope=target.scope,
-                    priority=SCOPE_PRIORITY[target.scope],
-                    trigger_probability=probability,
-                    weight=weight,
-                    group_id=target.group_id,
-                    created_by=created_by,
-                    status=state.status,
-                    enabled=state.enabled,
-                    approved_by="",
-                    deleted_at=state.deleted_at,
-                    created_at=created_at,
-                    updated_at=updated_at,
+                    WordbankResponseSpec(
+                        trigger_shape=trigger_shape,
+                        response_shape=response_shape,
+                        rule=target.rule,
+                        scope=target.scope,
+                        priority=SCOPE_PRIORITY[target.scope],
+                        trigger_probability=probability,
+                        weight=weight,
+                        group_id=target.group_id,
+                        created_by=created_by,
+                        status=state.status,
+                        enabled=state.enabled,
+                        approved_by="",
+                        deleted_at=state.deleted_at,
+                        created_at=created_at,
+                        updated_at=updated_at,
+                    )
                 )
                 imported_ids.append(entry.response_item_id)
                 if primary_log_target is None:

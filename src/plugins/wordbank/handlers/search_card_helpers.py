@@ -23,7 +23,6 @@ from src.plugins.wordbank.services.presentation import (
     SCOPE_LABEL_KEYS,
     format_status_label,
 )
-from src.plugins.wordbank.treemap.render_utils import TreemapFont
 
 
 @dataclass(slots=True, frozen=True)
@@ -298,24 +297,6 @@ def response_rule_chips(
 
 def creator_chip_text(created_by: str) -> str:
     return f"U:{created_by or '-'}"
-
-
-def line_height(font: TreemapFont) -> int:
-    from PIL import Image, ImageDraw
-
-    bbox = ImageDraw.Draw(Image.new("RGB", (10, 10))).textbbox((0, 0), "Ag", font=font)
-    return int(bbox[3] - bbox[1] + 8)
-
-
-def text_width(text: str, font: TreemapFont) -> int:
-    from PIL import Image, ImageDraw
-
-    return int(
-        ImageDraw.Draw(Image.new("RGB", (10, 10))).textlength(
-            text,
-            font=font,
-        )
-    )
 
 
 def _content_blocks_from_shape_or_text(

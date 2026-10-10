@@ -8,15 +8,15 @@ from io import BytesIO
 import math
 
 import arrow
-from PIL import Image, ImageColor, ImageDraw, ImageFont
+from PIL import Image, ImageColor, ImageDraw
 
-from src.lib.consts import MAPLE_FONT_PATH
 from src.lib.demo_theme import SENRIN_V3_WORDBANK_CARD_THEME
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.message_plan import MessagePlanEntry, build_image_plan_entry
 from src.lib.utils.common import get_current_time
 from src.plugins.wordbank.database.types import WordbankSearchItem
+from src.plugins.wordbank.text_layout import line_height, load_font, text_width
 from src.plugins.wordbank.treemap.render_utils import TreemapFont
 
 from .search_card_helpers import (
@@ -24,16 +24,13 @@ from .search_card_helpers import (
     SearchCardResponseRenderItem,
     build_search_card_footer_text,
     creator_chip_text,
-    fold_hint,
     folded_preview_note,
     has_folded_preview,
-    line_height,
     response_preview_items,
     response_rule_chips,
     scope_chip_label,
     status_chip_label,
     summary_chips,
-    text_width,
     weight_chip_text,
 )
 
@@ -108,7 +105,135 @@ class SearchCardChip:
     text: str
     fill: str
     text_fill: str
-    outline: str
+    outline: str = ""
+
+
+def _truncate_line(text: str, font: TreemapFont, max_width: int) -> str:
+    if text_width(text, font) <= max_width:
+        return text
+    candidate = text
+    while candidate and text_width(f"{candidate}...", font) > max_width:
+        candidate = candidate[:-1]
+    return f"{candidate}..."
+
+
+def _measure_preview_size(
+    image_bytes: bytes,
+    *,
+    max_width: int,
+    max_height: int,
+) -> tuple[int, int] | None:
+    try:
+        with Image.open(BytesIO(image_bytes)) as preview:
+            width, height = preview.convert("RGB").size
+    except Exception:
+        return None
+    if width <= 0 or height <= 0:
+        return None
+    scale = min(max_width / width, max_height / height, 1.0)
+    return (max(1, int(width * scale)), max(1, int(height * scale)))
+
+
+def _paste_rounded_image(
+    image: Image.Image,
+    preview: Image.Image,
+    origin: tuple[int, int],
+    *,
+    radius: int,
+) -> None:
+    mask = Image.new("L", preview.size, 0)
+    mask_draw = ImageDraw.Draw(mask)
+    mask_draw.rounded_rectangle(
+        (0, 0, preview.width, preview.height),
+        radius=radius,
+        fill=255,
+    )
+    image.paste(preview, origin, mask)
+
+
+def _field_label(field: str, locale: LocaleCode) -> str:
+    return {
+        "all": tr(locale, "wordbank.search_card.field.all"),
+        "trigger": tr(locale, "wordbank.search_card.field.trigger"),
+        "response": tr(locale, "wordbank.search_card.field.response"),
+    }.get(field, field)
+
+
+def _column_width() -> int:
+    return int((CARD_WIDTH - CARD_PADDING_X * 2 - CARD_COLUMN_GAP) / CARD_COLUMNS)
+
+
+def _draw_surface_panel(
+    draw: ImageDraw.ImageDraw,
+    *,
+    bbox: tuple[int, int, int, int],
+    radius: int,
+    fill: str,
+    outline: str,
+) -> None:
+    draw.rounded_rectangle(
+        bbox,
+        radius=radius,
+        fill=fill,
+    )
+    if outline:
+        draw.rounded_rectangle(
+            bbox,
+            radius=radius,
+            outline=outline,
+            width=1,
+        )
+
+
+def _shade_color(color: str, factor: float) -> str:
+    red, green, blue = ImageColor.getrgb(color)[:3]
+    red_value = max(0, min(255, int(red * factor)))
+    green_value = max(0, min(255, int(green * factor)))
+    blue_value = max(0, min(255, int(blue * factor)))
+    return f"#{red_value:02X}{green_value:02X}{blue_value:02X}"
+
+
+def _mix_color(color_a: str, color_b: str, ratio_b: float) -> str:
+    red_a, green_a, blue_a = ImageColor.getrgb(color_a)[:3]
+    red_b, green_b, blue_b = ImageColor.getrgb(color_b)[:3]
+    ratio = max(0.0, min(1.0, ratio_b))
+    red = int(red_a * (1 - ratio) + red_b * ratio)
+    green = int(green_a * (1 - ratio) + green_b * ratio)
+    blue = int(blue_a * (1 - ratio) + blue_b * ratio)
+    return f"#{red:02X}{green:02X}{blue:02X}"
+
+
+def _wrap_text(
+    text: str,
+    font: TreemapFont,
+    *,
+    max_width: int,
+    max_lines: int | None = None,
+) -> list[str]:
+    if not text:
+        return [""]
+    lines: list[str] = []
+    for raw_line in text.splitlines() or [text]:
+        current = ""
+        if not raw_line:
+            lines.append("")
+            continue
+        for char in raw_line:
+            candidate = f"{current}{char}"
+            if text_width(candidate, font) <= max_width:
+                current = candidate
+            else:
+                if current:
+                    lines.append(current)
+                current = char
+        if current:
+            lines.append(current)
+    if not lines:
+        lines = [""]
+    if max_lines is not None and len(lines) > max_lines:
+        lines = lines[:max_lines]
+        lines[-1] = _truncate_line(f"{lines[-1]}...", font, max_width)
+    return [_truncate_line(line, font, max_width) for line in lines]
 
 
 class SearchResultCardRenderer:
@@ -161,14 +286,14 @@ class SearchResultCardRenderer:
         self.DATA_CHIP_FILL = self.theme.data_chip_fill
         self.DATA_CHIP_TEXT = self.theme.data_chip_text
         self.DATA_CHIP_OUTLINE = self.theme.data_chip_outline
-        self.title_font = self._load_font(38)
-        self.summary_font = self._load_font(20)
-        self.item_title_font = self._load_font(30)
-        self.response_body_font = self._load_font(24)
-        self.item_meta_font = self._load_font(18)
-        self.item_tag_font = self._load_font(17)
-        self.meta_chip_font = self._load_font(15)
-        self.footer_font = self._load_font(17)
+        self.title_font = load_font(38)
+        self.summary_font = load_font(20)
+        self.item_title_font = load_font(30)
+        self.response_body_font = load_font(24)
+        self.item_meta_font = load_font(18)
+        self.item_tag_font = load_font(17)
+        self.meta_chip_font = load_font(15)
+        self.footer_font = load_font(17)
         self.response_text_fill = self.BODY
         self.label_fill = self.ACCENT_SOFT
         self.label_text_fill = self.ACCENT_DEEP
@@ -222,7 +347,7 @@ class SearchResultCardRenderer:
         if summary_height > 0:
             total += summary_height + CARD_SUMMARY_GAP
         if items:
-            column_width = self._column_width()
+            column_width = _column_width()
             column_heights = [0] * CARD_COLUMNS
             for index, item in enumerate(items, start=1):
                 card_height = self._item_block_height(
@@ -305,12 +430,12 @@ class SearchResultCardRenderer:
             creator_id=query.creator_id,
             has_image=query.has_image,
             locale=locale,
-            field_label=self._field_label(query.field, locale),
+            field_label=_field_label(query.field, locale),
         )
         if not chips:
             return cursor_y
         height = self._summary_block_height(query, locale)
-        self._draw_surface_panel(
+        _draw_surface_panel(
             draw,
             bbox=(
                 CARD_PADDING_X,
@@ -319,7 +444,7 @@ class SearchResultCardRenderer:
                 cursor_y + height,
             ),
             radius=CARD_RADIUS,
-            fill=self._mix_color(self.ACCENT_SOFT, self.BG, 0.62),
+            fill=_mix_color(self.ACCENT_SOFT, self.BG, 0.62),
             outline="",
         )
         chip_x = CARD_PADDING_X + 16
@@ -335,7 +460,7 @@ class SearchResultCardRenderer:
             draw.rounded_rectangle(
                 (chip_x, chip_y, chip_x + chip_width, chip_y + CARD_CHIP_HEIGHT),
                 radius=CARD_CHIP_RADIUS,
-                fill=self._mix_color(self.ACCENT_SOFT, self.ACCENT, 0.18),
+                fill=_mix_color(self.ACCENT_SOFT, self.ACCENT, 0.18),
             )
             draw.text(
                 (
@@ -363,7 +488,7 @@ class SearchResultCardRenderer:
         locale: LocaleCode,
         cursor_y: int,
     ) -> int:
-        column_width = self._column_width()
+        column_width = _column_width()
         column_heights = [cursor_y] * CARD_COLUMNS
         for index, item in enumerate(items, start=1):
             absolute_index = index + (query.page - 1) * query.limit
@@ -405,11 +530,11 @@ class SearchResultCardRenderer:
         width: int,
         height: int,
     ) -> None:
-        self._draw_surface_panel(
+        _draw_surface_panel(
             draw,
             bbox=(x, y, x + width, y + height),
             radius=CARD_ITEM_RADIUS,
-            fill=self._mix_color(self.ACCENT_SOFT, self.ACCENT, 0.22),
+            fill=_mix_color(self.ACCENT_SOFT, self.ACCENT, 0.22),
             outline="",
         )
         group_x = x + CARD_GROUP_INSET
@@ -430,7 +555,7 @@ class SearchResultCardRenderer:
                 header_panel_bottom,
             ),
             radius=CARD_RESPONSE_RADIUS,
-            fill=self._mix_color(self.ACCENT_SOFT, self.BG, 0.14),
+            fill=_mix_color(self.ACCENT_SOFT, self.BG, 0.14),
         )
         self._draw_item_header(
             draw,
@@ -504,7 +629,7 @@ class SearchResultCardRenderer:
         badge_text = f"{absolute_index:02d}"
         badge_y = y + max(0, int((height - CARD_BADGE_HEIGHT) / 2))
         badge_x = x + CARD_HEADER_PANEL_PADDING_X
-        self._draw_surface_panel(
+        _draw_surface_panel(
             draw,
             bbox=(
                 badge_x,
@@ -533,7 +658,7 @@ class SearchResultCardRenderer:
         title_x = badge_x + CARD_BADGE_WIDTH + 14
         title_width = width - CARD_HEADER_PANEL_PADDING_X * 2 - CARD_BADGE_WIDTH - 14
         title_text = item.trigger_text or tr(locale, "wordbank.search_card.none")
-        title_lines = self._wrap_text(
+        title_lines = _wrap_text(
             title_text,
             self.item_title_font,
             max_width=title_width,
@@ -579,7 +704,7 @@ class SearchResultCardRenderer:
         height: int,
     ) -> None:
         fill = self.RESPONSE_PANEL
-        self._draw_surface_panel(
+        _draw_surface_panel(
             draw,
             bbox=(x, y, x + width, y + height),
             radius=CARD_RESPONSE_RADIUS,
@@ -621,7 +746,7 @@ class SearchResultCardRenderer:
         width: int,
         height: int,
     ) -> None:
-        self._draw_surface_panel(
+        _draw_surface_panel(
             draw,
             bbox=(x, y, x + width, y + height),
             radius=16,
@@ -793,71 +918,41 @@ class SearchResultCardRenderer:
         return tuple(chips)
 
     def _status_chip(self, text: str, status: str) -> SearchCardChip:
-        if status == "approved":
-            return SearchCardChip(
-                text=text,
-                fill=self.SUCCESS_FILL,
-                text_fill=self.SUCCESS_TEXT,
-                outline="",
-            )
-        if status == "pending":
-            return SearchCardChip(
-                text=text,
-                fill=self.WARNING_FILL,
-                text_fill=self.WARNING_TEXT,
-                outline="",
-            )
-        return SearchCardChip(
-            text=text,
-            fill=self.DANGER_FILL,
-            text_fill=self.DANGER_TEXT,
-            outline="",
-        )
+        fills = {
+            "approved": (self.SUCCESS_FILL, self.SUCCESS_TEXT),
+            "pending": (self.WARNING_FILL, self.WARNING_TEXT),
+        }
+        fill, text_fill = fills.get(status, (self.DANGER_FILL, self.DANGER_TEXT))
+        return SearchCardChip(text=text, fill=fill, text_fill=text_fill)
 
     def _scope_chip(self, text: str, scope: str) -> SearchCardChip:
         if scope == "all_groups":
-            return SearchCardChip(
-                text=text,
-                fill=self.SCOPE_GLOBAL_FILL,
-                text_fill=self.SCOPE_GLOBAL_TEXT,
-                outline="",
-            )
-        if scope in {"current_group", "self_in_current_group"}:
-            return SearchCardChip(
-                text=text,
-                fill=self.SCOPE_LOCAL_FILL,
-                text_fill=self.SCOPE_LOCAL_TEXT,
-                outline="",
-            )
-        return SearchCardChip(
-            text=text,
-            fill=self.SCOPE_PRIVATE_FILL,
-            text_fill=self.SCOPE_PRIVATE_TEXT,
-            outline="",
-        )
+            fill, text_fill = self.SCOPE_GLOBAL_FILL, self.SCOPE_GLOBAL_TEXT
+        elif scope in {"current_group", "self_in_current_group"}:
+            fill, text_fill = self.SCOPE_LOCAL_FILL, self.SCOPE_LOCAL_TEXT
+        else:
+            fill, text_fill = self.SCOPE_PRIVATE_FILL, self.SCOPE_PRIVATE_TEXT
+        return SearchCardChip(text=text, fill=fill, text_fill=text_fill)
 
     def _neutral_chip(self, text: str) -> SearchCardChip:
         return SearchCardChip(
             text=text,
-            fill=self._mix_color(self.NEUTRAL_CHIP_FILL, self.ACCENT_SOFT, 0.22),
-            text_fill=self._shade_color(self.NEUTRAL_CHIP_TEXT, 0.95),
-            outline="",
+            fill=_mix_color(self.NEUTRAL_CHIP_FILL, self.ACCENT_SOFT, 0.22),
+            text_fill=_shade_color(self.NEUTRAL_CHIP_TEXT, 0.95),
         )
 
     def _data_chip(self, text: str) -> SearchCardChip:
         return SearchCardChip(
             text=text,
-            fill=self._mix_color(self.DATA_CHIP_FILL, self.ACCENT_SOFT, 0.12),
-            text_fill=self._shade_color(self.DATA_CHIP_TEXT, 0.94),
-            outline="",
+            fill=_mix_color(self.DATA_CHIP_FILL, self.ACCENT_SOFT, 0.12),
+            text_fill=_shade_color(self.DATA_CHIP_TEXT, 0.94),
         )
 
     def _response_index_chip(self, text: str) -> SearchCardChip:
         return SearchCardChip(
             text=text,
-            fill=self._mix_color(self.ACCENT_SOFT, self.BG, 0.18),
-            text_fill=self._shade_color(self.ACCENT_DEEP, 0.92),
-            outline="",
+            fill=_mix_color(self.ACCENT_SOFT, self.BG, 0.18),
+            text_fill=_shade_color(self.ACCENT_DEEP, 0.92),
         )
 
     def _draw_empty_state(
@@ -867,7 +962,7 @@ class SearchResultCardRenderer:
         locale: LocaleCode,
         cursor_y: int,
     ) -> int:
-        self._draw_surface_panel(
+        _draw_surface_panel(
             draw,
             bbox=(
                 CARD_PADDING_X,
@@ -876,7 +971,7 @@ class SearchResultCardRenderer:
                 cursor_y + 120,
             ),
             radius=CARD_RADIUS,
-            fill=self._mix_color(self.ACCENT_SOFT, self.BG, 0.5),
+            fill=_mix_color(self.ACCENT_SOFT, self.BG, 0.5),
             outline="",
         )
         draw.text(
@@ -946,7 +1041,7 @@ class SearchResultCardRenderer:
             creator_id=query.creator_id,
             has_image=query.has_image,
             locale=locale,
-            field_label=self._field_label(query.field, locale),
+            field_label=_field_label(query.field, locale),
         )
         if not chips:
             return 0
@@ -1065,7 +1160,7 @@ class SearchResultCardRenderer:
         max_lines: int | None = None,
     ) -> int:
         cursor_y = int(y)
-        for line in self._wrap_text(
+        for line in _wrap_text(
             text,
             font,
             max_width=max_width,
@@ -1113,7 +1208,7 @@ class SearchResultCardRenderer:
                     if drawn > 0:
                         cursor_y -= CARD_CONTENT_GAP
                     continue
-                self._paste_rounded_image(
+                _paste_rounded_image(
                     image,
                     preview,
                     (x, cursor_y),
@@ -1202,49 +1297,8 @@ class SearchResultCardRenderer:
         max_lines: int | None = None,
     ) -> int:
         return len(
-            self._wrap_text(text, font, max_width=max_width, max_lines=max_lines)
+            _wrap_text(text, font, max_width=max_width, max_lines=max_lines)
         ) * line_height(font)
-
-    def _wrap_text(
-        self,
-        text: str,
-        font: TreemapFont,
-        *,
-        max_width: int,
-        max_lines: int | None = None,
-    ) -> list[str]:
-        if not text:
-            return [""]
-        lines: list[str] = []
-        for raw_line in text.splitlines() or [text]:
-            current = ""
-            if not raw_line:
-                lines.append("")
-                continue
-            for char in raw_line:
-                candidate = f"{current}{char}"
-                if text_width(candidate, font) <= max_width:
-                    current = candidate
-                else:
-                    if current:
-                        lines.append(current)
-                    current = char
-            if current:
-                lines.append(current)
-        if not lines:
-            lines = [""]
-        if max_lines is not None and len(lines) > max_lines:
-            lines = lines[:max_lines]
-            lines[-1] = self._truncate_line(f"{lines[-1]}...", font, max_width)
-        return [self._truncate_line(line, font, max_width) for line in lines]
-
-    def _truncate_line(self, text: str, font: TreemapFont, max_width: int) -> str:
-        if text_width(text, font) <= max_width:
-            return text
-        candidate = text
-        while candidate and text_width(f"{candidate}...", font) > max_width:
-            candidate = candidate[:-1]
-        return f"{candidate}..."
 
     def _preview_height(
         self,
@@ -1261,30 +1315,13 @@ class SearchResultCardRenderer:
             if not image_bytes:
                 self._preview_size_cache[cache_key] = None
             else:
-                self._preview_size_cache[cache_key] = self._measure_preview_size(
+                self._preview_size_cache[cache_key] = _measure_preview_size(
                     image_bytes,
                     max_width=max_width,
                     max_height=max_height,
                 )
         measured = self._preview_size_cache[cache_key]
         return measured[1] if measured is not None else 0
-
-    def _measure_preview_size(
-        self,
-        image_bytes: bytes,
-        *,
-        max_width: int,
-        max_height: int,
-    ) -> tuple[int, int] | None:
-        try:
-            with Image.open(BytesIO(image_bytes)) as preview:
-                width, height = preview.convert("RGB").size
-        except Exception:
-            return None
-        if width <= 0 or height <= 0:
-            return None
-        scale = min(max_width / width, max_height / height, 1.0)
-        return (max(1, int(width * scale)), max(1, int(height * scale)))
 
     def _prepare_preview_image(
         self,
@@ -1296,7 +1333,7 @@ class SearchResultCardRenderer:
         image_bytes = self.preview_bytes.get(image_id)
         if not image_bytes:
             return None
-        measured = self._measure_preview_size(
+        measured = _measure_preview_size(
             image_bytes,
             max_width=max_width,
             max_height=max_height,
@@ -1316,86 +1353,7 @@ class SearchResultCardRenderer:
         except Exception:
             return None
 
-    def _paste_rounded_image(
-        self,
-        image: Image.Image,
-        preview: Image.Image,
-        origin: tuple[int, int],
-        *,
-        radius: int,
-    ) -> None:
-        mask = Image.new("L", preview.size, 0)
-        mask_draw = ImageDraw.Draw(mask)
-        mask_draw.rounded_rectangle(
-            (0, 0, preview.width, preview.height),
-            radius=radius,
-            fill=255,
-        )
-        image.paste(preview, origin, mask)
-
-    def _field_label(self, field: str, locale: LocaleCode) -> str:
-        return {
-            "all": tr(locale, "wordbank.search_card.field.all"),
-            "trigger": tr(locale, "wordbank.search_card.field.trigger"),
-            "response": tr(locale, "wordbank.search_card.field.response"),
-        }.get(field, field)
-
-    def _column_width(self) -> int:
-        return int((CARD_WIDTH - CARD_PADDING_X * 2 - CARD_COLUMN_GAP) / CARD_COLUMNS)
-
-    def _draw_surface_panel(
-        self,
-        draw: ImageDraw.ImageDraw,
-        *,
-        bbox: tuple[int, int, int, int],
-        radius: int,
-        fill: str,
-        outline: str,
-    ) -> None:
-        draw.rounded_rectangle(
-            bbox,
-            radius=radius,
-            fill=fill,
-        )
-        if outline:
-            draw.rounded_rectangle(
-                bbox,
-                radius=radius,
-                outline=outline,
-                width=1,
-            )
-
-    def _shade_color(self, color: str, factor: float) -> str:
-        red, green, blue = ImageColor.getrgb(color)[:3]
-        red_value = max(0, min(255, int(red * factor)))
-        green_value = max(0, min(255, int(green * factor)))
-        blue_value = max(0, min(255, int(blue * factor)))
-        return f"#{red_value:02X}{green_value:02X}{blue_value:02X}"
-
-    def _mix_color(self, color_a: str, color_b: str, ratio_b: float) -> str:
-        red_a, green_a, blue_a = ImageColor.getrgb(color_a)[:3]
-        red_b, green_b, blue_b = ImageColor.getrgb(color_b)[:3]
-        ratio = max(0.0, min(1.0, ratio_b))
-        red = int(red_a * (1 - ratio) + red_b * ratio)
-        green = int(green_a * (1 - ratio) + green_b * ratio)
-        blue = int(blue_a * (1 - ratio) + blue_b * ratio)
-        return f"#{red:02X}{green:02X}{blue:02X}"
-
     # Compatibility helpers kept for tests and local renderer inspection.
-    def _fold_hint(self, item: WordbankSearchItem, locale: LocaleCode) -> str:
-        return fold_hint(item, locale)
-
-    def _has_folded_preview(self, item: WordbankSearchItem) -> bool:
-        return has_folded_preview(item)
-
-    def _folded_preview_block_height(self) -> int:
-        return CARD_FOLDED_HEIGHT
-
-    def _load_font(self, size: int) -> TreemapFont:
-        try:
-            return ImageFont.truetype(MAPLE_FONT_PATH, size)
-        except Exception:
-            return ImageFont.load_default()
 
 
 def render_search_results_card_bytes(

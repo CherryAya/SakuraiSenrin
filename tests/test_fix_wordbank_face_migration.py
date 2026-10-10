@@ -11,6 +11,7 @@ from scripts.fix_wordbank_face_migration import (
 )
 from src.plugins.wordbank.database.instances import wordbank_main_db
 from src.plugins.wordbank.database.repo import WordbankRepository
+from src.plugins.wordbank.database.types import WordbankResponseSpec
 from src.plugins.wordbank.message_model import (
     shape_from_payload,
     shape_from_text,
@@ -28,21 +29,23 @@ async def test_repair_wordbank_face_migration_converts_legacy_face_atoms(
     repository = WordbankRepository()
     await repository.init_all_tables()
     await repository.create_or_append_response(
-        trigger_shape=shape_from_text("触发"),
-        response_shape=shape_from_text("响应"),
-        rule={},
-        scope="all_groups",
-        priority=1,
-        trigger_probability=1.0,
-        weight=1,
-        group_id="",
-        created_by="10001",
-        status="approved",
-        enabled=1,
-        approved_by="",
-        deleted_at=0,
-        created_at=1,
-        updated_at=1,
+        WordbankResponseSpec(
+            trigger_shape=shape_from_text("触发"),
+            response_shape=shape_from_text("响应"),
+            rule={},
+            scope="all_groups",
+            priority=1,
+            trigger_probability=1.0,
+            weight=1,
+            group_id="",
+            created_by="10001",
+            status="approved",
+            enabled=1,
+            approved_by="",
+            deleted_at=0,
+            created_at=1,
+            updated_at=1,
+        )
     )
     db_path = wordbank_main_db.base_dir / wordbank_main_db.filename
     legacy_payload = '[{"kind":"text","text":"[face:1]"}]'

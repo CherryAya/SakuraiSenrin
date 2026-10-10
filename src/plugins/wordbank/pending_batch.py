@@ -13,14 +13,20 @@ from src.lib.message_plan import (
     render_delivery_plan_messages,
 )
 from src.lib.reply_router import record_reply_context_from_send_result
-from src.plugins.wordbank.database.types import WordbankSearchItem
+from src.plugins.wordbank.database.types import (
+    WordbankMessageRefSpec,
+    WordbankSearchItem,
+)
 from src.plugins.wordbank.handlers.approval import (
     _build_wordbank_approval_reply_context_spec,
     extract_sent_message_id,
 )
 from src.plugins.wordbank.handlers.mutation import build_mutation_actor
 from src.plugins.wordbank.handlers.parsers import actor_can_review, parse_search_args
-from src.plugins.wordbank.handlers.rendering import build_pending_item_plan_entries
+from src.plugins.wordbank.handlers.rendering import (
+    PendingItemSpec,
+    build_pending_item_plan_entries,
+)
 from src.plugins.wordbank.services.core import WordbankService
 from src.plugins.wordbank.services.media import WordbankMediaService
 
@@ -68,24 +74,26 @@ async def _build_pending_detail_message(
     media_service: WordbankMediaService,
 ) -> tuple[MessagePlanInput, ...]:
     return await build_pending_item_plan_entries(
-        entry_id=_response_item_id(item),
-        scope=item.scope,
-        trigger_text=item.trigger_text,
-        response_text=item.response_text,
-        created_by=item.created_by,
-        created_at=item.created_at,
-        probability=item.probability,
-        weight=item.weight,
-        rule=item.rule,
-        trigger_shape=item.trigger_shape,
-        response_shape=item.response_shape,
+        PendingItemSpec(
+            entry_id=_response_item_id(item),
+            scope=item.scope,
+            trigger_text=item.trigger_text,
+            response_text=item.response_text,
+            created_by=item.created_by,
+            created_at=item.created_at,
+            probability=item.probability,
+            weight=item.weight,
+            rule=item.rule,
+            trigger_shape=item.trigger_shape,
+            response_shape=item.response_shape,
+            response_mode=item.response_mode,
+            forward_node_count=item.forward_node_count,
+        ),
         locale=locale,
         media_service=media_service,
         prefix="",
         index=index,
-        response_mode=item.response_mode,
         forward_source_message_id=item.forward_source_message_id,
-        forward_node_count=item.forward_node_count,
     )
 
 
@@ -169,16 +177,18 @@ async def send_pending_entries_review(
     message_id = extract_sent_message_id(send_result)
     if message_id is not None:
         await service.record_message_ref(
-            ref_kind="approval",
-            message_id=message_id,
-            trigger_group_id=items[0].trigger_group_id,
-            response_item_id=_response_item_id(items[0]),
-            group_id=str(getattr(event, "group_id", "") or ""),
-            user_id=str(event.user_id),
-            source_message_id=str(getattr(event, "message_id", "") or ""),
-            context_type="pending_batch",
-            message_type="approval_batch",
-            group_ids=tuple(_response_item_id(item) for item in items),
+            spec=WordbankMessageRefSpec(
+                ref_kind="approval",
+                message_id=message_id,
+                trigger_group_id=items[0].trigger_group_id,
+                response_item_id=_response_item_id(items[0]),
+                group_id=str(getattr(event, "group_id", "") or ""),
+                user_id=str(event.user_id),
+                source_message_id=str(getattr(event, "message_id", "") or ""),
+                context_type="pending_batch",
+                message_type="approval_batch",
+                group_ids=tuple(_response_item_id(item) for item in items),
+            )
         )
         fallback_messages = render_delivery_plan_messages(
             DeliveryPlan(

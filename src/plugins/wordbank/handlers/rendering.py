@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping, MutableMapping
-from dataclasses import replace
+from dataclasses import dataclass, replace
 import math
 
 from nonebot.adapters.onebot.v11 import Message
@@ -260,22 +260,24 @@ async def build_pending_items_plan_entry(
         )
         blocks.extend(
             await build_pending_item_blocks(
-                entry_id=response_item_id,
-                scope=format_scope_label(item, locale=locale),
-                trigger_text=item.trigger_text,
-                response_text=item.response_text,
-                created_by=item.created_by,
-                created_at=item.created_at,
-                probability=item.probability,
-                weight=item.weight,
-                rule=item.rule,
-                trigger_shape=item.trigger_shape,
-                response_shape=item.response_shape,
+                PendingItemSpec(
+                    entry_id=response_item_id,
+                    scope=format_scope_label(item, locale=locale),
+                    trigger_text=item.trigger_text,
+                    response_text=item.response_text,
+                    created_by=item.created_by,
+                    created_at=item.created_at,
+                    probability=item.probability,
+                    weight=item.weight,
+                    rule=item.rule,
+                    trigger_shape=item.trigger_shape,
+                    response_shape=item.response_shape,
+                    response_mode=item.response_mode,
+                    forward_node_count=item.forward_node_count,
+                ),
                 locale=locale,
                 media_service=media_service,
                 index=index,
-                response_mode=item.response_mode,
-                forward_node_count=item.forward_node_count,
             )
         )
     if has_more:
@@ -293,30 +295,37 @@ async def build_pending_items_plan_entry(
     return MessagePlanEntry(blocks=tuple(blocks))
 
 
+@dataclass(slots=True, frozen=True)
+class PendingItemSpec:
+    """一条待审词条在渲染时需要的全部字段。"""
+
+    entry_id: int
+    scope: str
+    trigger_text: str
+    response_text: str
+    created_by: str
+    created_at: int
+    probability: float
+    weight: int
+    rule: dict[str, object] | None
+    trigger_shape: MessageShape | None
+    response_shape: MessageShape | None
+    response_mode: str | None = None
+    forward_node_count: int = 0
+
+
 async def build_pending_item_blocks(
+    spec: PendingItemSpec,
     *,
-    entry_id: int,
-    scope: str,
-    trigger_text: str,
-    response_text: str,
-    created_by: str,
-    created_at: int,
-    probability: float,
-    weight: int,
-    rule: dict[str, object] | None,
-    trigger_shape: MessageShape | None,
-    response_shape: MessageShape | None,
     locale: LocaleCode,
     media_service: WordbankMediaService,
     prefix: str = "\n",
     index: int | None = None,
-    response_mode: str | None = None,
-    forward_node_count: int = 0,
 ) -> tuple[MessagePlanBlock, ...]:
     blocks: list[MessagePlanBlock] = []
     leading = prefix
     for line in _build_pending_item_header_lines(
-        entry_id=entry_id,
+        entry_id=spec.entry_id,
         index=index,
         locale=locale,
     ):
@@ -326,8 +335,8 @@ async def build_pending_item_blocks(
     await _append_pending_shape_field_blocks(
         blocks,
         label=tr(locale, "wordbank.field.trigger_label"),
-        text=trigger_text,
-        shape=trigger_shape,
+        text=spec.trigger_text,
+        shape=spec.trigger_shape,
         media_service=media_service,
         locale=locale,
         prefix=leading,
@@ -335,74 +344,42 @@ async def build_pending_item_blocks(
     await _append_pending_shape_field_blocks(
         blocks,
         label=tr(locale, "wordbank.field.response_label"),
-        text=response_text,
-        shape=response_shape,
+        text=spec.response_text,
+        shape=spec.response_shape,
         media_service=media_service,
         locale=locale,
         prefix="\n",
-        response_mode=response_mode or "normal",
-        forward_node_count=forward_node_count,
+        response_mode=spec.response_mode or "normal",
+        forward_node_count=spec.forward_node_count,
     )
     leading = "\n"
-    for line in _build_pending_item_footer_lines(
-        created_at=created_at,
-        created_by=created_by,
-        probability=probability,
-        rule=rule,
-        scope=scope,
-        weight=weight,
-        locale=locale,
-    ):
+    for line in _build_pending_item_footer_lines(spec, locale=locale):
         blocks.append(TextBlock(f"{leading}{line}"))
         leading = "\n"
     return tuple(blocks)
 
 
 async def build_pending_item_plan_entries(
+    spec: PendingItemSpec,
     *,
-    entry_id: int,
-    scope: str,
-    trigger_text: str,
-    response_text: str,
-    created_by: str,
-    created_at: int,
-    probability: float,
-    weight: int,
-    rule: dict[str, object] | None,
-    trigger_shape: MessageShape | None,
-    response_shape: MessageShape | None,
     locale: LocaleCode,
     media_service: WordbankMediaService,
     prefix: str = "\n",
     index: int | None = None,
-    response_mode: str | None = None,
     forward_source_message_id: str | None = None,
-    forward_node_count: int = 0,
 ) -> tuple[MessagePlanInput, ...]:
     entries: list[MessagePlanInput] = [
         MessagePlanEntry(
             blocks=await build_pending_item_blocks(
-                entry_id=entry_id,
-                scope=scope,
-                trigger_text=trigger_text,
-                response_text=response_text,
-                created_by=created_by,
-                created_at=created_at,
-                probability=probability,
-                weight=weight,
-                rule=rule,
-                trigger_shape=trigger_shape,
-                response_shape=response_shape,
+                spec,
                 locale=locale,
                 media_service=media_service,
                 prefix=prefix,
                 index=index,
-                response_mode=response_mode,
-                forward_node_count=forward_node_count,
             )
         )
     ]
-    if response_mode == "forward_whole" and forward_source_message_id:
+    if spec.response_mode == "forward_whole" and forward_source_message_id:
         entries.append(
             MessagePlanEntry.from_message(
                 Message((MessageSegment("forward", {"id": forward_source_message_id}),))
@@ -436,34 +413,29 @@ def _build_pending_item_header_lines(
 
 
 def _build_pending_item_footer_lines(
+    spec: PendingItemSpec,
     *,
-    created_at: int,
-    created_by: str,
-    probability: float,
-    rule: dict[str, object] | None,
-    scope: str,
-    weight: int,
     locale: LocaleCode,
 ) -> tuple[str, ...]:
     return (
         tr(
             locale,
             "wordbank.field.created_by",
-            value=created_by or "-",
+            value=spec.created_by or "-",
         ),
         tr(
             locale,
             "wordbank.field.created_at",
-            value=format_timestamp(created_at),
+            value=format_timestamp(spec.created_at),
         ),
-        tr(locale, "wordbank.field.scope", value=scope),
-        tr(locale, "wordbank.field.weight", value=weight),
+        tr(locale, "wordbank.field.scope", value=spec.scope),
+        tr(locale, "wordbank.field.weight", value=spec.weight),
         tr(
             locale,
             "wordbank.field.rule",
             value=format_rule_summary(
-                probability=probability,
-                rule=rule,
+                probability=spec.probability,
+                rule=spec.rule,
                 locale=locale,
             ),
         ),

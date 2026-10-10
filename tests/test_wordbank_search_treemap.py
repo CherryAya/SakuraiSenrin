@@ -22,6 +22,12 @@ from src.plugins.wordbank.treemap import (
     load_search_treemap_fixture,
     render_search_results_treemap_bytes,
 )
+from src.plugins.wordbank.treemap.response_layout import (
+    _compute_response_card_vertical_layout,
+    _dual_response_rects,
+    _single_text_layout_width,
+    _single_text_line_gap,
+)
 
 FIXTURES_ROOT = Path(__file__).parent / "plugins" / "wordbank" / "fixtures"
 
@@ -471,14 +477,12 @@ def test_renderer_single_text_initial_font_size_boosts_narrow_tall_cards() -> No
 
 
 def test_renderer_reduces_layout_width_for_narrow_tall_single_text_cards() -> None:
-    renderer = SearchTreemapRenderer()
-
-    reduced = renderer._single_text_layout_width(  # pyright: ignore[reportPrivateUsage]
+    reduced = _single_text_layout_width(  # pyright: ignore[reportPrivateUsage]
         160,
         height_cap=260,
         text="晚安，不许复读",
     )
-    regular = renderer._single_text_layout_width(  # pyright: ignore[reportPrivateUsage]
+    regular = _single_text_layout_width(  # pyright: ignore[reportPrivateUsage]
         220,
         height_cap=180,
         text="晚安，不许复读",
@@ -497,9 +501,7 @@ def test_renderer_prefers_semantic_lines_for_short_punctuated_text() -> None:
 
 
 def test_renderer_keeps_full_layout_width_for_very_short_narrow_tall_text() -> None:
-    renderer = SearchTreemapRenderer()
-
-    width = renderer._single_text_layout_width(  # pyright: ignore[reportPrivateUsage]
+    width = _single_text_layout_width(  # pyright: ignore[reportPrivateUsage]
         160,
         height_cap=260,
         text="晚安呢！",
@@ -509,10 +511,8 @@ def test_renderer_keeps_full_layout_width_for_very_short_narrow_tall_text() -> N
 
 
 def test_renderer_adds_line_gap_for_narrow_tall_multi_line_text() -> None:
-    renderer = SearchTreemapRenderer()
-
     assert (
-        renderer._single_text_line_gap(  # pyright: ignore[reportPrivateUsage]
+        _single_text_line_gap(  # pyright: ignore[reportPrivateUsage]
             width=160,
             height_cap=260,
             text="晚安，不许复读",
@@ -726,7 +726,7 @@ def test_renderer_rejects_dual_response_layout_when_cards_do_not_fit() -> None:
             ),
         ),
     )
-    rects = renderer._dual_response_rects(  # pyright: ignore[reportPrivateUsage]
+    rects = _dual_response_rects(  # pyright: ignore[reportPrivateUsage]
         width=280,
         height=180,
     )
@@ -932,9 +932,7 @@ def test_renderer_measures_single_text_layout_height_for_card_estimate() -> None
 
 
 def test_renderer_vertical_layout_does_not_pin_single_text_metadata_to_bottom() -> None:
-    renderer = SearchTreemapRenderer()
-
-    layout = renderer._compute_response_card_vertical_layout(  # pyright: ignore[reportPrivateUsage]
+    layout = _compute_response_card_vertical_layout(  # pyright: ignore[reportPrivateUsage]
         y=20,
         height=260,
         width=180,
@@ -949,9 +947,7 @@ def test_renderer_vertical_layout_does_not_pin_single_text_metadata_to_bottom() 
 
 
 def test_renderer_vertical_layout_compacts_narrow_text_cards() -> None:
-    renderer = SearchTreemapRenderer()
-
-    regular = renderer._compute_response_card_vertical_layout(  # pyright: ignore[reportPrivateUsage]
+    regular = _compute_response_card_vertical_layout(  # pyright: ignore[reportPrivateUsage]
         y=20,
         height=300,
         width=220,
@@ -962,7 +958,7 @@ def test_renderer_vertical_layout_compacts_narrow_text_cards() -> None:
         content_mode="single_text",
         narrow_text_card=False,
     )
-    compact = renderer._compute_response_card_vertical_layout(  # pyright: ignore[reportPrivateUsage]
+    compact = _compute_response_card_vertical_layout(  # pyright: ignore[reportPrivateUsage]
         y=20,
         height=300,
         width=160,

@@ -13,6 +13,7 @@ from scripts import verify_wordbank_trigger_fix_plan as verify_script
 from scripts.migrations.wordbank_types import LegacyPgConfig
 from src.plugins.wordbank.database.instances import wordbank_main_db
 from src.plugins.wordbank.database.repo import WordbankRepository
+from src.plugins.wordbank.database.types import WordbankResponseSpec
 from src.plugins.wordbank.message_model import shape_from_text
 
 
@@ -53,21 +54,23 @@ async def _prepare_database(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
     repository = WordbankRepository()
     await repository.init_all_tables()
     await repository.create_or_append_response(
-        trigger_shape=shape_from_text("今天:好啊"),
-        response_shape=shape_from_text("晚安"),
-        rule={},
-        scope="all_groups",
-        priority=3,
-        trigger_probability=1.0,
-        weight=3,
-        group_id="",
-        created_by="10001",
-        status="approved",
-        enabled=1,
-        approved_by="",
-        deleted_at=0,
-        created_at=1,
-        updated_at=1,
+        WordbankResponseSpec(
+            trigger_shape=shape_from_text("今天:好啊"),
+            response_shape=shape_from_text("晚安"),
+            rule={},
+            scope="all_groups",
+            priority=3,
+            trigger_probability=1.0,
+            weight=3,
+            group_id="",
+            created_by="10001",
+            status="approved",
+            enabled=1,
+            approved_by="",
+            deleted_at=0,
+            created_at=1,
+            updated_at=1,
+        )
     )
     return db_path
 

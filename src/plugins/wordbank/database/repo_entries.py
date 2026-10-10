@@ -581,46 +581,17 @@ class WordbankRepositoryEntriesMixin:
         is_superuser: bool,
         allow_overwrite: bool = False,
     ) -> bool:
-        repo_self = cast("WordbankRepository", self)
-        now = get_current_time()
-        async with wordbank_main_db.write_session() as session:
-            response = await session.get(WordbankResponseItem, response_item_id)
-            if response is None or response.deleted_at != 0:
-                return False
-            if not allow_overwrite and response.status != "pending":
-                return False
-            if allow_overwrite and response.status not in {
-                "pending",
-                "approved",
-                "rejected",
-            }:
-                return False
-            group = await session.get(WordbankTriggerGroup, response.trigger_group_id)
-            if group is None or not self._group_allows_review(
-                group,
-                actor_group_id=actor_group_id,
-                can_moderate_group=can_moderate_group,
-                is_superuser=is_superuser,
-            ):
-                return False
-            previous_status = response.status
-            response.status = "approved"
-            response.enabled = 1
-            response.approved_by = actor_user_id
-            response.review_history_json = self._append_review_history_json(
-                response.review_history_json,
-                action="approve",
-                actor_user_id=actor_user_id,
-                created_at=now,
-                previous_status=previous_status,
-                overwritten=allow_overwrite and previous_status != "pending",
-            )
-            response.updated_at = now
-            await session.flush()
-            await repo_self._refresh_group_in_session(
-                session, response.trigger_group_id
-            )
-            return True
+        return await self._set_response_review_state(
+            response_item_id,
+            status="approved",
+            enabled=1,
+            action="approve",
+            actor_user_id=actor_user_id,
+            actor_group_id=actor_group_id,
+            can_moderate_group=can_moderate_group,
+            is_superuser=is_superuser,
+            allow_overwrite=allow_overwrite,
+        )
 
     async def reject_response_item(
         self,
@@ -631,6 +602,31 @@ class WordbankRepositoryEntriesMixin:
         can_moderate_group: bool,
         is_superuser: bool,
         allow_overwrite: bool = False,
+    ) -> bool:
+        return await self._set_response_review_state(
+            response_item_id,
+            status="rejected",
+            enabled=0,
+            action="reject",
+            actor_user_id=actor_user_id,
+            actor_group_id=actor_group_id,
+            can_moderate_group=can_moderate_group,
+            is_superuser=is_superuser,
+            allow_overwrite=allow_overwrite,
+        )
+
+    async def _set_response_review_state(
+        self,
+        response_item_id: int,
+        *,
+        status: str,
+        enabled: int,
+        action: str,
+        actor_user_id: str,
+        actor_group_id: str,
+        can_moderate_group: bool,
+        is_superuser: bool,
+        allow_overwrite: bool,
     ) -> bool:
         repo_self = cast("WordbankRepository", self)
         now = get_current_time()
@@ -655,12 +651,12 @@ class WordbankRepositoryEntriesMixin:
             ):
                 return False
             previous_status = response.status
-            response.status = "rejected"
-            response.enabled = 0
+            response.status = status
+            response.enabled = enabled
             response.approved_by = actor_user_id
             response.review_history_json = self._append_review_history_json(
                 response.review_history_json,
-                action="reject",
+                action=action,
                 actor_user_id=actor_user_id,
                 created_at=now,
                 previous_status=previous_status,

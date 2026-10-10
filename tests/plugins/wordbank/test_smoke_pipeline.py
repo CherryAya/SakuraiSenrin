@@ -39,6 +39,7 @@ from src.lib.utils.common import get_current_time
 from src.plugins import study as study_plugin
 from src.plugins import wordbank as wordbank_plugin
 from src.plugins.wordbank import lifecycle as lifecycle_module
+from src.plugins.wordbank.database.types import WordbankResponseSpec
 from src.plugins.wordbank.handlers import submission as wordbank_submission_handlers
 from src.plugins.wordbank.message_model import (
     MessageShape,
@@ -520,25 +521,27 @@ async def test_passive_invalid_call_count_window_does_not_break_matching(
         raw_rule={"scope": "current_group", "priority": 1},
     )
     await wordbank_service.repository.create_or_append_response(
-        trigger_shape=shape_from_text("?"),
-        response_shape=shape_from_text("脏规则响应"),
-        rule={
-            "roles": "member",
-            "call_count": {
-                "window_seconds": MAX_CALL_COUNT_WINDOW_SECONDS + 1,
-                "min": 3,
-                "max": 0,
+        WordbankResponseSpec(
+            trigger_shape=shape_from_text("?"),
+            response_shape=shape_from_text("脏规则响应"),
+            rule={
+                "roles": "member",
+                "call_count": {
+                    "window_seconds": MAX_CALL_COUNT_WINDOW_SECONDS + 1,
+                    "min": 3,
+                    "max": 0,
+                },
             },
-        },
-        scope="current_group",
-        priority=9,
-        trigger_probability=1.0,
-        weight=3,
-        group_id="20001",
-        created_by="10001",
-        status="approved",
-        enabled=1,
-        approved_by="10002",
+            scope="current_group",
+            priority=9,
+            trigger_probability=1.0,
+            weight=3,
+            group_id="20001",
+            created_by="10001",
+            status="approved",
+            enabled=1,
+            approved_by="10002",
+        )
     )
     await _cancel_pending_rebuild()
     wordbank_service._call_count_cache.clear()

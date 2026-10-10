@@ -17,6 +17,12 @@ from src.plugins.wordbank.database.instances import (
     wordbank_message_route_db,
 )
 from src.plugins.wordbank.database.repo import WordbankRepository
+from src.plugins.wordbank.database.types import (
+    WordbankMessageRefSpec as WordbankMessageRefSpec,
+)
+from src.plugins.wordbank.database.types import (
+    WordbankResponseSpec as WordbankResponseSpec,
+)
 from src.plugins.wordbank.database.types import WordbankSearchRequest
 from src.plugins.wordbank.message_model import (
     combine_shapes,
@@ -62,7 +68,9 @@ __all__ = [
     "Path",
     "RuleContext",
     "WordbankMediaService",
+    "WordbankMessageRefSpec",
     "WordbankRepository",
+    "WordbankResponseSpec",
     "WordbankSearchRequest",
     "WordbankService",
     "WritePolicy",

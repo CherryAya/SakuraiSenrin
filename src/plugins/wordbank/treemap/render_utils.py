@@ -20,6 +20,8 @@ if TYPE_CHECKING:
 _IMAGE_PLACEHOLDER_RE = re.compile(r"\s*\[图片x\d+\]\s*")
 
 # 渲染字体：truetype 优先，失败时回退 Pillow 默认位图字体
+from src.plugins.wordbank.text_layout import load_font, text_width
+
 type TreemapFont = ImageFont.FreeTypeFont | ImageFont.ImageFont
 
 
@@ -131,28 +133,12 @@ class SearchTreemapRenderUtilsMixin:
         return int(bbox[3] - bbox[1] + 4)
 
     def _text_width(self, text: str, font: TreemapFont) -> int:
-        return int(
-            ImageDraw.Draw(Image.new("RGB", (10, 10))).textlength(text, font=font)
-        )
+        return text_width(text, font)
 
     def _load_maple_font(self, size: int) -> TreemapFont:
         repo_self = cast("SearchTreemapRenderer", self)
-        if size not in repo_self._maple_font_cache:
-            try:
-                repo_self._maple_font_cache[size] = ImageFont.truetype(
-                    repo_self._maple_font_path, size
-                )
-            except Exception:
-                repo_self._maple_font_cache[size] = ImageFont.load_default()
-        return repo_self._maple_font_cache[size]
+        return load_font(size, repo_self._maple_font_path)
 
     def _load_lxgw_font(self, size: int) -> TreemapFont:
         repo_self = cast("SearchTreemapRenderer", self)
-        if size not in repo_self._lxgw_font_cache:
-            try:
-                repo_self._lxgw_font_cache[size] = ImageFont.truetype(
-                    repo_self._lxgw_font_path, size
-                )
-            except Exception:
-                repo_self._lxgw_font_cache[size] = ImageFont.load_default()
-        return repo_self._lxgw_font_cache[size]
+        return load_font(size, repo_self._lxgw_font_path)

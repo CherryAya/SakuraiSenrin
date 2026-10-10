@@ -21,8 +21,10 @@ from src.plugins.wordbank.database.types import (
     WordbankLogPayload,
     WordbankMessageRefKind,
     WordbankMessageRefRecord,
+    WordbankMessageRefSpec,
     WordbankRankPeriod,
     WordbankResponseItemRecord,
+    WordbankResponseSpec,
     WordbankSearchItem,
     WordbankSearchPage,
     WordbankSearchRequest,
@@ -117,6 +119,16 @@ class WordbankService:
     @property
     def index(self) -> RuntimeIndex:
         return self._index
+
+    def reset_runtime_state(self) -> None:
+        """清空运行时索引与缓存，供备份恢复后的重载使用。"""
+        if self._rebuild_task is not None and not self._rebuild_task.done():
+            self._rebuild_task.cancel()
+        self._rebuild_task = None
+        self._dirty_group_ids.clear()
+        self._call_count_cache.clear()
+        self._index = RuntimeIndex()
+        self._initialized = False
 
     async def initialize(self) -> None:
         if self._initialized:
@@ -305,18 +317,20 @@ class WordbankService:
             )
             return reused
         created = await self.repository.create_or_append_response(
-            trigger_shape=trigger_shape,
-            response_shape=response_shape,
-            rule=_rule_to_json(rule.rule),
-            scope=rule.scope,
-            priority=rule.priority,
-            trigger_probability=rule.probability,
-            weight=rule.weight,
-            group_id=normalized_group_id,
-            created_by=user_id,
-            response_mode=response_mode,
-            forward_source_message_id=forward_source_message_id,
-            forward_node_count=forward_node_count,
+            WordbankResponseSpec(
+                trigger_shape=trigger_shape,
+                response_shape=response_shape,
+                rule=_rule_to_json(rule.rule),
+                scope=rule.scope,
+                priority=rule.priority,
+                trigger_probability=rule.probability,
+                weight=rule.weight,
+                group_id=normalized_group_id,
+                created_by=user_id,
+                response_mode=response_mode,
+                forward_source_message_id=forward_source_message_id,
+                forward_node_count=forward_node_count,
+            )
         )
         self.mark_dirty(created.trigger_group_id)
         log_perf(
@@ -804,26 +818,23 @@ class WordbankService:
             response_item_deleted=False,
         )
 
-    async def record_message_ref(
-        self,
-        *,
-        ref_kind: WordbankMessageRefKind,
-        message_id: str,
-        trigger_group_id: int,
-        group_id: str,
-        user_id: str,
-        message_type: str,
-        trigger_variant_id: int = 0,
-        response_item_id: int = 0,
-        source_message_id: str = "",
-        context_type: str = "",
-        current_page: int = 1,
-        keyword: str = "",
-        field: str = "",
-        creator_id: str = "",
-        has_image: bool = False,
-        group_ids: Sequence[int] = (),
-    ) -> None:
+    async def record_message_ref(self, spec: WordbankMessageRefSpec) -> None:
+        ref_kind = spec.ref_kind
+        message_id = spec.message_id
+        trigger_group_id = spec.trigger_group_id
+        group_id = spec.group_id
+        user_id = spec.user_id
+        message_type = spec.message_type
+        trigger_variant_id = spec.trigger_variant_id
+        response_item_id = spec.response_item_id
+        source_message_id = spec.source_message_id
+        context_type = spec.context_type
+        current_page = spec.current_page
+        keyword = spec.keyword
+        field = spec.field
+        creator_id = spec.creator_id
+        has_image = spec.has_image
+        group_ids = spec.group_ids
         message_id = message_id.strip()
         if not message_id:
             return

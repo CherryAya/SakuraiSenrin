@@ -13,6 +13,9 @@ from typing import TYPE_CHECKING, cast
 from PIL import Image
 
 from .render_utils import TreemapFont
+from .response_layout import (
+    _single_text_line_gap,
+)
 
 if TYPE_CHECKING:
     from .service import SearchTreemapRenderer
@@ -183,7 +186,7 @@ class SearchTreemapFittersMixin:
             preferred_lines = 5
         fallback_fit: tuple[TreemapFont, list[str]] | None = None
         if manual_lines and max_width < 220 and max_height >= 220:
-            manual_gap = repo_self._single_text_line_gap(
+            manual_gap = _single_text_line_gap(
                 width=max_width,
                 height_cap=max_height,
                 text=normalized,

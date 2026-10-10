@@ -517,7 +517,7 @@ async def test_send_pending_approval_notice_sends_all_superusers_concurrently(
     assert sorted(targets) == ["1", "2"]
     assert record_message_ref.await_count == 2
     recorded_message_ids = [
-        call.kwargs["message_id"] for call in record_message_ref.await_args_list
+        call.kwargs["spec"].message_id for call in record_message_ref.await_args_list
     ]
     assert sorted(recorded_message_ids) == ["1", "2"]
 
@@ -791,9 +791,9 @@ async def test_send_pending_batch_approval_notice_records_pending_batch_context(
     first_message = render_message_plan_input(first_plan.messages[0])
     assert "待审核词条" in str(first_message)
     assert record_message_ref.await_count == 2
-    first_record = record_message_ref.await_args_list[0].kwargs
-    assert first_record["context_type"] == "pending_batch"
-    assert first_record["group_ids"] == (12, 23)
+    first_record = record_message_ref.await_args_list[0].kwargs["spec"]
+    assert first_record.context_type == "pending_batch"
+    assert first_record.group_ids == (12, 23)
 
 
 @pytest.mark.asyncio
@@ -912,8 +912,8 @@ async def test_record_batch_submission_uses_pending_context() -> None:
     record_message_ref.assert_awaited_once()
     await_args = record_message_ref.await_args
     assert await_args is not None
-    kwargs = await_args.kwargs
-    assert kwargs["message_id"] == "99"
-    assert kwargs["context_type"] == "pending_batch"
-    assert kwargs["message_type"] == "submission_batch"
-    assert kwargs["group_ids"] == (12, 23)
+    spec = await_args.kwargs["spec"]
+    assert spec.message_id == "99"
+    assert spec.context_type == "pending_batch"
+    assert spec.message_type == "submission_batch"
+    assert spec.group_ids == (12, 23)

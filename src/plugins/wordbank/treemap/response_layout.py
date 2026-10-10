@@ -24,38 +24,143 @@ if TYPE_CHECKING:
     from .service import SearchTreemapRenderer
 
 
-class SearchTreemapResponseLayoutMixin:
-    def _dual_response_rects(
-        self,
-        *,
-        width: int,
-        height: int,
-    ) -> tuple[TreemapRect, TreemapRect] | None:
-        if width <= 0 or height <= 0:
-            return None
-        gap = 8
-        if width >= max(320, height + 80):
-            card_width = max(1, (width - gap) // 2)
-            return (
-                TreemapRect(x=0, y=0, width=card_width, height=height),
-                TreemapRect(
-                    x=card_width + gap,
-                    y=0,
-                    width=max(1, width - card_width - gap),
-                    height=height,
-                ),
-            )
-        card_height = max(1, (height - gap) // 2)
+def _single_text_line_gap(
+    *,
+    width: int,
+    height_cap: int,
+    text: str,
+    line_count: int,
+) -> int:
+    if width < 220 and height_cap >= 220 and len(text.strip()) >= 6 and line_count >= 2:
+        return 4
+    return 0
+
+
+def _single_text_layout_width(
+    width: int,
+    *,
+    height_cap: int,
+    text: str,
+) -> int:
+    if width < 220 and height_cap >= 220 and 5 < len(text.strip()) <= 10:
+        return max(1, int(width * 0.84))
+    return width
+
+
+def _compute_response_card_vertical_layout(
+    *,
+    y: int,
+    height: int,
+    width: int,
+    pad: int,
+    content_height: int,
+    meta_height: int,
+    meta_gap: int,
+    content_mode: str,
+    narrow_text_card: bool = False,
+) -> ResponseCardVerticalLayout:
+    inner_height = max(1, height - pad * 2)
+    divider_gap = 2 if narrow_text_card else (8 if inner_height >= 118 else 6)
+    max_content_height = max(1, inner_height - meta_height - meta_gap - divider_gap)
+    clipped_content_height = min(max_content_height, max(1, content_height))
+    block_height = clipped_content_height + divider_gap + meta_gap + meta_height
+    spare_height = max(0, inner_height - block_height)
+    bias = {
+        "single_text": 0.52,
+        "text_short": 0.44,
+        "text": 0.27,
+        "mixed": 0.20,
+        "image": 0.16,
+    }.get(content_mode, 0.24)
+    if content_mode == "single_text" and height >= max(240, width + 56):
+        bias = 0.66 if narrow_text_card else 0.60
+    top_offset = round(spare_height * bias)
+    content_y = y + pad + top_offset
+    divider_y = content_y + clipped_content_height + divider_gap - 2
+    meta_y = divider_y + meta_gap
+    return ResponseCardVerticalLayout(
+        content_y=content_y,
+        content_height=clipped_content_height,
+        divider_y=divider_y,
+        meta_y=meta_y,
+    )
+
+
+def _single_text_layout_height_cap(width: int, *, text: str) -> int:
+    if width < 120:
+        base = 96
+    elif width < 168:
+        base = 136
+    elif width < 224:
+        base = 146
+    else:
+        base = 236
+    if len(text.strip()) >= 18:
+        base += 18
+    elif len(text.strip()) <= 8:
+        base += 64
+    return base
+
+
+def _layout_text_height_cap(width: int, *, has_image: bool, text: str) -> int:
+    if width < 120:
+        base = 88
+    elif width < 168:
+        base = 108
+    elif width < 224:
+        base = 132
+    else:
+        base = 156
+    if not has_image:
+        base += 20
+    if len(text.strip()) >= 28:
+        base += 16
+    return base
+
+
+def _estimate_card_flex_weight(
+    response: SearchTreemapResponseCard,
+    estimated_height: int,
+) -> int:
+    segment_count = len(response.ordered_segments) or 1
+    text_weight = max(1, len(response.visible_text.strip()) // 10)
+    image_weight = 2 if response.has_image else 0
+    base_weight = max(1, estimated_height // 48)
+    return base_weight + segment_count + text_weight + image_weight
+
+
+def _dual_response_rects(
+    *,
+    width: int,
+    height: int,
+) -> tuple[TreemapRect, TreemapRect] | None:
+    if width <= 0 or height <= 0:
+        return None
+    gap = 8
+    if width >= max(320, height + 80):
+        card_width = max(1, (width - gap) // 2)
         return (
-            TreemapRect(x=0, y=0, width=width, height=card_height),
+            TreemapRect(x=0, y=0, width=card_width, height=height),
             TreemapRect(
-                x=0,
-                y=card_height + gap,
-                width=width,
-                height=max(1, height - card_height - gap),
+                x=card_width + gap,
+                y=0,
+                width=max(1, width - card_width - gap),
+                height=height,
             ),
         )
+    card_height = max(1, (height - gap) // 2)
+    return (
+        TreemapRect(x=0, y=0, width=width, height=card_height),
+        TreemapRect(
+            x=0,
+            y=card_height + gap,
+            width=width,
+            height=max(1, height - card_height - gap),
+        ),
+    )
 
+
+class SearchTreemapResponseLayoutMixin:
     def _can_use_dual_response_layout(
         self,
         *,
@@ -207,7 +312,7 @@ class SearchTreemapResponseLayoutMixin:
             weights = [
                 max(
                     1,
-                    self._estimate_card_flex_weight(responses[item_index], rect.height),
+                    _estimate_card_flex_weight(responses[item_index], rect.height),
                 )
                 for item_index, rect in entries
             ]
@@ -251,17 +356,6 @@ class SearchTreemapResponseLayoutMixin:
             expanded.extend(column_expanded)
         expanded.sort(key=lambda item: (item[1].y, item[1].x))
         return expanded
-
-    def _estimate_card_flex_weight(
-        self,
-        response: SearchTreemapResponseCard,
-        estimated_height: int,
-    ) -> int:
-        segment_count = len(response.ordered_segments) or 1
-        text_weight = max(1, len(response.visible_text.strip()) // 10)
-        image_weight = 2 if response.has_image else 0
-        base_weight = max(1, estimated_height // 48)
-        return base_weight + segment_count + text_weight + image_weight
 
     def _estimate_response_card_height(
         self,
@@ -398,19 +492,19 @@ class SearchTreemapResponseLayoutMixin:
         repo_self = cast("SearchTreemapRenderer", self)
         single_text = self._single_text_response_text(response, locale)
         if single_text is not None:
-            layout_width = self._single_text_layout_width(
+            layout_width = _single_text_layout_width(
                 width,
-                height_cap=self._single_text_layout_height_cap(width, text=single_text),
+                height_cap=_single_text_layout_height_cap(width, text=single_text),
                 text=single_text,
             )
             layout_font, lines = repo_self._fit_single_text_response_layout(
                 single_text,
                 max_width=layout_width,
-                max_height=self._single_text_layout_height_cap(width, text=single_text),
+                max_height=_single_text_layout_height_cap(width, text=single_text),
             )
-            line_gap = self._single_text_line_gap(
+            line_gap = _single_text_line_gap(
                 width=width,
-                height_cap=self._single_text_layout_height_cap(width, text=single_text),
+                height_cap=_single_text_layout_height_cap(width, text=single_text),
                 text=single_text,
                 line_count=len(lines),
             )
@@ -464,42 +558,10 @@ class SearchTreemapResponseLayoutMixin:
         fitted_font, lines = repo_self._fit_lxgw_text_block_layout(
             text,
             max_width=width,
-            max_height=self._layout_text_height_cap(
-                width, has_image=has_image, text=text
-            ),
+            max_height=_layout_text_height_cap(width, has_image=has_image, text=text),
             preferred_size=preferred_size,
         )
         return len(lines) * repo_self._line_height(fitted_font)
-
-    def _layout_text_height_cap(self, width: int, *, has_image: bool, text: str) -> int:
-        if width < 120:
-            base = 88
-        elif width < 168:
-            base = 108
-        elif width < 224:
-            base = 132
-        else:
-            base = 156
-        if not has_image:
-            base += 20
-        if len(text.strip()) >= 28:
-            base += 16
-        return base
-
-    def _single_text_layout_height_cap(self, width: int, *, text: str) -> int:
-        if width < 120:
-            base = 96
-        elif width < 168:
-            base = 136
-        elif width < 224:
-            base = 146
-        else:
-            base = 236
-        if len(text.strip()) >= 18:
-            base += 18
-        elif len(text.strip()) <= 8:
-            base += 64
-        return base
 
     def _estimate_layout_image_height(
         self,
@@ -563,45 +625,6 @@ class SearchTreemapResponseLayoutMixin:
             has_image_preview=False,
         )
         return "text_short" if len(normalized) <= 24 else "text"
-
-    def _compute_response_card_vertical_layout(
-        self,
-        *,
-        y: int,
-        height: int,
-        width: int,
-        pad: int,
-        content_height: int,
-        meta_height: int,
-        meta_gap: int,
-        content_mode: str,
-        narrow_text_card: bool = False,
-    ) -> ResponseCardVerticalLayout:
-        inner_height = max(1, height - pad * 2)
-        divider_gap = 2 if narrow_text_card else (8 if inner_height >= 118 else 6)
-        max_content_height = max(1, inner_height - meta_height - meta_gap - divider_gap)
-        clipped_content_height = min(max_content_height, max(1, content_height))
-        block_height = clipped_content_height + divider_gap + meta_gap + meta_height
-        spare_height = max(0, inner_height - block_height)
-        bias = {
-            "single_text": 0.52,
-            "text_short": 0.44,
-            "text": 0.27,
-            "mixed": 0.20,
-            "image": 0.16,
-        }.get(content_mode, 0.24)
-        if content_mode == "single_text" and height >= max(240, width + 56):
-            bias = 0.66 if narrow_text_card else 0.60
-        top_offset = round(spare_height * bias)
-        content_y = y + pad + top_offset
-        divider_y = content_y + clipped_content_height + divider_gap - 2
-        meta_y = divider_y + meta_gap
-        return ResponseCardVerticalLayout(
-            content_y=content_y,
-            content_height=clipped_content_height,
-            divider_y=divider_y,
-            meta_y=meta_y,
-        )
 
     def _choose_response_meta_font(
         self,
@@ -671,30 +694,13 @@ class SearchTreemapResponseLayoutMixin:
         )
         return text or None
 
-    def _single_text_layout_width(
-        self,
-        width: int,
-        *,
-        height_cap: int,
-        text: str,
-    ) -> int:
-        if width < 220 and height_cap >= 220 and 5 < len(text.strip()) <= 10:
-            return max(1, int(width * 0.84))
-        return width
 
-    def _single_text_line_gap(
-        self,
-        *,
-        width: int,
-        height_cap: int,
-        text: str,
-        line_count: int,
-    ) -> int:
-        if (
-            width < 220
-            and height_cap >= 220
-            and len(text.strip()) >= 6
-            and line_count >= 2
-        ):
-            return 4
-        return 0
+__all__ = [
+    "_compute_response_card_vertical_layout",
+    "_dual_response_rects",
+    "_estimate_card_flex_weight",
+    "_layout_text_height_cap",
+    "_single_text_layout_height_cap",
+    "_single_text_layout_width",
+    "_single_text_line_gap",
+]

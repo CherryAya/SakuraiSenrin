@@ -13,6 +13,8 @@ from src.plugins.wordbank.database.types import (
     WordbankSearchPreviewResponse,
 )
 from src.plugins.wordbank.handlers.search_card_helpers import (
+    fold_hint,
+    has_folded_preview,
     probability_chip_text,
     response_preview_items,
     summary_chips,
@@ -20,6 +22,7 @@ from src.plugins.wordbank.handlers.search_card_helpers import (
 )
 from src.plugins.wordbank.handlers.search_cards import (
     CARD_CHIP_HEIGHT,
+    CARD_FOLDED_HEIGHT,
     CARD_GROUP_BOTTOM_INSET,
     CARD_GROUP_INSET,
     CARD_HEADER_PANEL_PADDING_Y,
@@ -162,7 +165,6 @@ def test_render_search_results_card_supports_inline_preview_images() -> None:
 
 
 def test_search_card_renderer_adds_fold_hint_for_multi_response_group() -> None:
-    renderer = SearchResultCardRenderer()
     item = WordbankSearchItem(
         trigger_group_id=123,
         status="approved",
@@ -177,13 +179,13 @@ def test_search_card_renderer_adds_fold_hint_for_multi_response_group() -> None:
         matched_by="text:trigger",
     )
 
-    hint = renderer._fold_hint(item, "zh-CN")  # pyright: ignore[reportAttributeAccessIssue, reportPrivateUsage]
+    hint = fold_hint(item, "zh-CN")
 
     assert "本组共 5 条词条" in hint
     assert "前 3 条" in hint
     assert "详情123" in hint
-    assert renderer._has_folded_preview(item) is True  # pyright: ignore[reportAttributeAccessIssue, reportPrivateUsage]
-    assert renderer._folded_preview_block_height() > 0  # pyright: ignore[reportAttributeAccessIssue, reportPrivateUsage]
+    assert has_folded_preview(item) is True
+    assert CARD_FOLDED_HEIGHT > 0
 
 
 def test_response_preview_items_preserve_response_boundaries() -> None:

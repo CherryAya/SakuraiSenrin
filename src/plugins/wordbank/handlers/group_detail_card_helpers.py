@@ -27,6 +27,7 @@ from src.plugins.wordbank.services.presentation import (
     format_scope_label,
     format_status_label,
 )
+from src.plugins.wordbank.text_layout import text_width
 from src.plugins.wordbank.treemap.render_utils import TreemapFont
 
 
@@ -90,15 +91,6 @@ def display_group_detail(detail: WordbankGroupDetail) -> WordbankGroupDetail:
     cloned = shallow_copy(detail)
     setattr(cloned, "responses", visible_responses)
     return cloned
-
-
-def line_height(font: TreemapFont) -> int:
-    bbox = ImageDraw.Draw(Image.new("RGB", (10, 10))).textbbox((0, 0), "Ag", font=font)
-    return int(bbox[3] - bbox[1] + 8)
-
-
-def text_width(text: str, font: TreemapFont) -> int:
-    return int(ImageDraw.Draw(Image.new("RGB", (10, 10))).textlength(text, font=font))
 
 
 def centered_text_origin(
