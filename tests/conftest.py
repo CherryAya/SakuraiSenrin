@@ -129,7 +129,7 @@ def _disable_real_plugin_loading(
     monkeypatch.setenv("ENVIRONMENT", "test")
 
 
-@pytest_asyncio.fixture(autouse=True)
+@pytest_asyncio.fixture(scope="session", autouse=True)
 async def _dispose_test_db_engines() -> AsyncIterator[None]:
     from src.lib.db.manager import db_manager
 

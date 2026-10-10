@@ -14,6 +14,7 @@ from src.lib.demo_theme import SENRIN_V3_WATER_IMAGE_THEME, WaterImageTheme
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.utils.common import get_current_time
+from src.lib.utils.text_draw import draw_text_in_region
 
 SYS_FONT_NAME = MAPLE_FONT_NAME
 WATER_THEME = SENRIN_V3_WATER_IMAGE_THEME
@@ -101,7 +102,8 @@ def safe_hourly_counts(hourly_counts: list[int]) -> list[int]:
 def build_avatar_fallback(size: int, label: str, bg: str, fg: str) -> BuildImage:
     avatar = BuildImage.new("RGBA", (size, size), (0, 0, 0, 0))
     avatar.draw.ellipse((0, 0, size, size), fill=bg)
-    avatar.draw_text(
+    draw_text_in_region(
+        avatar,
         (0, 0, size, size),
         label,
         max_fontsize=max(14, int(size * 0.42)),
@@ -136,7 +138,8 @@ def draw_report_footer(
     )
     copyright_bottom = top + int(14 * scale)
     generated_at_bottom = top + int(28 * scale)
-    card.draw_text(
+    draw_text_in_region(
+        card,
         (0, top, width, copyright_bottom),
         f"© 2020-{footer_time.year} SakuraiSenrin",
         max_fontsize=int(10 * scale),
@@ -146,7 +149,8 @@ def draw_report_footer(
         valign="center",
         font_families=[SYS_FONT_NAME],
     )
-    card.draw_text(
+    draw_text_in_region(
+        card,
         (pad, copyright_bottom, width - pad, generated_at_bottom),
         tr(
             locale,
@@ -160,7 +164,8 @@ def draw_report_footer(
         valign="center",
         font_families=[SYS_FONT_NAME],
     )
-    card.draw_text(
+    draw_text_in_region(
+        card,
         (0, generated_at_bottom, width, top + footer_h),
         footer_text,
         max_fontsize=int(11 * scale),
@@ -287,7 +292,8 @@ def draw_hourly_histogram(
             (bx, by, bx + bar_w, y + chart_h), radius=max(2, int(3 * scale)), fill=fill
         )
         if hour in {0, 6, 12, 18, 23}:
-            card.draw_text(
+            draw_text_in_region(
+                card,
                 (
                     bx - int(6 * scale),
                     y + chart_h + int(4 * scale),
@@ -337,7 +343,8 @@ def draw_bucket_histogram(
         width=max(1, int(1 * scale)),
     )
     if caption:
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (x, y - int(14 * scale), x + w, y),
             caption,
             max_fontsize=int(10 * scale),
@@ -347,7 +354,8 @@ def draw_bucket_histogram(
             font_families=[SYS_FONT_NAME],
         )
     if show_scale_labels:
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (x - int(6 * scale), y - int(16 * scale), x + int(54 * scale), y),
             f"{max_count:,}",
             max_fontsize=int(9 * scale),
@@ -382,7 +390,8 @@ def draw_bucket_histogram(
                 int(24 * scale),
                 int(len(label_text) * 4.5 * scale),
             )
-            card.draw_text(
+            draw_text_in_region(
+                card,
                 (
                     max(x, bx - label_half_w),
                     y + chart_h + int(4 * scale),
@@ -598,7 +607,8 @@ def draw_dual_hourly_trend(
                 (px - dot_r, py - dot_r, px + dot_r, py + dot_r),
                 fill=fill,
             )
-            card.draw_text(
+            draw_text_in_region(
+                card,
                 (
                     px - int(8 * scale),
                     baseline_y + int(4 * scale),
@@ -665,7 +675,8 @@ def draw_group_rank_trend_chart(
             fill=mix_hex(axis_color, WATER_THEME.white, 0.22),
             width=1,
         )
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (
                 x,
                 tick_y - int(6 * scale),
@@ -688,7 +699,8 @@ def draw_group_rank_trend_chart(
     )
     for idx in label_indexes:
         px = plot_x + int((plot_w - 1) * idx / max(1, len(labels) - 1))
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (
                 px - int(20 * scale),
                 baseline_y + int(4 * scale),

@@ -10,6 +10,7 @@ from pil_utils import BuildImage
 
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
+from src.lib.utils.text_draw import draw_text_in_region
 from src.plugins.water.renderers.common import (
     SYS_FONT_NAME,
     format_rank,
@@ -259,7 +260,8 @@ def draw_history_rows(
                 fill=theme.history_divider,  # type: ignore[attr-defined]
                 width=max(1, int(1.2 * scale)),
             )
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (
                 pad + int(18 * scale),
                 row_top + int(3 * scale),
@@ -273,7 +275,8 @@ def draw_history_rows(
             halign="left",
             font_families=[SYS_FONT_NAME],
         )
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (
                 width - pad - date_col_w,
                 row_top + int(3 * scale),

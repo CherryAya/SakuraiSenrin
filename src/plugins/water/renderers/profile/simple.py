@@ -13,6 +13,7 @@ from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.utils.common import get_current_time
 from src.lib.utils.img import QQAvatar
+from src.lib.utils.text_draw import draw_text_in_region
 from src.logger import logger
 from src.plugins.water.renderers.common import (
     SYS_FONT_NAME,
@@ -157,7 +158,8 @@ async def build_my_water_simple_image(
         )
         title_x = pad + int(12 * scale) + avatar_size + int(12 * scale)
         title_right = width - pad
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (title_x, y + int(8 * scale), title_right, y + int(30 * scale)),
             tr(locale, "water.profile.image.simple.title"),
             max_fontsize=int(22 * scale),
@@ -166,7 +168,8 @@ async def build_my_water_simple_image(
             halign="left",
             font_families=[SYS_FONT_NAME],
         )
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (title_x, y + int(30 * scale), title_right, y + int(52 * scale)),
             f"{username} | {data.group_name}",
             max_fontsize=int(14 * scale),
@@ -175,7 +178,8 @@ async def build_my_water_simple_image(
             halign="left",
             font_families=[SYS_FONT_NAME],
         )
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (title_x, y + int(52 * scale), title_right, y + int(72 * scale)),
             tr(locale, "water.profile.image.matrix", matrix_id=data.matrix_id),
             max_fontsize=int(11 * scale),
@@ -202,7 +206,8 @@ async def build_my_water_simple_image(
             (chip_x + int(4 * scale), chip_y + int(3 * scale)),
             alpha=True,
         )
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (
                 chip_x + int(30 * scale),
                 chip_y + int(2 * scale),
@@ -232,7 +237,8 @@ async def build_my_water_simple_image(
             tone=theme.gloss_profile_tone,
             strength=0.72,
         )
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (
                 pad + int(18 * scale),
                 y + int(6 * scale),
@@ -297,7 +303,8 @@ async def build_my_water_simple_image(
                 fill=bg,
             )
             pct = f"{int(max(0.0, min(1.0, ratio)) * 100)}%"
-            card.draw_text(
+            draw_text_in_region(
+                card,
                 (
                     block_x + int(10 * scale),
                     by + int(6 * scale),
@@ -311,7 +318,8 @@ async def build_my_water_simple_image(
                 halign="left",
                 font_families=[SYS_FONT_NAME],
             )
-            card.draw_text(
+            draw_text_in_region(
+                card,
                 (
                     block_x + block_w - int(80 * scale),
                     by + int(6 * scale),
@@ -325,7 +333,8 @@ async def build_my_water_simple_image(
                 halign="right",
                 font_families=[SYS_FONT_NAME],
             )
-            card.draw_text(
+            draw_text_in_region(
+                card,
                 (
                     block_x + int(10 * scale),
                     by + int(24 * scale),
@@ -365,7 +374,8 @@ async def build_my_water_simple_image(
             tone=theme.gloss_profile_tone,
             strength=0.72,
         )
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (
                 pad + int(18 * scale),
                 y + int(6 * scale),
@@ -380,7 +390,8 @@ async def build_my_water_simple_image(
             font_families=[SYS_FONT_NAME],
         )
         meta_top = y + ach_title_h + int(6 * scale)
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (
                 pad + int(18 * scale),
                 meta_top,
@@ -413,7 +424,8 @@ async def build_my_water_simple_image(
         chip_gap_x = int(8 * scale)
         chip_w = int((width - pad * 2 - int(36 * scale) - chip_gap_x) / 2)
         if not preview_items:
-            card.draw_text(
+            draw_text_in_region(
+                card,
                 (
                     pad + int(18 * scale),
                     chip_top,
@@ -438,7 +450,8 @@ async def build_my_water_simple_image(
                     radius=int(8 * scale),
                     fill=theme.achievement_chip_bg,
                 )
-                card.draw_text(
+                draw_text_in_region(
+                    card,
                     (
                         cx + int(8 * scale),
                         cy + int(2 * scale),
@@ -468,7 +481,8 @@ async def build_my_water_simple_image(
             tone=theme.gloss_profile_soft_tone,
             strength=0.72,
         )
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (
                 pad + int(18 * scale),
                 y + int(6 * scale),
@@ -506,7 +520,8 @@ async def build_my_water_simple_image(
                 radius=int(10 * scale),
                 fill=chip_bg if idx % 2 == 0 else chip_alt_bg,
             )
-            card.draw_text(
+            draw_text_in_region(
+                card,
                 (
                     chip_x + int(10 * scale),
                     cy + int(4 * scale),
@@ -520,7 +535,8 @@ async def build_my_water_simple_image(
                 halign="left",
                 font_families=[SYS_FONT_NAME],
             )
-            card.draw_text(
+            draw_text_in_region(
+                card,
                 (
                     chip_x + chip_w - int(80 * scale),
                     cy + int(4 * scale),
@@ -550,7 +566,8 @@ async def build_my_water_simple_image(
             tone=theme.gloss_profile_tone,
             strength=0.72,
         )
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (
                 pad + int(18 * scale),
                 y + int(6 * scale),
@@ -565,7 +582,8 @@ async def build_my_water_simple_image(
             font_families=[SYS_FONT_NAME],
         )
         if not history_show:
-            card.draw_text(
+            draw_text_in_region(
+                card,
                 (
                     pad + int(18 * scale),
                     y + int(28 * scale),

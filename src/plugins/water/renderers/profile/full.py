@@ -13,6 +13,7 @@ from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.utils.common import get_current_time
 from src.lib.utils.img import QQAvatar
+from src.lib.utils.text_draw import draw_text_in_region
 from src.logger import logger
 from src.plugins.water.renderers.common import (
     SYS_FONT_NAME,
@@ -148,7 +149,8 @@ async def build_my_water_image(
             alpha=True,
         )
         title_x = pad + int(112 * scale)
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (title_x, y + int(10 * scale), width - pad, y + int(42 * scale)),
             tr(locale, "water.profile.image.full.title"),
             max_fontsize=int(26 * scale),
@@ -157,7 +159,8 @@ async def build_my_water_image(
             halign="left",
             font_families=[SYS_FONT_NAME],
         )
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (title_x, y + int(40 * scale), width - pad, y + int(72 * scale)),
             f"{username}  |  {data.group_name}",
             max_fontsize=int(15 * scale),
@@ -166,7 +169,8 @@ async def build_my_water_image(
             halign="left",
             font_families=[SYS_FONT_NAME],
         )
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (title_x, y + int(68 * scale), width - pad, y + int(96 * scale)),
             tr(locale, "water.profile.image.current_matrix", matrix_id=data.matrix_id),
             max_fontsize=int(12 * scale),
@@ -176,7 +180,8 @@ async def build_my_water_image(
             font_families=[SYS_FONT_NAME],
         )
         group_block_top = y + int(96 * scale)
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (
                 title_x,
                 group_block_top,
@@ -215,7 +220,8 @@ async def build_my_water_image(
                     (chip_x + int(4 * scale), chip_y + int(3 * scale)),
                     alpha=True,
                 )
-            card.draw_text(
+            draw_text_in_region(
+                card,
                 (
                     chip_x + int(30 * scale),
                     chip_y + int(2 * scale),
@@ -248,7 +254,8 @@ async def build_my_water_image(
         )
         progress_metrics = compute_profile_progress_metrics(data)
 
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (
                 pad + int(18 * scale),
                 y + int(8 * scale),
@@ -288,7 +295,8 @@ async def build_my_water_image(
             radius=int(8 * scale),
             fill=theme.global_panel,
         )
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (
                 left_metric_x + int(8 * scale),
                 metric_top + int(5 * scale),
@@ -308,7 +316,8 @@ async def build_my_water_image(
             halign="center",
             font_families=[SYS_FONT_NAME],
         )
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (
                 right_metric_x + int(8 * scale),
                 metric_top + int(5 * scale),
@@ -328,7 +337,8 @@ async def build_my_water_image(
             halign="center",
             font_families=[SYS_FONT_NAME],
         )
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (
                 pad + int(20 * scale),
                 y + int(72 * scale),
@@ -357,7 +367,8 @@ async def build_my_water_image(
             bg=chip_bg,
             fg=season,
         )
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (
                 pad + int(20 * scale),
                 y + int(114 * scale),
@@ -373,7 +384,8 @@ async def build_my_water_image(
         )
         chip_block_end = y + int(160 * scale)
         if not preview_items:
-            card.draw_text(
+            draw_text_in_region(
+                card,
                 (
                     pad + int(20 * scale),
                     y + int(134 * scale),
@@ -405,7 +417,8 @@ async def build_my_water_image(
                     radius=int(8 * scale),
                     fill=theme.achievement_chip_bg,
                 )
-                card.draw_text(
+                draw_text_in_region(
+                    card,
                     (
                         cx + int(10 * scale),
                         cy + int(2 * scale),
@@ -491,7 +504,8 @@ async def build_my_water_image(
             strength=0.8,
         )
 
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (
                 left_x + int(10 * scale),
                 exp_panel_top + int(3 * scale),
@@ -505,7 +519,8 @@ async def build_my_water_image(
             halign="left",
             font_families=[SYS_FONT_NAME],
         )
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (
                 right_x + int(10 * scale),
                 exp_panel_top + int(3 * scale),
@@ -524,7 +539,8 @@ async def build_my_water_image(
         for idx, (label, gap_value, ratio) in enumerate(global_progress_items):
             row_top = exp_rows_top + idx * exp_row_block
             pct = f"{int(max(0.0, min(1.0, ratio)) * 100)}%"
-            card.draw_text(
+            draw_text_in_region(
+                card,
                 (
                     left_x + int(10 * scale),
                     row_top,
@@ -538,7 +554,8 @@ async def build_my_water_image(
                 halign="left",
                 font_families=[SYS_FONT_NAME],
             )
-            card.draw_text(
+            draw_text_in_region(
+                card,
                 (
                     left_x + col_w - int(74 * scale),
                     row_top,
@@ -552,7 +569,8 @@ async def build_my_water_image(
                 halign="right",
                 font_families=[SYS_FONT_NAME],
             )
-            card.draw_text(
+            draw_text_in_region(
+                card,
                 (
                     left_x + int(10 * scale),
                     row_top + exp_title_h,
@@ -583,7 +601,8 @@ async def build_my_water_image(
         for idx, (label, gap_value, ratio) in enumerate(seasonal_progress_items):
             row_top = exp_rows_top + idx * exp_row_block
             pct = f"{int(max(0.0, min(1.0, ratio)) * 100)}%"
-            card.draw_text(
+            draw_text_in_region(
+                card,
                 (
                     right_x + int(10 * scale),
                     row_top,
@@ -597,7 +616,8 @@ async def build_my_water_image(
                 halign="left",
                 font_families=[SYS_FONT_NAME],
             )
-            card.draw_text(
+            draw_text_in_region(
+                card,
                 (
                     right_x + col_w - int(74 * scale),
                     row_top,
@@ -611,7 +631,8 @@ async def build_my_water_image(
                 halign="right",
                 font_families=[SYS_FONT_NAME],
             )
-            card.draw_text(
+            draw_text_in_region(
+                card,
                 (
                     right_x + int(10 * scale),
                     row_top + exp_title_h,
@@ -665,7 +686,8 @@ async def build_my_water_image(
             radius=int(3 * scale),
             fill=strong,
         )
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (
                 pad + int(18 * scale),
                 y + int(10 * scale),
@@ -776,7 +798,8 @@ async def build_my_water_image(
                 radius=int(10 * scale),
                 fill=chip_bg if idx % 2 == 0 else theme.left_chip_alt_bg,
             )
-            card.draw_text(
+            draw_text_in_region(
+                card,
                 (
                     lx + int(12 * scale),
                     ly + int(3 * scale),
@@ -790,7 +813,8 @@ async def build_my_water_image(
                 halign="left",
                 font_families=[SYS_FONT_NAME],
             )
-            card.draw_text(
+            draw_text_in_region(
+                card,
                 (
                     lx + int(12 * scale),
                     ly + int(14 * scale),
@@ -804,7 +828,8 @@ async def build_my_water_image(
                 halign="left",
                 font_families=[SYS_FONT_NAME],
             )
-            card.draw_text(
+            draw_text_in_region(
+                card,
                 (
                     lx + col_w - int(82 * scale),
                     ly + int(3 * scale),
@@ -827,7 +852,8 @@ async def build_my_water_image(
                 radius=int(10 * scale),
                 fill=chip_alt_bg if idx % 2 == 0 else theme.right_chip_alt_bg,
             )
-            card.draw_text(
+            draw_text_in_region(
+                card,
                 (
                     rx + int(12 * scale),
                     ry + int(3 * scale),
@@ -841,7 +867,8 @@ async def build_my_water_image(
                 halign="left",
                 font_families=[SYS_FONT_NAME],
             )
-            card.draw_text(
+            draw_text_in_region(
+                card,
                 (
                     rx + int(12 * scale),
                     ry + int(14 * scale),
@@ -855,7 +882,8 @@ async def build_my_water_image(
                 halign="left",
                 font_families=[SYS_FONT_NAME],
             )
-            card.draw_text(
+            draw_text_in_region(
+                card,
                 (
                     rx + col_w - int(82 * scale),
                     ry + int(3 * scale),
@@ -895,7 +923,8 @@ async def build_my_water_image(
             radius=int(3 * scale),
             fill=success,
         )
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (
                 pad + int(18 * scale),
                 y + int(10 * scale),
@@ -910,7 +939,8 @@ async def build_my_water_image(
             font_families=[SYS_FONT_NAME],
         )
         if not history_show:
-            card.draw_text(
+            draw_text_in_region(
+                card,
                 (
                     pad + int(18 * scale),
                     y + int(34 * scale),

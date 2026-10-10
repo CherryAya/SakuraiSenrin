@@ -13,6 +13,7 @@ from src.lib.consts import MAPLE_FONT_PATH
 from src.lib.demo_theme import WaterImageTheme
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
+from src.lib.utils.text_draw import draw_text_in_region
 from src.logger import logger
 
 from .common import (
@@ -294,7 +295,8 @@ def _render_compact_group_rank_insights(
     card.draw_rounded_rectangle(
         (x, y, x + w, y + h), radius=int(18 * scale), fill=theme.panel_soft_bg
     )
-    card.draw_text(
+    draw_text_in_region(
+        card,
         (
             x + int(18 * scale),
             y + int(8 * scale),
@@ -323,7 +325,8 @@ def _render_compact_group_rank_insights(
             radius=int(12 * scale),
             fill=theme.rank_row_fill,
         )
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (
                 tile_x + int(10 * scale),
                 tile_y + int(8 * scale),
@@ -337,7 +340,8 @@ def _render_compact_group_rank_insights(
             halign="left",
             font_families=[WATER_THEME.white],
         )
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (
                 tile_x + int(10 * scale),
                 tile_y + int(18 * scale),
@@ -374,7 +378,8 @@ def _render_group_rank_share_panel(
     card.draw_rounded_rectangle(
         (x, y, x + w, y + h), radius=int(18 * scale), fill=theme.panel_soft_bg
     )
-    card.draw_text(
+    draw_text_in_region(
+        card,
         (
             x + int(18 * scale),
             y + int(8 * scale),
@@ -392,7 +397,8 @@ def _render_group_rank_share_panel(
         return
 
     focus_slice = next((item for item in slices if item.is_focus_group), slices[0])
-    card.draw_text(
+    draw_text_in_region(
+        card,
         (
             x + int(18 * scale),
             y + int(30 * scale),
@@ -507,7 +513,8 @@ def _render_group_rank_share_panel(
         item_gap = int(4 * scale)
         rank_left = dot_x + dot_size + item_gap
         rank_right = rank_left + int(16 * scale)
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (
                 rank_left,
                 item_y + int(5 * scale),
@@ -540,7 +547,8 @@ def _render_group_rank_share_panel(
             font=name_font,
             max_width=max(int(60 * scale), name_right - name_left),
         )
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (
                 name_left,
                 item_y + int(5 * scale),
@@ -567,7 +575,8 @@ def _render_group_rank_share_panel(
                 radius=int(8 * scale),
                 fill=mix_hex(theme.podium_gold_badge, theme.white, 0.7),
             )
-            card.draw_text(
+            draw_text_in_region(
+                card,
                 (
                     badge_left + int(4 * scale),
                     item_y + int(7 * scale),
@@ -582,7 +591,8 @@ def _render_group_rank_share_panel(
                 valign="center",
                 font_families=[WATER_THEME.white],
             )
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (
                 ratio_left,
                 item_y + int(5 * scale),
@@ -618,7 +628,8 @@ def _render_group_rank_trend_panel(
     card.draw_rounded_rectangle(
         (x, y, x + w, y + h), radius=int(18 * scale), fill=theme.panel_bg
     )
-    card.draw_text(
+    draw_text_in_region(
+        card,
         (
             x + int(18 * scale),
             y + int(8 * scale),
@@ -635,7 +646,8 @@ def _render_group_rank_trend_panel(
     if not data.group_rank_trend_labels or not trend_series:
         return
 
-    card.draw_text(
+    draw_text_in_region(
+        card,
         (
             x + int(18 * scale),
             y + int(30 * scale),
@@ -712,7 +724,8 @@ def _render_group_rank_trend_panel(
             font=legend_font,
             max_width=max(int(40 * scale), label_right - label_left),
         )
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (
                 label_left,
                 item_y + int(2 * scale),
@@ -849,7 +862,8 @@ def _build_water_group_report_image_sync(
         font=hero_title_font,
         max_width=width - pad * 2 - int(36 * scale),
     )
-    card.draw_text(
+    draw_text_in_region(
+        card,
         (
             pad + int(18 * scale),
             y + int(12 * scale),
@@ -864,7 +878,8 @@ def _build_water_group_report_image_sync(
         font_families=[WATER_THEME.white],
     )
     hero_meta_text = f"{data.range_text}  |  {data.compare_text}"
-    card.draw_text(
+    draw_text_in_region(
+        card,
         (
             pad + int(18 * scale),
             y + int(52 * scale),
@@ -925,7 +940,8 @@ def _build_water_group_report_image_sync(
             radius=int(12 * scale),
             fill=bg,
         )
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (
                 sx + int(14 * scale),
                 stat_top + int(8 * scale),
@@ -940,7 +956,8 @@ def _build_water_group_report_image_sync(
             valign="center",
             font_families=[WATER_THEME.white],
         )
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (
                 sx + int(14 * scale),
                 stat_top + int(28 * scale),
@@ -964,7 +981,8 @@ def _build_water_group_report_image_sync(
         radius=int(20 * scale),
         fill=panel_soft_bg,
     )
-    card.draw_text(
+    draw_text_in_region(
+        card,
         (
             left_x + int(18 * scale),
             y + int(8 * scale),
@@ -1029,7 +1047,8 @@ def _build_water_group_report_image_sync(
             radius=badge_h // 2,
             fill=badge_fill,
         )
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (badge_x, badge_y, badge_x + badge_w, badge_y + badge_h),
             f"#{item.current_rank}",
             max_fontsize=int(11 * scale),
@@ -1070,7 +1089,8 @@ def _build_water_group_report_image_sync(
             font=board_name_font,
             max_width=max(int(80 * scale), name_right - text_x),
         )
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (
                 text_x,
                 row_y + int(14 * scale),
@@ -1085,7 +1105,8 @@ def _build_water_group_report_image_sync(
             font_families=[WATER_THEME.white],
         )
         summary_right = text_x + int(124 * scale)
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (
                 text_x,
                 row_y + int(46 * scale),
@@ -1099,7 +1120,8 @@ def _build_water_group_report_image_sync(
             halign="left",
             font_families=[WATER_THEME.white],
         )
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (
                 text_x,
                 row_y + int(68 * scale),
@@ -1126,7 +1148,8 @@ def _build_water_group_report_image_sync(
             radius=trend_h // 2,
             fill=trend_color,
         )
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (trend_x, trend_y, trend_x + trend_w, trend_y + trend_h),
             trend_text,
             max_fontsize=int(11 * scale),
@@ -1143,7 +1166,8 @@ def _build_water_group_report_image_sync(
         radius=int(20 * scale),
         fill=panel_bg,
     )
-    card.draw_text(
+    draw_text_in_region(
+        card,
         (
             right_x + int(18 * scale),
             y + int(8 * scale),
@@ -1157,7 +1181,8 @@ def _build_water_group_report_image_sync(
         halign="left",
         font_families=[WATER_THEME.white],
     )
-    card.draw_text(
+    draw_text_in_region(
+        card,
         (
             right_x + int(18 * scale),
             y + int(30 * scale),
@@ -1215,7 +1240,8 @@ def _build_water_group_report_image_sync(
                 accent=theme.podium_gold_badge,
             ),
         )
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (
                 rank_text_left,
                 rank_y,
@@ -1242,7 +1268,8 @@ def _build_water_group_report_image_sync(
             (avatar_x, avatar_y),
             alpha=True,
         )
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (
                 name_x,
                 rank_y,
@@ -1263,7 +1290,8 @@ def _build_water_group_report_image_sync(
             radius=trend_h // 2,
             fill=trend_color,
         )
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (trend_x, trend_y, trend_x + trend_w, trend_y + trend_h),
             trend_text,
             max_fontsize=int(10 * scale),
@@ -1273,7 +1301,8 @@ def _build_water_group_report_image_sync(
             valign="center",
             font_families=[WATER_THEME.white],
         )
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (
                 count_left,
                 rank_y,
@@ -1342,7 +1371,8 @@ def _build_water_group_report_image_sync(
     card.draw_rounded_rectangle(
         (pad, y, width - pad, y + histogram_h), radius=int(20 * scale), fill=panel_bg
     )
-    card.draw_text(
+    draw_text_in_region(
+        card,
         (pad + int(18 * scale), y + int(8 * scale), width - pad, y + int(30 * scale)),
         tr(locale, "water.report.overview.title"),
         max_fontsize=int(18 * scale),
@@ -1351,7 +1381,8 @@ def _build_water_group_report_image_sync(
         halign="left",
         font_families=[WATER_THEME.white],
     )
-    card.draw_text(
+    draw_text_in_region(
+        card,
         (pad + int(18 * scale), y + int(32 * scale), width - pad, y + int(52 * scale)),
         tr(
             locale,
@@ -1498,7 +1529,8 @@ async def build_water_period_rank_image(
             radius=int(20 * scale),
             fill=hero_bg,
         )
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (
                 pad + int(18 * scale),
                 y + int(12 * scale),
@@ -1512,7 +1544,8 @@ async def build_water_period_rank_image(
             halign="left",
             font_families=[SYS_FONT_NAME],
         )
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (
                 pad + int(18 * scale),
                 y + int(42 * scale),
@@ -1526,7 +1559,8 @@ async def build_water_period_rank_image(
             halign="left",
             font_families=[SYS_FONT_NAME],
         )
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (
                 pad + int(18 * scale),
                 y + int(64 * scale),
@@ -1587,7 +1621,8 @@ async def build_water_period_rank_image(
                 radius=int(12 * scale),
                 fill=bg,
             )
-            card.draw_text(
+            draw_text_in_region(
+                card,
                 (
                     sx + int(10 * scale),
                     stat_top + int(8 * scale),
@@ -1602,7 +1637,8 @@ async def build_water_period_rank_image(
                 valign="center",
                 font_families=[SYS_FONT_NAME],
             )
-            card.draw_text(
+            draw_text_in_region(
+                card,
                 (
                     sx + int(10 * scale),
                     stat_top + int(18 * scale),
@@ -1626,7 +1662,8 @@ async def build_water_period_rank_image(
             radius=int(20 * scale),
             fill=panel_soft_bg,
         )
-        card.draw_text(
+        draw_text_in_region(
+            card,
             (
                 left_x + int(18 * scale),
                 y + int(8 * scale),
@@ -1693,7 +1730,8 @@ async def build_water_period_rank_image(
                 radius=badge_h // 2,
                 fill=badge_fill,
             )
-            card.draw_text(
+            draw_text_in_region(
+                card,
                 (badge_x, badge_y, badge_x + badge_w, badge_y + badge_h),
                 f"#{item.current_rank}",
                 max_fontsize=int(11 * scale),
@@ -1720,7 +1758,8 @@ async def build_water_period_rank_image(
             text_x = avatar_x + avatar_size + int(12 * scale)
             chart_x = left_x + left_w - row_chart_w - row_chart_right_pad
             text_right = chart_x - row_text_gap
-            card.draw_text(
+            draw_text_in_region(
+                card,
                 (
                     text_x,
                     row_y + int(12 * scale),
@@ -1734,7 +1773,8 @@ async def build_water_period_rank_image(
                 halign="left",
                 font_families=[SYS_FONT_NAME],
             )
-            card.draw_text(
+            draw_text_in_region(
+                card,
                 (
                     text_x,
                     row_y + int(38 * scale),
@@ -1748,7 +1788,8 @@ async def build_water_period_rank_image(
                 halign="left",
                 font_families=[SYS_FONT_NAME],
             )
-            card.draw_text(
+            draw_text_in_region(
+                card,
                 (
                     text_x,
                     row_y + int(62 * scale),
@@ -1790,7 +1831,8 @@ async def build_water_period_rank_image(
                 radius=trend_h // 2,
                 fill=trend_color,
             )
-            card.draw_text(
+            draw_text_in_region(
+                card,
                 (trend_x, trend_y, trend_x + trend_w, trend_y + trend_h),
                 trend_text,
                 max_fontsize=int(11 * scale),
@@ -1816,7 +1858,8 @@ async def build_water_period_rank_image(
                 radius=int(20 * scale),
                 fill=panel_bg,
             )
-            card.draw_text(
+            draw_text_in_region(
+                card,
                 (
                     pad + int(18 * scale),
                     y + int(8 * scale),
@@ -1830,7 +1873,8 @@ async def build_water_period_rank_image(
                 halign="left",
                 font_families=[SYS_FONT_NAME],
             )
-            card.draw_text(
+            draw_text_in_region(
+                card,
                 (
                     pad + int(18 * scale),
                     y + int(30 * scale),
@@ -1850,7 +1894,8 @@ async def build_water_period_rank_image(
             )
             rank_y = y + group_rank_header_h + int(12 * scale)
             if data.report_group_rank_has_hidden_before:
-                card.draw_text(
+                draw_text_in_region(
+                    card,
                     (
                         pad + int(18 * scale),
                         rank_y,
@@ -1886,7 +1931,8 @@ async def build_water_period_rank_image(
                         accent=theme.podium_gold_badge,
                     ),
                 )
-                card.draw_text(
+                draw_text_in_region(
+                    card,
                     (
                         pad + int(24 * scale),
                         rank_y,
@@ -1936,7 +1982,8 @@ async def build_water_period_rank_image(
                     (avatar_x, avatar_y),
                     alpha=True,
                 )
-                card.draw_text(
+                draw_text_in_region(
+                    card,
                     (
                         avatar_x + report_group_rank_avatar_size + int(10 * scale),
                         rank_y,
@@ -1961,7 +2008,8 @@ async def build_water_period_rank_image(
                     radius=trend_h // 2,
                     fill=trend_color,
                 )
-                card.draw_text(
+                draw_text_in_region(
+                    card,
                     (trend_x, trend_y, trend_x + trend_w, trend_y + trend_h),
                     trend_text,
                     max_fontsize=int(10 * scale),
@@ -1971,7 +2019,8 @@ async def build_water_period_rank_image(
                     valign="center",
                     font_families=[SYS_FONT_NAME],
                 )
-                card.draw_text(
+                draw_text_in_region(
+                    card,
                     (
                         width - pad - int(176 * scale),
                         rank_y,
@@ -1988,7 +2037,8 @@ async def build_water_period_rank_image(
                 )
                 rank_y += group_rank_row_h + group_rank_row_gap
             if data.report_group_rank_has_hidden_after:
-                card.draw_text(
+                draw_text_in_region(
+                    card,
                     (
                         pad + int(18 * scale),
                         rank_y,
@@ -2021,7 +2071,8 @@ async def build_water_period_rank_image(
                 radius=int(20 * scale),
                 fill=panel_bg,
             )
-            card.draw_text(
+            draw_text_in_region(
+                card,
                 (
                     pad + int(18 * scale),
                     y + int(8 * scale),
@@ -2035,7 +2086,8 @@ async def build_water_period_rank_image(
                 halign="left",
                 font_families=[SYS_FONT_NAME],
             )
-            card.draw_text(
+            draw_text_in_region(
+                card,
                 (
                     pad + int(18 * scale),
                     y + int(32 * scale),

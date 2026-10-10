@@ -11,6 +11,7 @@ from pil_utils import BuildImage
 from src.lib.consts import MAPLE_FONT_PATH
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
+from src.lib.utils.text_draw import draw_text_in_region
 
 from .common import (
     SYS_FONT_NAME,
@@ -229,7 +230,8 @@ class WaterRankRenderer:
         )
 
         try:
-            row.draw_text(
+            draw_text_in_region(
+                row,
                 box_coords,
                 display_name,
                 max_fontsize=int(24 * self.SCALE),
@@ -239,7 +241,8 @@ class WaterRankRenderer:
                 valign="center",
             )
         except ValueError:
-            row.draw_text(
+            draw_text_in_region(
+                row,
                 box_coords,
                 tr(locale, "water.image.name_chaos"),
                 max_fontsize=int(20 * self.SCALE),
@@ -289,7 +292,8 @@ class WaterRankRenderer:
         )
         y = self.PADDING
 
-        main_img.draw_text(
+        draw_text_in_region(
+            main_img,
             (
                 self.PADDING,
                 y,
@@ -325,7 +329,8 @@ class WaterRankRenderer:
             (group_avatar_x, group_avatar_y),
             alpha=True,
         )
-        main_img.draw_text(
+        draw_text_in_region(
+            main_img,
             (
                 group_avatar_x + group_avatar_size + int(12 * self.SCALE),
                 group_card_top + int(2 * self.SCALE),
@@ -339,7 +344,8 @@ class WaterRankRenderer:
             halign="left",
             font_families=[SYS_FONT_NAME],
         )
-        main_img.draw_text(
+        draw_text_in_region(
+            main_img,
             (
                 group_avatar_x + group_avatar_size + int(12 * self.SCALE),
                 group_card_top + int(20 * self.SCALE),
@@ -373,7 +379,8 @@ class WaterRankRenderer:
             radius=int(12 * self.SCALE),
             fill=self.theme.info_card_bg,
         )
-        main_img.draw_text(
+        draw_text_in_region(
+            main_img,
             (
                 self.PADDING + int(16 * self.SCALE),
                 info_card_top + int(8 * self.SCALE),
