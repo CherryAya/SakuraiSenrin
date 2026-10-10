@@ -41,7 +41,8 @@ from src.lib.plugin_docs import (
 from src.lib.plugin_meta import create_plugin_metadata
 from src.repositories import group_repo
 from src.services.info import resolve_group_name
-from src.services.member_sync_admin import (
+
+from ._services.member_sync import (
     build_sync_members_all_running_summary,
     build_sync_members_completion_summary,
     get_active_sync_members_all_state,

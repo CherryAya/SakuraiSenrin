@@ -33,15 +33,15 @@ from src.lib.cache.field import GroupCacheItem
 from src.lib.i18n.runtime import tr
 from src.lib.message_assets import message_asset_repo
 from src.lib.messages import empty_message, text_message
+from src.plugins.admin._services.member_sync import (
+    SyncMembersAllTaskState,
+    build_sync_members_completion_summary,
+)
 from src.plugins.admin.backup import admin_backup
 from src.plugins.admin.group import admin_group
 from src.plugins.admin.i18n import admin_i18n
 from src.plugins.admin.invite import admin_invite
 from src.plugins.admin.user import admin_user
-from src.services.member_sync_admin import (
-    SyncMembersAllTaskState,
-    build_sync_members_completion_summary,
-)
 from tests.plugins.water.helpers import (
     attach_reply_message,
     build_group_message_event,

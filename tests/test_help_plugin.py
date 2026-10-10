@@ -330,6 +330,7 @@ def test_build_index_message_only_lists_root_nodes() -> None:
         plugin_name="help",
         module_name="src.plugins.help",
         slug="help",
+        category="core",
         visible=True,
     )
     plugin_root = _make_entry(
@@ -501,6 +502,7 @@ def test_build_help_home_sections_applies_runtime_grouping_and_styles() -> None:
             plugin_name="help",
             module_name="src.plugins.help",
             slug="help",
+            category="core",
         ).node,
         _make_entry(
             display_name="运行时处理器",
@@ -555,6 +557,7 @@ def test_build_help_home_text_uses_shared_sections() -> None:
             plugin_name="help",
             module_name="src.plugins.help",
             slug="help",
+            category="core",
         ).node,
         _make_entry(
             display_name="吹水记录",

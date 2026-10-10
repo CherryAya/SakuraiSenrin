@@ -220,6 +220,10 @@ def _support_text_block(locale: LocaleCode) -> str:
 
 type HelpHomeSectionKind = Literal["system", "developer", "community"]
 
+# 归入帮助首页「系统」分组的插件文档 category。
+# 插件通过 metadata 的 docs.tree.category 声明，新增系统级插件无需改本模块。
+HELP_HOME_SYSTEM_CATEGORIES: frozenset[str] = frozenset({"core", "system", "admin"})
+
 HELP_HOME_SECTION_TITLE_KEYS: dict[HelpHomeSectionKind, MessageKey] = {
     "system": "help.dashboard.section.system",
     "developer": "help.dashboard.section.developer",
@@ -488,7 +492,7 @@ def build_help_home_sections(
             buckets["community"].append(node)
         elif node.module_name.startswith("src.hooks.") or node.slug.startswith("hook."):
             buckets["system"].append(node)
-        elif node.slug in {"help", "notice", "admin"}:
+        elif node.category in HELP_HOME_SYSTEM_CATEGORIES:
             buckets["system"].append(node)
         else:
             buckets["developer"].append(node)

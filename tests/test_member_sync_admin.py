@@ -10,8 +10,8 @@ from unittest.mock import AsyncMock
 import pytest
 
 from src.lib.i18n.runtime import tr
-from src.services import member_sync_admin as admin_sync_module
-from src.services.member_sync_admin import (
+from src.plugins.admin._services import member_sync as admin_sync_module
+from src.plugins.admin._services.member_sync import (
     build_sync_members_all_running_summary,
     build_sync_members_completion_summary,
 )
