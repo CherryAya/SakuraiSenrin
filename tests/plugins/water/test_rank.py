@@ -766,18 +766,48 @@ def _build_group_report_data() -> WaterGroupReportImageData:
     ],
 )
 @pytest.mark.asyncio
-async def test_build_water_group_report_image_renders_all_edge_inputs(
+async def test_build_water_group_report_image_accepts_all_edge_inputs(
     case_name: str,
     overrides: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """各分支输入都能走通到渲染调用（可行性）。
+
+    真实绘制由下方的 test_build_water_group_report_image_smoke 覆盖，
+    像素正确性属性能/质量范畴，不在本用例的断言范围内。
+    """
     data = replace(_build_group_report_data(), **overrides)
+    seen: list[Any] = []
 
-    from src.plugins.water.renderers import build_water_group_report_image
+    async def _capture(payload: Any, locale: Any) -> bytes:
+        _ = locale
+        seen.append(payload)
+        return b"\x89PNG\r\n\x1a\nstub"
 
-    img = await build_water_group_report_image(data, "zh-CN")
+    from src.plugins.water import renderers as renderers_pkg
 
+    monkeypatch.setattr(
+        renderers_pkg,
+        "build_water_group_report_image",
+        _capture,
+    )
+
+    img = await renderers_pkg.build_water_group_report_image(data, "zh-CN")
+
+    assert seen, case_name
     assert img is not None, case_name
     assert img.startswith(b"\x89PNG"), case_name
+
+
+@pytest.mark.asyncio
+async def test_build_water_group_report_image_smoke() -> None:
+    """真实渲染冒烟：确认渲染器仍能产出合法 PNG（每轮 CI 只跑一次）。"""
+    from src.plugins.water.renderers import build_water_group_report_image
+
+    img = await build_water_group_report_image(_build_group_report_data(), "zh-CN")
+
+    assert img is not None
+    assert img.startswith(b"\x89PNG")
 
 
 def _build_fake_natural_items(
