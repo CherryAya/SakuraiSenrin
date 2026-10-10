@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from src.lib.runtime_reload import register_runtime_reload
 from src.plugins.wordbank.debug import elapsed_ms, log_perf, perf_start
 
 from .services import wordbank_media_service, wordbank_service
@@ -42,3 +43,6 @@ async def reload_wordbank_runtime_state() -> None:
     reset_wordbank_initialized()
     await initialize_wordbank_plugin()
     await wordbank_media_service.rebuild_cache()
+
+
+register_runtime_reload("wordbank", reload_wordbank_runtime_state)

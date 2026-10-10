@@ -25,6 +25,7 @@ from src.lib.reply_router import (
     ResolvedReplyTarget,
     record_reply_context_from_send_result,
 )
+from src.lib.runtime_reload import reload_registered_runtime_states
 from src.lib.types import is_object_mapping, is_object_sequence
 from src.logger import logger
 from src.repositories import blacklist_repo, group_repo, member_repo, user_repo
@@ -444,20 +445,8 @@ async def _warm_up_core_repositories() -> None:
 
 async def _reload_runtime_state_after_restore() -> None:
     await _warm_up_core_repositories()
-    await _reload_wordbank_runtime_state()
-    await _reload_water_runtime_state()
-
-
-async def _reload_wordbank_runtime_state() -> None:
-    from src.plugins.wordbank.lifecycle import reload_wordbank_runtime_state
-
-    await reload_wordbank_runtime_state()
-
-
-async def _reload_water_runtime_state() -> None:
-    from src.plugins.water import reload_water_runtime_state
-
-    await reload_water_runtime_state()
+    # 各插件在 bootstrap 阶段自注册重载回调，本层只负责触发。
+    await reload_registered_runtime_states()
 
 
 async def _get_local_latest_data_mtime() -> int:

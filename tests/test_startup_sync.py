@@ -286,54 +286,38 @@ def test_ensure_restore_not_in_progress_raises_when_restore_is_running() -> None
 
 
 @pytest.mark.asyncio
-async def test_reload_runtime_state_after_restore_reloads_core_wordbank_and_water(
+@pytest.mark.asyncio
+async def test_reload_runtime_state_after_restore_warms_repos_then_reloads_plugins(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """恢复后的重载顺序：先预热核心仓储，再触发各插件注册的重载回调。
+
+    插件不再由本层点名，而是通过 src.lib.runtime_reload 自注册，
+    因此这里注册两个回调来代表插件侧。
+    """
     events: list[str] = []
-    import sys
-    import types
 
-    fake_plugins = types.ModuleType("src.plugins")
-    fake_plugins.__path__ = []  # type: ignore[attr-defined]
+    async def _warm(name: str) -> None:
+        events.append(name)
 
-    fake_wordbank = types.ModuleType("src.plugins.wordbank")
-    fake_wordbank_lifecycle = types.ModuleType("src.plugins.wordbank.lifecycle")
+    for repo_name in ("user_repo", "group_repo", "member_repo", "blacklist_repo"):
+        monkeypatch.setattr(
+            getattr(startup_sync_module, repo_name),
+            "warm_up",
+            lambda _n=repo_name: _warm(_n.split("_")[0]),
+        )
 
-    fake_water = types.ModuleType("src.plugins.water")
+    from src.lib import runtime_reload as reload_module
 
-    monkeypatch.setitem(sys.modules, "src.plugins", fake_plugins)
-    monkeypatch.setitem(sys.modules, "src.plugins.wordbank", fake_wordbank)
-    monkeypatch.setitem(
-        sys.modules,
-        "src.plugins.wordbank.lifecycle",
-        fake_wordbank_lifecycle,
-    )
-    monkeypatch.setitem(sys.modules, "src.plugins.water", fake_water)
+    async def _plugin_a() -> None:
+        events.append("plugin-a-reload")
 
-    async def _warm_user() -> None:
-        events.append("user")
+    async def _plugin_b() -> None:
+        events.append("plugin-b-reload")
 
-    async def _warm_group() -> None:
-        events.append("group")
-
-    async def _warm_member() -> None:
-        events.append("member")
-
-    async def _warm_blacklist() -> None:
-        events.append("blacklist")
-
-    async def _reload_wordbank() -> None:
-        events.append("wordbank-reload")
-
-    async def _reload_water() -> None:
-        events.append("water-reload")
-
-    monkeypatch.setattr(startup_sync_module.user_repo, "warm_up", _warm_user)
-    monkeypatch.setattr(startup_sync_module.group_repo, "warm_up", _warm_group)
-    monkeypatch.setattr(startup_sync_module.member_repo, "warm_up", _warm_member)
-    monkeypatch.setattr(startup_sync_module.blacklist_repo, "warm_up", _warm_blacklist)
-    setattr(fake_wordbank_lifecycle, "reload_wordbank_runtime_state", _reload_wordbank)
-    setattr(fake_water, "reload_water_runtime_state", _reload_water)
+    monkeypatch.setattr(reload_module, "_reload_callbacks", {})
+    reload_module.register_runtime_reload("plugin-a", _plugin_a)
+    reload_module.register_runtime_reload("plugin-b", _plugin_b)
 
     await startup_sync_module._reload_runtime_state_after_restore()
 
@@ -342,6 +326,6 @@ async def test_reload_runtime_state_after_restore_reloads_core_wordbank_and_wate
         "group",
         "member",
         "blacklist",
-        "wordbank-reload",
-        "water-reload",
+        "plugin-a-reload",
+        "plugin-b-reload",
     ]

@@ -69,6 +69,7 @@ from src.lib.message_plan import (
 )
 from src.lib.plugin_docs import build_doc_demo_plan_entry, create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
+from src.lib.runtime_reload import register_runtime_reload
 
 from .database import water_repo
 from .handlers import (
@@ -414,6 +415,9 @@ async def reload_water_runtime_state() -> None:
     """清空运行时状态并重新初始化，供备份恢复后调用。"""
     reset_water_plugin_initialized()
     await initialize_water_plugin()
+
+
+register_runtime_reload("water", reload_water_runtime_state)
 
 
 driver = get_driver()
