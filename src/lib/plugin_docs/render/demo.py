@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from math import ceil
 from pathlib import Path
-import re
 from typing import ClassVar, Literal
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
@@ -193,10 +192,325 @@ class ShowcaseLayout:
 
 
 @dataclass(slots=True, frozen=True)
+class DemoRenderParams:
+    """一次演示渲染的全部内容字段。"""
+
+    plugin_title: str
+    feature_title: str
+    feature_summary: str
+    feature_trigger: str
+    feature_overview: str
+    feature_preconditions: str
+    feature_failures: str
+    feature_flow_notes: str
+    plugin_trigger: str
+    feature_permission: str
+    plugin_version: str
+    plugin_author: str
+    turns: Sequence[DocsDemoTurn]
+    locale: LocaleCode = "zh-CN"
+    generated_at: datetime | None = None
+
+
+@dataclass(slots=True, frozen=True)
 class DemoRenderAuditResult:
     data: bytes
     image: Image.Image
     errors: tuple[str, ...]
+
+
+def _preferred_text_on_color(color: str) -> Literal["light", "dark"]:
+    color = color.lstrip("#")
+    red = int(color[0:2], 16)
+    green = int(color[2:4], 16)
+    blue = int(color[4:6], 16)
+    luminance = (red * 299 + green * 587 + blue * 114) / 1000
+    return "light" if luminance < 148 else "dark"
+
+
+def rgba(color: str, alpha: int) -> tuple[int, int, int, int]:
+    color = color.lstrip("#")
+    return (
+        int(color[0:2], 16),
+        int(color[2:4], 16),
+        int(color[4:6], 16),
+        alpha,
+    )
+
+
+def contains_emoji(text: str) -> bool:
+    return any(
+        "\U0001f000" <= char <= "\U0001faff" or char == "\ufe0f" for char in text
+    )
+
+
+def _font_size(font: DocsFont) -> int:
+    return int(getattr(font, "size", 16))
+
+
+def _append_inline_char(
+    spans: Sequence[InlineTextSpan],
+    char: str,
+    *,
+    code: bool,
+    fill: str | None = None,
+) -> list[InlineTextSpan]:
+    updated = list(spans)
+    if updated and updated[-1].code is code and updated[-1].fill == fill:
+        updated[-1] = InlineTextSpan(
+            updated[-1].text + char,
+            code=code,
+            fill=fill,
+        )
+    else:
+        updated.append(InlineTextSpan(char, code=code, fill=fill))
+    return updated
+
+
+def _line_block_height(
+    lines: Iterable[tuple[InlineTextSpan, ...]],
+    line_height: int,
+) -> int:
+    count = sum(1 for _ in lines)
+    return 0 if count == 0 else count * line_height
+
+
+def _normalize_demo_text(text: str) -> str:
+    return "\n".join(line.rstrip() for line in text.split("\n"))
+
+
+def boxes_overlap(
+    a: tuple[int, int, int, int],
+    b: tuple[int, int, int, int],
+    *,
+    padding: int = 0,
+) -> bool:
+    ax1, ay1, ax2, ay2 = a
+    bx1, by1, bx2, by2 = b
+    return not (
+        ax2 + padding <= bx1
+        or bx2 + padding <= ax1
+        or ay2 + padding <= by1
+        or by2 + padding <= ay1
+    )
+
+
+def ensure_inside(
+    outer: tuple[int, int, int, int],
+    inner: tuple[int, int, int, int],
+    label: str,
+    errors: list[str],
+) -> None:
+    if (
+        inner[0] < outer[0]
+        or inner[1] < outer[1]
+        or inner[2] > outer[2]
+        or inner[3] > outer[3]
+    ):
+        errors.append(f"{label} exceeds its container bounds")
+
+
+def _load_asset(
+    path: Path,
+    size: int,
+    *,
+    alpha: int = 255,
+) -> Image.Image | None:
+    if not path.exists():
+        return None
+    try:
+        image = Image.open(path).convert("RGBA")
+    except OSError:
+        return None
+    image = image.resize((size, size), Image.Resampling.LANCZOS)
+    if alpha < 255:
+        image = image.copy()
+        alpha_channel = image.getchannel("A")
+        alpha_channel = alpha_channel.point(
+            [value * alpha // 255 for value in range(256)]
+        )
+        image.putalpha(alpha_channel)
+    return image
+
+
+def turn_rects(
+    placement: ShowcaseTurnPlacement,
+) -> list[tuple[str, tuple[int, int, int, int]]]:
+    if placement.avatar_rect is None:
+        if placement.bubble_rect is not None:
+            return [("system bubble", placement.bubble_rect)]
+        return [("system text", placement.text_rect)]
+    rects: list[tuple[str, tuple[int, int, int, int]]] = []
+    # avatar_rect 为 None 的早退分支在上面，这里 avatar_rect 必定非空。
+    rects.append(("avatar", placement.avatar_rect))
+    if placement.bubble_rect is not None:
+        rects.append(("bubble", placement.bubble_rect))
+    return rects
+
+
+def draw_message_bubble_shape(
+    draw: ImageDraw.ImageDraw,
+    *,
+    rect: tuple[int, int, int, int],
+    fill: str,
+    top_left_radius: int,
+    other_radius: int,
+) -> None:
+    left, top, right, bottom = rect
+    draw.rounded_rectangle(rect, radius=other_radius, fill=fill)
+    cap = min(other_radius + 10, (right - left) // 3, (bottom - top) // 3)
+    draw.rounded_rectangle(
+        (left, top, left + cap, top + cap),
+        radius=top_left_radius,
+        fill=fill,
+    )
+
+
+def _split_bot_detail_text(text: str) -> tuple[str, str]:
+    lines = [line.rstrip() for line in text.splitlines()]
+    if len(lines) <= 1:
+        return text, ""
+    detail_start = next(
+        (
+            index
+            for index, line in enumerate(lines[1:], start=1)
+            if line.startswith(("Type:", "Value:", "Traceback:", "File:"))
+        ),
+        -1,
+    )
+    if detail_start <= 0:
+        return text, ""
+    summary = "\n".join(lines[:detail_start]).strip()
+    detail = "\n".join(lines[detail_start:]).strip()
+    return summary or text, detail
+
+
+def draw_dashed_line(
+    draw: ImageDraw.ImageDraw,
+    *,
+    start: tuple[int, int],
+    end: tuple[int, int],
+    fill: str,
+    dash: int,
+    gap: int,
+) -> None:
+    x1, y = start
+    x2, _ = end
+    cursor = x1
+    while cursor < x2:
+        segment_end = min(cursor + dash, x2)
+        draw.line((cursor, y, segment_end, y), fill=fill, width=1)
+        cursor = segment_end + gap
+
+
+def draw_zigzag(
+    draw: ImageDraw.ImageDraw,
+    *,
+    start: tuple[int, int],
+    fill: tuple[int, int, int, int],
+) -> None:
+    x, y = start
+    points = [
+        (x, y),
+        (x + 16, y - 8),
+        (x + 32, y),
+        (x + 48, y - 8),
+        (x + 64, y),
+    ]
+    draw.line(points, fill=fill, width=3)
+
+
+def draw_hollow_circle(
+    draw: ImageDraw.ImageDraw,
+    *,
+    center: tuple[int, int],
+    radius: int,
+    outline: tuple[int, int, int, int],
+) -> None:
+    draw.ellipse(
+        (
+            center[0] - radius,
+            center[1] - radius,
+            center[0] + radius,
+            center[1] + radius,
+        ),
+        outline=outline,
+        width=3,
+    )
+
+
+def draw_plus_cluster(
+    draw: ImageDraw.ImageDraw,
+    *,
+    origin_x: int,
+    origin_y: int,
+    fill: tuple[int, int, int, int],
+) -> None:
+    offsets = ((0, 0), (28, 12), (12, 32))
+    for offset_x, offset_y in offsets:
+        cx = origin_x + offset_x
+        cy = origin_y + offset_y
+        draw.line((cx - 6, cy, cx + 6, cy), fill=fill, width=2)
+        draw.line((cx, cy - 6, cx, cy + 6), fill=fill, width=2)
+
+
+def draw_panel_outline(
+    draw: ImageDraw.ImageDraw,
+    *,
+    rect: tuple[int, int, int, int],
+    radius: int,
+    outline: tuple[int, int, int, int],
+    width: int = 2,
+) -> None:
+    draw.rounded_rectangle(rect, radius=radius, outline=outline, width=width)
+
+
+def draw_shadowed_rect(
+    image: Image.Image,
+    *,
+    rect: tuple[int, int, int, int],
+    radius: int,
+    shadow_color: tuple[int, int, int, int],
+    shadow_offset_y: int,
+    shadow_blur: int,
+    fill: str,
+) -> None:
+    shadow_rect = (
+        rect[0],
+        rect[1] + shadow_offset_y,
+        rect[2],
+        rect[3] + shadow_offset_y,
+    )
+    # 只在阴影包围盒的局部图上做高斯模糊：整画布模糊在长图下代价极高，而
+    # 模糊半径外的像素本就是全透明，局部结果与整图逐字节一致。
+    patch, origin = _blurred_shape_patch(
+        canvas_size=image.size,
+        shape_rect=shadow_rect,
+        shadow_blur=shadow_blur,
+        shape="rounded_rectangle",
+        fill=shadow_color,
+        radius=radius,
+    )
+    image.alpha_composite(patch, dest=origin)
+    ImageDraw.Draw(image).rounded_rectangle(rect, radius=radius, fill=fill)
+
+
+def line_height_for_font(font: DocsFont, *, minimum: int = 0) -> int:
+    natural = ceil(_font_size(font) * 1.4)
+    return max(minimum, ceil(natural / 8) * 8)
+
+
+def _ensure_no_overlap(
+    a: tuple[int, int, int, int],
+    b: tuple[int, int, int, int],
+    a_label: str,
+    b_label: str,
+    errors: list[str],
+    *,
+    padding: int = 0,
+) -> None:
+    if boxes_overlap(a, b, padding=padding):
+        errors.append(f"{a_label} overlaps {b_label}")
 
 
 class DemoImageRenderer:
@@ -273,8 +587,8 @@ class DemoImageRenderer:
             self.capsule_font = ImageFont.load_default()
             self.micro_caps_font = ImageFont.load_default()
             self.step_badge_font = ImageFont.load_default()
-        self.senrin_avatar = self._load_asset(DEMO_AVATAR_PATH, self.theme.avatar_size)
-        self.senrin_standee = self._load_asset(
+        self.senrin_avatar = _load_asset(DEMO_AVATAR_PATH, self.theme.avatar_size)
+        self.senrin_standee = _load_asset(
             DEMO_STANDEE_PATH,
             self.theme.hero_standee_size,
             alpha=255,
@@ -299,24 +613,25 @@ class DemoImageRenderer:
         locale: LocaleCode = "zh-CN",
         generated_at: datetime | None = None,
     ) -> bytes:
-        result = self.render_with_audit(
-            plugin_title=plugin_title,
-            feature_title=feature_title,
-            feature_summary=feature_summary,
-            feature_trigger=feature_trigger,
-            feature_overview=feature_overview,
-            feature_preconditions=feature_preconditions,
-            feature_failures=feature_failures,
-            feature_flow_notes=feature_flow_notes,
-            plugin_trigger=plugin_trigger,
-            feature_permission=feature_permission,
-            plugin_version=plugin_version,
-            plugin_author=plugin_author,
-            turns=turns,
-            locale=locale,
-            generated_at=generated_at,
-        )
-        return result.data
+        return self.render_with_audit(
+            DemoRenderParams(
+                plugin_title=plugin_title,
+                feature_title=feature_title,
+                feature_summary=feature_summary,
+                feature_trigger=feature_trigger,
+                feature_overview=feature_overview,
+                feature_preconditions=feature_preconditions,
+                feature_failures=feature_failures,
+                feature_flow_notes=feature_flow_notes,
+                plugin_trigger=plugin_trigger,
+                feature_permission=feature_permission,
+                plugin_version=plugin_version,
+                plugin_author=plugin_author,
+                turns=turns,
+                locale=locale,
+                generated_at=generated_at,
+            )
+        ).data
 
     def audit(
         self,
@@ -337,63 +652,34 @@ class DemoImageRenderer:
         locale: LocaleCode = "zh-CN",
         generated_at: datetime | None = None,
     ) -> tuple[str, ...]:
-        result = self.render_with_audit(
-            plugin_title=plugin_title,
-            feature_title=feature_title,
-            feature_summary=feature_summary,
-            feature_trigger=feature_trigger,
-            feature_overview=feature_overview,
-            feature_preconditions=feature_preconditions,
-            feature_failures=feature_failures,
-            feature_flow_notes=feature_flow_notes,
-            plugin_trigger=plugin_trigger,
-            feature_permission=feature_permission,
-            plugin_version=plugin_version,
-            plugin_author=plugin_author,
-            turns=turns,
-            locale=locale,
-            generated_at=generated_at,
+        return self.render_with_audit(
+            DemoRenderParams(
+                plugin_title=plugin_title,
+                feature_title=feature_title,
+                feature_summary=feature_summary,
+                feature_trigger=feature_trigger,
+                feature_overview=feature_overview,
+                feature_preconditions=feature_preconditions,
+                feature_failures=feature_failures,
+                feature_flow_notes=feature_flow_notes,
+                plugin_trigger=plugin_trigger,
+                feature_permission=feature_permission,
+                plugin_version=plugin_version,
+                plugin_author=plugin_author,
+                turns=turns,
+                locale=locale,
+                generated_at=generated_at,
+            ),
             render_image=False,
-        )
-        return result.errors
+        ).errors
 
     def render_with_audit(
         self,
+        params: DemoRenderParams,
         *,
-        plugin_title: str,
-        feature_title: str,
-        feature_summary: str,
-        feature_trigger: str,
-        feature_overview: str,
-        feature_preconditions: str,
-        feature_failures: str,
-        feature_flow_notes: str,
-        plugin_trigger: str,
-        feature_permission: str,
-        plugin_version: str,
-        plugin_author: str,
-        turns: Sequence[DocsDemoTurn],
-        locale: LocaleCode = "zh-CN",
-        generated_at: datetime | None = None,
         render_image: bool = True,
     ) -> DemoRenderAuditResult:
-        layout = self._measure_layout(
-            plugin_title=plugin_title,
-            feature_title=feature_title,
-            feature_summary=feature_summary,
-            feature_trigger=feature_trigger,
-            feature_overview=feature_overview,
-            feature_preconditions=feature_preconditions,
-            feature_failures=feature_failures,
-            feature_flow_notes=feature_flow_notes,
-            plugin_trigger=plugin_trigger,
-            feature_permission=feature_permission,
-            plugin_version=plugin_version,
-            plugin_author=plugin_author,
-            turns=turns,
-            locale=locale,
-            generated_at=generated_at,
-        )
+        layout = self._measure_layout(params)
         # 仅审计布局时跳过绘制与编码：返回与正式渲染同尺寸的空白画布，
         # 让上层合成路径行为一致，但不付出绘制/编码超长画布的代价。
         image = Image.new("RGBA", (self.WIDTH, layout.total_height), self.theme.page_bg)
@@ -403,7 +689,7 @@ class DemoImageRenderer:
             draw = ImageDraw.Draw(image)
             self._draw_hero(image, draw, layout)
             self._draw_instruction_card(image, draw, layout)
-            self._draw_demo(image, draw, layout, locale=locale)
+            self._draw_demo(image, draw, layout, locale=params.locale)
             self._draw_footer(draw, layout)
             data = encode_docs_image(image, webp_quality=88, webp_method=6)
         errors: list[str] = []
@@ -420,36 +706,28 @@ class DemoImageRenderer:
             layout.instruction_rect[2] - self.theme.instruction_padding_x,
             layout.instruction_rect[3] - self.theme.instruction_padding_y,
         )
-        self._ensure_inside(canvas, layout.hero_rect, "hero section", errors)
-        self._ensure_inside(
-            canvas, layout.instruction_rect, "instruction section", errors
-        )
-        self._ensure_inside(canvas, layout.footer_rect, "footer section", errors)
+        ensure_inside(canvas, layout.hero_rect, "hero section", errors)
+        ensure_inside(canvas, layout.instruction_rect, "instruction section", errors)
+        ensure_inside(canvas, layout.footer_rect, "footer section", errors)
         for index, rect in enumerate(layout.pill_rects, start=1):
-            self._ensure_inside(hero_safe, rect, f"hero pill {index}", errors)
-        self._ensure_inside(hero_safe, layout.plugin_rect, "plugin kicker", errors)
-        self._ensure_inside(hero_safe, layout.title_rect, "hero title", errors)
-        self._ensure_inside(hero_safe, layout.summary_rect, "hero summary", errors)
-        self._ensure_inside(canvas, layout.standee_rect, "hero standee", errors)
-        self._ensure_inside(
-            instruction_inner, layout.trigger_rect, "trigger block", errors
-        )
-        if self._boxes_overlap(layout.title_rect, layout.standee_rect, padding=12):
+            ensure_inside(hero_safe, rect, f"hero pill {index}", errors)
+        ensure_inside(hero_safe, layout.plugin_rect, "plugin kicker", errors)
+        ensure_inside(hero_safe, layout.title_rect, "hero title", errors)
+        ensure_inside(hero_safe, layout.summary_rect, "hero summary", errors)
+        ensure_inside(canvas, layout.standee_rect, "hero standee", errors)
+        ensure_inside(instruction_inner, layout.trigger_rect, "trigger block", errors)
+        if boxes_overlap(layout.title_rect, layout.standee_rect, padding=12):
             errors.append("hero title overlaps standee")
-        if self._boxes_overlap(layout.summary_rect, layout.standee_rect, padding=12):
+        if boxes_overlap(layout.summary_rect, layout.standee_rect, padding=12):
             errors.append("hero summary overlaps standee")
         for index, rect in enumerate(layout.instruction_content_rects, start=1):
-            self._ensure_inside(
-                instruction_inner, rect, f"instruction block {index}", errors
-            )
+            ensure_inside(instruction_inner, rect, f"instruction block {index}", errors)
         prior_rects: list[tuple[str, tuple[int, int, int, int]]] = []
         for index, placement in enumerate(layout.turn_placements, start=1):
-            for name, rect in self._turn_rects(placement):
-                self._ensure_inside(
-                    layout.demo_rect, rect, f"turn {index} {name}", errors
-                )
+            for name, rect in turn_rects(placement):
+                ensure_inside(layout.demo_rect, rect, f"turn {index} {name}", errors)
                 for prior_name, prior_rect in prior_rects:
-                    self._ensure_no_overlap(
+                    _ensure_no_overlap(
                         prior_rect,
                         rect,
                         prior_name,
@@ -481,25 +759,22 @@ class DemoImageRenderer:
         bottom = max(top + 1, bottom)
         return (side, top, max(side + 1, width - side), min(height, bottom))
 
-    def _measure_layout(
-        self,
-        *,
-        plugin_title: str,
-        feature_title: str,
-        feature_summary: str,
-        feature_trigger: str,
-        feature_overview: str,
-        feature_preconditions: str,
-        feature_failures: str,
-        feature_flow_notes: str,
-        plugin_trigger: str,
-        feature_permission: str,
-        plugin_version: str,
-        plugin_author: str,
-        turns: Sequence[DocsDemoTurn],
-        locale: LocaleCode,
-        generated_at: datetime | None,
-    ) -> ShowcaseLayout:
+    def _measure_layout(self, params: DemoRenderParams) -> ShowcaseLayout:
+        plugin_title = params.plugin_title
+        feature_title = params.feature_title
+        feature_summary = params.feature_summary
+        feature_trigger = params.feature_trigger
+        feature_overview = params.feature_overview
+        feature_preconditions = params.feature_preconditions
+        feature_failures = params.feature_failures
+        feature_flow_notes = params.feature_flow_notes
+        plugin_trigger = params.plugin_trigger
+        feature_permission = params.feature_permission
+        plugin_version = params.plugin_version
+        plugin_author = params.plugin_author
+        turns = params.turns
+        locale = params.locale
+        generated_at = params.generated_at
         _ = locale
         generated = generated_at or datetime.fromtimestamp(get_current_time()).replace(
             microsecond=0
@@ -569,9 +844,9 @@ class DemoImageRenderer:
             plugin_y,
             side + self._max_inline_line_width(plugin_lines, self.kicker_font),
             plugin_y
-            + self._line_block_height(
+            + _line_block_height(
                 plugin_lines,
-                self._line_height_for_font(self.kicker_font),
+                line_height_for_font(self.kicker_font),
             ),
         )
 
@@ -606,9 +881,9 @@ class DemoImageRenderer:
             title_y,
             side + self._max_inline_line_width(title_lines, active_title_font),
             title_y
-            + self._line_block_height(
+            + _line_block_height(
                 title_lines,
-                self._line_height_for_font(active_title_font),
+                line_height_for_font(active_title_font),
             ),
         )
 
@@ -643,9 +918,9 @@ class DemoImageRenderer:
             summary_y,
             side + self._max_inline_line_width(summary_lines, active_summary_font),
             summary_y
-            + self._line_block_height(
+            + _line_block_height(
                 summary_lines,
-                self._line_height_for_font(
+                line_height_for_font(
                     active_summary_font,
                     minimum=self.theme.hero_summary_line_height,
                 ),
@@ -684,7 +959,7 @@ class DemoImageRenderer:
         trigger_layout = build_command_layout(
             feature_trigger.strip() or f"#help {feature_title}",
             max_width=content_width - self.theme.trigger_padding_x * 2,
-            line_height=self._line_height_for_font(self.body_font),
+            line_height=line_height_for_font(self.body_font),
             indent_px=self.COMMAND_INDENT_PX,
             measure_text=lambda value: self._text_width(value, self.body_font),
             palette=self._command_palette(),
@@ -702,7 +977,7 @@ class DemoImageRenderer:
         overview_layout = build_markdown_layout(
             feature_overview.strip() or summary_source,
             max_width=content_width,
-            line_height=self._line_height_for_font(self.instruction_font),
+            line_height=line_height_for_font(self.instruction_font),
             indent_px=self.COMMAND_INDENT_PX,
             measure_text=lambda value, code: self._measure_markdown_text_width(
                 value,
@@ -733,9 +1008,9 @@ class DemoImageRenderer:
                 content_left + self._max_inline_line_width(flow_lines, self.note_font),
                 instruction_y
                 + self.theme.note_gap
-                + self._line_block_height(
+                + _line_block_height(
                     flow_lines,
-                    self._line_height_for_font(self.note_font),
+                    line_height_for_font(self.note_font),
                 ),
             )
             instruction_content_rects.append(flow_rect)
@@ -842,7 +1117,7 @@ class DemoImageRenderer:
                 fill = self.theme.accent
                 text_fill = (
                     "#FFFFFF"
-                    if self._preferred_text_on_color(fill) == "light"
+                    if _preferred_text_on_color(fill) == "light"
                     else self.theme.deep
                 )
                 demo_section_bands.append(
@@ -959,23 +1234,8 @@ class DemoImageRenderer:
             lines=layout.plugin_lines,
             font=self.kicker_font,
             fill=self.theme.strong,
-            line_height=self._line_height_for_font(self.kicker_font),
+            line_height=line_height_for_font(self.kicker_font),
         )
-        # self._draw_section_watermark(
-        #     draw,
-        #     rect=(
-        #         layout.title_rect[0],
-        #         layout.title_rect[3] + 6,
-        #         min(
-        #             self.WIDTH - self.theme.hero_side_padding,
-        #             layout.standee_rect[0],
-        #         ),
-        #         layout.summary_rect[3] + 8,
-        #     ),
-        #     text="FEATURE GUIDE",
-        #     font=self.watermark_font,
-        #     fill=self._rgba(self.theme.accent, self.WATERMARK_ALPHA_LARGE),
-        # )
         self._draw_multiline_text(
             draw,
             x=layout.title_rect[0],
@@ -983,7 +1243,7 @@ class DemoImageRenderer:
             lines=layout.title_lines,
             font=self.title_font_compact if layout.title_compact else self.title_font,
             fill=self.theme.hero_title_shadow,
-            line_height=self._line_height_for_font(
+            line_height=line_height_for_font(
                 self.title_font_compact if layout.title_compact else self.title_font
             ),
         )
@@ -994,7 +1254,7 @@ class DemoImageRenderer:
             lines=layout.title_lines,
             font=self.title_font_compact if layout.title_compact else self.title_font,
             fill=self.theme.hero_title,
-            line_height=self._line_height_for_font(
+            line_height=line_height_for_font(
                 self.title_font_compact if layout.title_compact else self.title_font
             ),
         )
@@ -1009,7 +1269,7 @@ class DemoImageRenderer:
                 else self.summary_font
             ),
             fill=self.theme.hero_summary,
-            line_height=self._line_height_for_font(
+            line_height=line_height_for_font(
                 self.summary_font_compact
                 if layout.summary_compact
                 else self.summary_font,
@@ -1030,7 +1290,7 @@ class DemoImageRenderer:
             rect=layout.instruction_rect,
             radius=self.theme.instruction_radius,
             fill=self.theme.panel_bg,
-            outline=self._rgba(self.theme.accent, 62),
+            outline=rgba(self.theme.accent, 62),
         )
         self._draw_soft_subcard(
             image,
@@ -1117,19 +1377,6 @@ class DemoImageRenderer:
             fill=(255, 243, 228, 191),
             outline=None,
         )
-        # self._draw_section_watermark(
-        #     draw,
-        #     rect=(
-        #         layout.demo_rect[0] + 48,
-        #         layout.demo_rect[1] - 18,
-        #         layout.demo_rect[2] - 48,
-        #         layout.demo_rect[1] + 88,
-        #     ),
-        #     text="DEMONSTRATION FLOW",
-        #     font=self.watermark_font_small,
-        #     fill=self._rgba(self.theme.accent, self.WATERMARK_ALPHA),
-        #     align="right",
-        # )
         for band in layout.demo_section_bands:
             self._draw_soft_band_panel(
                 image,
@@ -1137,7 +1384,7 @@ class DemoImageRenderer:
                 rect=band.rect,
                 radius=34,
                 fill="#FFFFFF",
-                outline=self._rgba(self.theme.accent, 34),
+                outline=rgba(self.theme.accent, 34),
             )
             badge_rect = (
                 band.tag_rect[0],
@@ -1218,7 +1465,7 @@ class DemoImageRenderer:
                 lines=spec.lines,
                 font=self.system_font,
                 fill=self.theme.system_text,
-                line_height=self._line_height_for_font(self.system_font),
+                line_height=line_height_for_font(self.system_font),
                 align="center",
                 area_width=placement.text_rect[2] - placement.text_rect[0],
                 render_code_chip=False,
@@ -1234,7 +1481,7 @@ class DemoImageRenderer:
                 label=tr(locale, "docs.demo.avatar.user"),
                 fill=self.theme.accent,
             )
-            self._draw_shadowed_rect(
+            draw_shadowed_rect(
                 image,
                 rect=placement.bubble_rect,
                 radius=self.theme.bubble_radius,
@@ -1243,7 +1490,7 @@ class DemoImageRenderer:
                 shadow_blur=18,
                 fill=self.theme.user_bubble,
             )
-            self._draw_message_bubble_shape(
+            draw_message_bubble_shape(
                 draw,
                 rect=placement.bubble_rect,
                 fill=self.theme.user_bubble,
@@ -1258,7 +1505,7 @@ class DemoImageRenderer:
                 rect=placement.avatar_rect,
                 locale=locale,
             )
-            self._draw_message_bubble_shape(
+            draw_message_bubble_shape(
                 draw,
                 rect=placement.bubble_rect,
                 fill=self.theme.bot_bubble,
@@ -1274,7 +1521,7 @@ class DemoImageRenderer:
             lines=spec.lines,
             font=self.body_font,
             fill=bubble_fill,
-            line_height=self._line_height_for_font(
+            line_height=line_height_for_font(
                 self.body_font,
                 minimum=self.theme.bubble_line_height,
             ),
@@ -1282,7 +1529,7 @@ class DemoImageRenderer:
         if spec.detail_lines:
             detail_top = (
                 placement.text_rect[1]
-                + self._line_block_height(
+                + _line_block_height(
                     spec.lines,
                     spec.line_height,
                 )
@@ -1306,7 +1553,7 @@ class DemoImageRenderer:
                 lines=spec.detail_lines,
                 font=self.meta_font,
                 fill="#E5E7EB",
-                line_height=self._line_height_for_font(self.meta_font, minimum=28),
+                line_height=line_height_for_font(self.meta_font, minimum=28),
             )
 
     def _draw_standee(
@@ -1374,7 +1621,7 @@ class DemoImageRenderer:
         layout: ShowcaseLayout,
     ) -> None:
         divider_y = layout.footer_rect[1] + 8
-        self._draw_dashed_line(
+        draw_dashed_line(
             draw,
             start=(layout.footer_rect[0], divider_y),
             end=(layout.footer_rect[2], divider_y),
@@ -1410,47 +1657,6 @@ class DemoImageRenderer:
             fill=self.theme.note_text,
         )
 
-    def _draw_shadowed_rect(
-        self,
-        image: Image.Image,
-        *,
-        rect: tuple[int, int, int, int],
-        radius: int,
-        shadow_color: tuple[int, int, int, int],
-        shadow_offset_y: int,
-        shadow_blur: int,
-        fill: str,
-    ) -> None:
-        shadow_rect = (
-            rect[0],
-            rect[1] + shadow_offset_y,
-            rect[2],
-            rect[3] + shadow_offset_y,
-        )
-        # 只在阴影包围盒的局部图上做高斯模糊：整画布模糊在长图下代价极高，而
-        # 模糊半径外的像素本就是全透明，局部结果与整图逐字节一致。
-        patch, origin = _blurred_shape_patch(
-            canvas_size=image.size,
-            shape_rect=shadow_rect,
-            shadow_blur=shadow_blur,
-            shape="rounded_rectangle",
-            fill=shadow_color,
-            radius=radius,
-        )
-        image.alpha_composite(patch, dest=origin)
-        ImageDraw.Draw(image).rounded_rectangle(rect, radius=radius, fill=fill)
-
-    def _draw_panel_outline(
-        self,
-        draw: ImageDraw.ImageDraw,
-        *,
-        rect: tuple[int, int, int, int],
-        radius: int,
-        outline: tuple[int, int, int, int],
-        width: int = 2,
-    ) -> None:
-        draw.rounded_rectangle(rect, radius=radius, outline=outline, width=width)
-
     def _draw_soft_band_panel(
         self,
         image: Image.Image,
@@ -1461,16 +1667,16 @@ class DemoImageRenderer:
         fill: str,
         outline: tuple[int, int, int, int],
     ) -> None:
-        self._draw_shadowed_rect(
+        draw_shadowed_rect(
             image,
             rect=rect,
             radius=radius,
-            shadow_color=self._rgba(self.theme.accent, 10),
+            shadow_color=rgba(self.theme.accent, 10),
             shadow_offset_y=6,
             shadow_blur=20,
             fill=fill,
         )
-        self._draw_panel_outline(
+        draw_panel_outline(
             draw,
             rect=rect,
             radius=radius,
@@ -1491,7 +1697,7 @@ class DemoImageRenderer:
         shadow_offset_y: int | None = None,
         shadow_blur: int | None = None,
     ) -> None:
-        self._draw_shadowed_rect(
+        draw_shadowed_rect(
             image,
             rect=rect,
             radius=radius,
@@ -1508,7 +1714,7 @@ class DemoImageRenderer:
             ),
             fill=fill,
         )
-        self._draw_panel_outline(
+        draw_panel_outline(
             draw,
             rect=rect,
             radius=radius,
@@ -1559,7 +1765,7 @@ class DemoImageRenderer:
         width: int,
         height: int,
     ) -> None:
-        dot_fill = self._rgba(self.theme.grid_color, 38)
+        dot_fill = rgba(self.theme.grid_color, 38)
         radius = 1
         max_height = min(height, max(height // 2 + 160, 480))
         for y in range(self.theme.hero_top // 2, max_height, self.theme.grid_spacing):
@@ -1580,17 +1786,17 @@ class DemoImageRenderer:
         width: int,
         height: int,
     ) -> None:
-        decor_fill = self._rgba(self.theme.decor_color, 72)
+        decor_fill = rgba(self.theme.decor_color, 72)
         plus_origins = (
             (self.theme.hero_side_padding - 8, self.theme.hero_top + 24),
             (width - self.theme.hero_side_padding - 184, self.theme.hero_top + 120),
             (width - self.theme.hero_side_padding - 56, height - 168),
         )
         for origin_x, origin_y in plus_origins:
-            self._draw_plus_cluster(
+            draw_plus_cluster(
                 draw, origin_x=origin_x, origin_y=origin_y, fill=decor_fill
             )
-        self._draw_hollow_circle(
+        draw_hollow_circle(
             draw,
             center=(
                 width - self.theme.hero_side_padding - 132,
@@ -1599,80 +1805,11 @@ class DemoImageRenderer:
             radius=28,
             outline=decor_fill,
         )
-        self._draw_zigzag(
+        draw_zigzag(
             draw,
             start=(width - self.theme.hero_side_padding - 224, height // 2 + 88),
             fill=decor_fill,
         )
-
-    def _draw_plus_cluster(
-        self,
-        draw: ImageDraw.ImageDraw,
-        *,
-        origin_x: int,
-        origin_y: int,
-        fill: tuple[int, int, int, int],
-    ) -> None:
-        offsets = ((0, 0), (28, 12), (12, 32))
-        for offset_x, offset_y in offsets:
-            cx = origin_x + offset_x
-            cy = origin_y + offset_y
-            draw.line((cx - 6, cy, cx + 6, cy), fill=fill, width=2)
-            draw.line((cx, cy - 6, cx, cy + 6), fill=fill, width=2)
-
-    def _draw_hollow_circle(
-        self,
-        draw: ImageDraw.ImageDraw,
-        *,
-        center: tuple[int, int],
-        radius: int,
-        outline: tuple[int, int, int, int],
-    ) -> None:
-        draw.ellipse(
-            (
-                center[0] - radius,
-                center[1] - radius,
-                center[0] + radius,
-                center[1] + radius,
-            ),
-            outline=outline,
-            width=3,
-        )
-
-    def _draw_zigzag(
-        self,
-        draw: ImageDraw.ImageDraw,
-        *,
-        start: tuple[int, int],
-        fill: tuple[int, int, int, int],
-    ) -> None:
-        x, y = start
-        points = [
-            (x, y),
-            (x + 16, y - 8),
-            (x + 32, y),
-            (x + 48, y - 8),
-            (x + 64, y),
-        ]
-        draw.line(points, fill=fill, width=3)
-
-    def _draw_dashed_line(
-        self,
-        draw: ImageDraw.ImageDraw,
-        *,
-        start: tuple[int, int],
-        end: tuple[int, int],
-        fill: str,
-        dash: int,
-        gap: int,
-    ) -> None:
-        x1, y = start
-        x2, _ = end
-        cursor = x1
-        while cursor < x2:
-            segment_end = min(cursor + dash, x2)
-            draw.line((cursor, y, segment_end, y), fill=fill, width=1)
-            cursor = segment_end + gap
 
     def _draw_pill(
         self,
@@ -1768,7 +1905,7 @@ class DemoImageRenderer:
             layout = build_markdown_layout(
                 text,
                 max_width=width - 24,
-                line_height=self._line_height_for_font(self.note_font),
+                line_height=line_height_for_font(self.note_font),
                 indent_px=self.COMMAND_INDENT_PX,
                 measure_text=lambda value, code: self._measure_markdown_text_width(
                     value,
@@ -1776,7 +1913,7 @@ class DemoImageRenderer:
                     code=code,
                 ),
             )
-            line_height = self._line_height_for_font(self.note_font)
+            line_height = line_height_for_font(self.note_font)
             height = layout.total_height
             rect = (x, cursor_y, x + width, cursor_y + height)
             items.append(
@@ -1793,24 +1930,6 @@ class DemoImageRenderer:
     def _split_note_lines(self, text: str) -> tuple[str, ...]:
         raw_lines = [line.strip(" -") for line in text.splitlines()]
         return tuple(line for line in raw_lines if line and line != self.NONE_MARKER)
-
-    def _split_bot_detail_text(self, text: str) -> tuple[str, str]:
-        lines = [line.rstrip() for line in text.splitlines()]
-        if len(lines) <= 1:
-            return text, ""
-        detail_start = next(
-            (
-                index
-                for index, line in enumerate(lines[1:], start=1)
-                if line.startswith(("Type:", "Value:", "Traceback:", "File:"))
-            ),
-            -1,
-        )
-        if detail_start <= 0:
-            return text, ""
-        summary = "\n".join(lines[:detail_start]).strip()
-        detail = "\n".join(lines[detail_start:]).strip()
-        return summary or text, detail
 
     def _measure_markdown_text_width(
         self, text: str, font: DocsFont, *, code: bool
@@ -1961,24 +2080,6 @@ class DemoImageRenderer:
             )
             cursor_x += text_width
 
-    def _draw_message_bubble_shape(
-        self,
-        draw: ImageDraw.ImageDraw,
-        *,
-        rect: tuple[int, int, int, int],
-        fill: str,
-        top_left_radius: int,
-        other_radius: int,
-    ) -> None:
-        left, top, right, bottom = rect
-        draw.rounded_rectangle(rect, radius=other_radius, fill=fill)
-        cap = min(other_radius + 10, (right - left) // 3, (bottom - top) // 3)
-        draw.rounded_rectangle(
-            (left, top, left + cap, top + cap),
-            radius=top_left_radius,
-            fill=fill,
-        )
-
     def _place_turn(
         self,
         spec: ShowcaseTurnSpec,
@@ -1995,7 +2096,7 @@ class DemoImageRenderer:
             )
             content_width = min(max(text_width + 96, 420), right - left - 120)
             text_left = left + (right - left - content_width) // 2
-            text_block_height = self._line_block_height(
+            text_block_height = _line_block_height(
                 spec.lines,
                 spec.line_height,
             )
@@ -2046,7 +2147,7 @@ class DemoImageRenderer:
             bubble_right - self.theme.bubble_padding_x,
             bubble_top
             + self.theme.bubble_padding_y
-            + self._line_block_height(spec.lines, spec.line_height),
+            + _line_block_height(spec.lines, spec.line_height),
         )
         rect = (
             min(avatar_rect[0], bubble_left),
@@ -2070,18 +2171,18 @@ class DemoImageRenderer:
         if turn.speaker == "SYSTEM":
             lines = tuple(
                 self._wrap_inline_text(
-                    self._normalize_demo_text(turn.text),
+                    _normalize_demo_text(turn.text),
                     max_width=min(content_width - 120, 760),
                     font=self.system_font,
                 )
             )
-            line_height = self._line_height_for_font(self.system_font)
+            line_height = line_height_for_font(self.system_font)
             return ShowcaseTurnSpec(
                 turn=turn,
                 lines=lines,
                 detail_lines=(),
                 width=0,
-                height=self._line_block_height(lines, line_height),
+                height=_line_block_height(lines, line_height),
                 line_height=line_height,
             )
 
@@ -2089,11 +2190,11 @@ class DemoImageRenderer:
             760,
             content_width - self.theme.avatar_size - self.theme.avatar_gap - 80,
         )
-        normalized_text = self._normalize_demo_text(turn.text)
+        normalized_text = _normalize_demo_text(turn.text)
         summary_text = normalized_text
         detail_lines: tuple[tuple[InlineTextSpan, ...], ...] = ()
         if turn.speaker == "BOT":
-            summary_text, detail_payload = self._split_bot_detail_text(normalized_text)
+            summary_text, detail_payload = _split_bot_detail_text(normalized_text)
             if detail_payload:
                 detail_lines = tuple(
                     self._wrap_inline_text(
@@ -2109,17 +2210,17 @@ class DemoImageRenderer:
                 font=self.body_font,
             )
         )
-        line_height = self._line_height_for_font(
+        line_height = line_height_for_font(
             self.body_font,
             minimum=self.theme.bubble_line_height,
         )
-        text_height = self._line_block_height(lines, line_height)
+        text_height = _line_block_height(lines, line_height)
         detail_height = 0
         if detail_lines:
             detail_height = (
-                self._line_block_height(
+                _line_block_height(
                     detail_lines,
-                    self._line_height_for_font(self.meta_font, minimum=28),
+                    line_height_for_font(self.meta_font, minimum=28),
                 )
                 + 32
                 + 18
@@ -2137,44 +2238,6 @@ class DemoImageRenderer:
             height=max(bubble_height, self.theme.avatar_size),
             line_height=line_height,
         )
-
-    def _turn_rects(
-        self,
-        placement: ShowcaseTurnPlacement,
-    ) -> list[tuple[str, tuple[int, int, int, int]]]:
-        if placement.avatar_rect is None:
-            if placement.bubble_rect is not None:
-                return [("system bubble", placement.bubble_rect)]
-            return [("system text", placement.text_rect)]
-        rects: list[tuple[str, tuple[int, int, int, int]]] = []
-        # avatar_rect 为 None 的早退分支在上面，这里 avatar_rect 必定非空。
-        rects.append(("avatar", placement.avatar_rect))
-        if placement.bubble_rect is not None:
-            rects.append(("bubble", placement.bubble_rect))
-        return rects
-
-    def _load_asset(
-        self,
-        path: Path,
-        size: int,
-        *,
-        alpha: int = 255,
-    ) -> Image.Image | None:
-        if not path.exists():
-            return None
-        try:
-            image = Image.open(path).convert("RGBA")
-        except OSError:
-            return None
-        image = image.resize((size, size), Image.Resampling.LANCZOS)
-        if alpha < 255:
-            image = image.copy()
-            alpha_channel = image.getchannel("A")
-            alpha_channel = alpha_channel.point(
-                [value * alpha // 255 for value in range(256)]
-            )
-            image.putalpha(alpha_channel)
-        return image
 
     def _draw_text_centered(
         self,
@@ -2199,50 +2262,6 @@ class DemoImageRenderer:
         y = rect[1] + (rect[3] - rect[1] - text_height) / 2 - bbox[1]
         self._draw_text(draw, x=x, y=y, text=text, font=font, fill=fill)
 
-    def _ensure_inside(
-        self,
-        outer: tuple[int, int, int, int],
-        inner: tuple[int, int, int, int],
-        label: str,
-        errors: list[str],
-    ) -> None:
-        if (
-            inner[0] < outer[0]
-            or inner[1] < outer[1]
-            or inner[2] > outer[2]
-            or inner[3] > outer[3]
-        ):
-            errors.append(f"{label} exceeds its container bounds")
-
-    def _ensure_no_overlap(
-        self,
-        a: tuple[int, int, int, int],
-        b: tuple[int, int, int, int],
-        a_label: str,
-        b_label: str,
-        errors: list[str],
-        *,
-        padding: int = 0,
-    ) -> None:
-        if self._boxes_overlap(a, b, padding=padding):
-            errors.append(f"{a_label} overlaps {b_label}")
-
-    def _boxes_overlap(
-        self,
-        a: tuple[int, int, int, int],
-        b: tuple[int, int, int, int],
-        *,
-        padding: int = 0,
-    ) -> bool:
-        ax1, ay1, ax2, ay2 = a
-        bx1, by1, bx2, by2 = b
-        return not (
-            ax2 + padding <= bx1
-            or bx2 + padding <= ax1
-            or ay2 + padding <= by1
-            or by2 + padding <= ay1
-        )
-
     def _fit_text(
         self,
         draw: ImageDraw.ImageDraw,
@@ -2262,9 +2281,6 @@ class DemoImageRenderer:
             if self._text_width(candidate, font) <= max_width:
                 return candidate
         return ellipsis
-
-    def _normalize_demo_text(self, text: str) -> str:
-        return "\n".join(line.rstrip() for line in text.split("\n"))
 
     def _wrap_inline_text(
         self,
@@ -2298,7 +2314,7 @@ class DemoImageRenderer:
         current: list[InlineTextSpan] = []
         for span in spans:
             for char in span.text:
-                candidate = self._append_inline_char(
+                candidate = _append_inline_char(
                     current,
                     char,
                     code=span.code,
@@ -2320,14 +2336,6 @@ class DemoImageRenderer:
         if current or not lines:
             lines.append(tuple(current))
         return lines
-
-    def _line_block_height(
-        self,
-        lines: Iterable[tuple[InlineTextSpan, ...]],
-        line_height: int,
-    ) -> int:
-        count = sum(1 for _ in lines)
-        return 0 if count == 0 else count * line_height
 
     def _max_inline_line_width(
         self,
@@ -2458,7 +2466,7 @@ class DemoImageRenderer:
     ) -> None:
         if not text:
             return
-        if not self._contains_emoji(text):
+        if not contains_emoji(text):
             draw.text((x, y), text, font=font, fill=fill)
             return
         text_box = self._text_size(text, font)
@@ -2468,7 +2476,7 @@ class DemoImageRenderer:
         BuildImage(text_layer).draw_text(
             (0, 0),
             text,
-            font_size=self._font_size(font),
+            font_size=_font_size(font),
             fill=fill,
             font_families=self.FONT_FAMILIES,
             stroke_ratio=0,
@@ -2481,7 +2489,7 @@ class DemoImageRenderer:
     def _text_size(self, text: str, font: DocsFont) -> tuple[int, int, int, int]:
         if not text:
             return (0, 0, 0, self._font_line_height(font))
-        if not self._contains_emoji(text):
+        if not contains_emoji(text):
             # font.getbbox 按单行处理换行，与 textbbox 的换行语义不同，需排除。
             key = (id(font), text)
             cached = self._text_bbox_cache.get(key)
@@ -2503,7 +2511,7 @@ class DemoImageRenderer:
             return cached
         text_image = Text2Image.from_text(
             text,
-            self._font_size(font),
+            _font_size(font),
             fill=self.theme.deep,
             stroke_width=0,
             font_families=self.FONT_FAMILIES,
@@ -2528,25 +2536,6 @@ class DemoImageRenderer:
             if span.code and code_padding:
                 width += self.theme.inline_code_pad_x * 2
         return width
-
-    def _append_inline_char(
-        self,
-        spans: Sequence[InlineTextSpan],
-        char: str,
-        *,
-        code: bool,
-        fill: str | None = None,
-    ) -> list[InlineTextSpan]:
-        updated = list(spans)
-        if updated and updated[-1].code is code and updated[-1].fill == fill:
-            updated[-1] = InlineTextSpan(
-                updated[-1].text + char,
-                code=code,
-                fill=fill,
-            )
-        else:
-            updated.append(InlineTextSpan(char, code=code, fill=fill))
-        return updated
 
     def _fit_inline_spans(
         self,
@@ -2575,29 +2564,6 @@ class DemoImageRenderer:
                 return tuple(candidate)
         return (ellipsis,)
 
-    def _trigger_spans(self, text: str) -> tuple[InlineTextSpan, ...]:
-        spans: list[InlineTextSpan] = []
-        for span in split_inline_text_spans(text):
-            if not span.code:
-                spans.append(
-                    InlineTextSpan(
-                        span.text,
-                        code=False,
-                        fill=self.theme.terminal_text,
-                    )
-                )
-                continue
-            for piece in re.split(r"(\[[^\]]+\]|<[^>]+>)", span.text):
-                if not piece:
-                    continue
-                fill = (
-                    self.theme.terminal_param
-                    if re.fullmatch(r"(\[[^\]]+\]|<[^>]+>)", piece)
-                    else self.theme.terminal_text
-                )
-                spans.append(InlineTextSpan(piece, code=True, fill=fill))
-        return tuple(spans)
-
     def _pill_width(self, text: str, font: DocsFont) -> int:
         return max(88, self._text_width(text, font) + 32)
 
@@ -2611,11 +2577,11 @@ class DemoImageRenderer:
         fill: str,
         outline: tuple[int, int, int, int] | None = None,
     ) -> None:
-        self._draw_shadowed_rect(
+        draw_shadowed_rect(
             image,
             rect=rect,
             radius=radius,
-            shadow_color=self._rgba(self.theme.accent, 8),
+            shadow_color=rgba(self.theme.accent, 8),
             shadow_offset_y=1,
             shadow_blur=10,
             fill=fill,
@@ -2653,60 +2619,3 @@ class DemoImageRenderer:
             font=self.capsule_font,
             fill=self.theme.strong,
         )
-
-    def _draw_section_watermark(
-        self,
-        draw: ImageDraw.ImageDraw,
-        *,
-        rect: tuple[int, int, int, int],
-        text: str,
-        font: DocsFont,
-        fill: tuple[int, int, int, int],
-        align: Literal["left", "right"] = "left",
-    ) -> None:
-        spread = self._spread_caps_text(text)
-        fitted = self._fit_text(
-            draw,
-            spread,
-            font,
-            max_width=max(120, rect[2] - rect[0]),
-        )
-        text_width = self._text_width(fitted, font)
-        x = rect[0] if align == "left" else max(rect[0], rect[2] - text_width)
-        y = rect[1]
-        self._draw_text(draw, x=x, y=y, text=fitted, font=font, fill=fill)
-
-    def _spread_caps_text(self, text: str) -> str:
-        words: list[str] = []
-        for word in text.upper().split():
-            words.append((" " * self.WATERMARK_SPACING).join(word))
-        return "  ".join(words)
-
-    def _font_size(self, font: DocsFont) -> int:
-        return int(getattr(font, "size", 16))
-
-    def _line_height_for_font(self, font: DocsFont, *, minimum: int = 0) -> int:
-        natural = ceil(self._font_size(font) * 1.4)
-        return max(minimum, ceil(natural / 8) * 8)
-
-    def _contains_emoji(self, text: str) -> bool:
-        return any(
-            "\U0001f000" <= char <= "\U0001faff" or char == "\ufe0f" for char in text
-        )
-
-    def _rgba(self, color: str, alpha: int) -> tuple[int, int, int, int]:
-        color = color.lstrip("#")
-        return (
-            int(color[0:2], 16),
-            int(color[2:4], 16),
-            int(color[4:6], 16),
-            alpha,
-        )
-
-    def _preferred_text_on_color(self, color: str) -> Literal["light", "dark"]:
-        color = color.lstrip("#")
-        red = int(color[0:2], 16)
-        green = int(color[2:4], 16)
-        blue = int(color[4:6], 16)
-        luminance = (red * 299 + green * 587 + blue * 114) / 1000
-        return "light" if luminance < 148 else "dark"

@@ -22,6 +22,7 @@ from src.lib.message_plan import MessagePlanEntry, render_message_plan_entry
 import src.lib.plugin_docs as plugin_docs_module
 from src.lib.plugin_docs import (
     DemoImageRenderer,
+    DemoRenderParams,
     DocNode,
     DocsRenderContext,
     FeatureDoc,
@@ -62,6 +63,11 @@ from src.lib.plugin_docs import (
     split_features_for_disclosure,
     split_inline_text_spans,
 )
+from src.lib.plugin_docs.collection import (
+    _text_width,
+    _tile_line_height,
+)
+from src.lib.plugin_docs.render.demo import line_height_for_font as line_height_for_font
 
 __all__ = [
     "DEFAULT_DEMO_THEME",
@@ -70,6 +76,7 @@ __all__ = [
     "Any",
     "BytesIO",
     "DemoImageRenderer",
+    "DemoRenderParams",
     "DocNode",
     "DocsRenderContext",
     "FeatureDoc",
@@ -84,6 +91,8 @@ __all__ = [
     "TriggerType",
     "VirtualFeatureDocSpec",
     "VirtualPluginDocSpec",
+    "_text_width",
+    "_tile_line_height",
     "audit_demo_layout",
     "build_command_layout",
     "build_demo_theme",
@@ -104,6 +113,7 @@ __all__ = [
     "datetime",
     "feature_demo_help_command",
     "get_demo_theme",
+    "line_height_for_font",
     "load_doc_node",
     "load_plugin_doc_bundle",
     "load_representative_demo_bytes",

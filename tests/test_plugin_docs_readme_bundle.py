@@ -263,7 +263,7 @@ def test_markdown_layout_supports_lists_and_code_blocks() -> None:
     layout = build_markdown_layout(
         "第一段\n\n1. 第一步\n2. 第二步 `code`\n\n```bash\necho hello\n```",
         max_width=600,
-        line_height=renderer._line_height_for_font(renderer.instruction_font),
+        line_height=line_height_for_font(renderer.instruction_font),
         indent_px=renderer.COMMAND_INDENT_PX,
         measure_text=lambda value, code: renderer._measure_markdown_text_width(
             value,
@@ -587,12 +587,12 @@ def test_demo_image_renderer_fit_inline_spans_keeps_code_spans_without_backticks
     renderer = DemoImageRenderer()
     trigger_prefix = tr("zh-CN", "docs.feature.trigger_example", command="")
 
-    fitted = renderer._fit_inline_spans(  # pyright: ignore[reportPrivateUsage]
+    fitted = renderer._fit_inline_spans(
         (
             InlineTextSpan(trigger_prefix, code=False),
             InlineTextSpan("#help wordbank pending", code=True),
         ),
-        renderer.meta_font,  # pyright: ignore[reportPrivateUsage]
+        renderer.meta_font,
         120,
     )
 

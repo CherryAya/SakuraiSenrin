@@ -31,6 +31,12 @@ from .demo import (
     DocsFont,
     ShowcaseNoteItem,
     ShowcaseTurnPlacement,
+    contains_emoji,
+    draw_dashed_line,
+    draw_panel_outline,
+    draw_shadowed_rect,
+    line_height_for_font,
+    rgba,
 )
 from .encoding import encode_docs_image
 from .helpers import (
@@ -94,6 +100,23 @@ class _SupportStripLayout:
     group_lines: tuple[tuple[tuple[InlineTextSpan, ...], ...], ...]
     qr_image: Image.Image | None
     qr_rect: tuple[int, int, int, int] | None
+
+
+def _looks_like_url(text: str) -> bool:
+    lowered = text.lower()
+    return "://" in lowered or lowered.startswith("www.") or "www." in lowered
+
+
+def _is_wrap_boundary(char: str) -> bool:
+    return char.isspace() or char in "-/_,.;:|)]}>"
+
+
+def _plain_text_from_line(line: Sequence[InlineTextSpan]) -> str:
+    return "".join(span.text for span in line)
+
+
+def _primary_feature_for_entry(node: DocNode) -> FeatureDoc | None:
+    return node.features[0] if node.features else None
 
 
 class ProgressiveDisclosureRenderer(DemoImageRenderer):
@@ -174,10 +197,10 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         )
         header_height = (
             self.theme.hero_top
-            + len(header_title_lines) * self._line_height_for_font(self.title_font)
+            + len(header_title_lines) * line_height_for_font(self.title_font)
             + self.theme.hero_text_gap
             + len(header_summary_lines)
-            * self._line_height_for_font(
+            * line_height_for_font(
                 self.summary_font,
                 minimum=self.theme.hero_summary_line_height,
             )
@@ -230,11 +253,11 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             lines=header_title_lines,
             font=self.title_font,
             fill=self.theme.hero_title,
-            line_height=self._line_height_for_font(self.title_font),
+            line_height=line_height_for_font(self.title_font),
         )
         summary_top = (
             self.theme.hero_top
-            + len(header_title_lines) * self._line_height_for_font(self.title_font)
+            + len(header_title_lines) * line_height_for_font(self.title_font)
             + self.theme.hero_text_gap
         )
         self._draw_multiline_text(
@@ -244,7 +267,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             lines=header_summary_lines,
             font=self.summary_font,
             fill=self.theme.hero_summary,
-            line_height=self._line_height_for_font(
+            line_height=line_height_for_font(
                 self.summary_font,
                 minimum=self.theme.hero_summary_line_height,
             ),
@@ -290,7 +313,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         width: int,
         height: int,
     ) -> None:
-        line_fill = self._rgba(self.theme.grid_color, 24)
+        line_fill = rgba(self.theme.grid_color, 24)
         spacing = self.theme.grid_spacing
         max_height = height
         for y in range(self.theme.hero_top // 2, max_height, spacing):
@@ -322,8 +345,8 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         width: int,
         height: int,
     ) -> None:
-        accent = self._rgba(self.theme.accent, 88)
-        support = self._rgba(self.theme.grid_color, 96)
+        accent = rgba(self.theme.accent, 88)
+        support = rgba(self.theme.grid_color, 96)
         draw.line(
             (
                 self.theme.hero_side_padding - 12,
@@ -393,10 +416,10 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         )
         hero_bottom = (
             self.theme.hero_top
-            + len(header_title_lines) * self._line_height_for_font(self.title_font)
+            + len(header_title_lines) * line_height_for_font(self.title_font)
             + self.theme.hero_text_gap
             + len(header_summary_lines)
-            * self._line_height_for_font(
+            * line_height_for_font(
                 self.summary_font,
                 minimum=self.theme.hero_summary_line_height,
             )
@@ -420,9 +443,14 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             section_positions.append((layout, cursor_y))
             cursor_y += layout.height + self.GUIDE_SECTION_GAP
 
-        support_layout = self._measure_showcase_support_strip(
+        support_layout = self._measure_support_strip(
             locale=locale,
             top=cursor_y + self.SUPPORT_STRIP_GAP,
+            qr_gap=28,
+            group_row_gap=10,
+            title_gap=18,
+            tip_gap=20,
+            min_group_width=160,
         )
         footer_rect = (
             side,
@@ -444,11 +472,11 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             lines=header_title_lines,
             font=self.title_font,
             fill=self.theme.hero_title,
-            line_height=self._line_height_for_font(self.title_font),
+            line_height=line_height_for_font(self.title_font),
         )
         summary_top = (
             self.theme.hero_top
-            + len(header_title_lines) * self._line_height_for_font(self.title_font)
+            + len(header_title_lines) * line_height_for_font(self.title_font)
             + self.theme.hero_text_gap
         )
         self._draw_multiline_text(
@@ -458,7 +486,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             lines=header_summary_lines,
             font=self.summary_font,
             fill=self.theme.hero_summary,
-            line_height=self._line_height_for_font(
+            line_height=line_height_for_font(
                 self.summary_font,
                 minimum=self.theme.hero_summary_line_height,
             ),
@@ -522,16 +550,16 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         )
         hero_bottom = (
             self.theme.hero_top
-            + len(header_title_lines) * self._line_height_for_font(self.title_font)
+            + len(header_title_lines) * line_height_for_font(self.title_font)
             + self.theme.hero_text_gap
             + len(header_summary_lines)
-            * self._line_height_for_font(
+            * line_height_for_font(
                 self.summary_font,
                 minimum=self.theme.hero_summary_line_height,
             )
             + self.theme.hero_bottom_padding
         )
-        primary_feature = self._primary_feature_for_entry(node)
+        primary_feature = _primary_feature_for_entry(node)
         command_text = (
             primary_feature.trigger.strip()
             if primary_feature is not None and primary_feature.trigger.strip()
@@ -542,7 +570,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             max_width=width
             - self.GUIDE_SECTION_PADDING_X * 2
             - self.theme.trigger_padding_x * 2,
-            line_height=self._line_height_for_font(self.body_font),
+            line_height=line_height_for_font(self.body_font),
             indent_px=self.COMMAND_INDENT_PX,
             measure_text=lambda value: self._text_width(value, self.body_font),
             palette=self._command_palette(),
@@ -560,7 +588,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
                 font=self.instruction_font,
             )
         )
-        body_line_height = self._line_height_for_font(self.instruction_font)
+        body_line_height = line_height_for_font(self.instruction_font)
         intro_section_height = (
             self.GUIDE_SECTION_PADDING_Y * 2
             + command_height
@@ -602,9 +630,14 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             if demo_card_rect is not None
             else hero_bottom + intro_section_height
         )
-        support_layout = self._measure_showcase_support_strip(
+        support_layout = self._measure_support_strip(
             locale=locale,
             top=content_bottom + self.SUPPORT_STRIP_GAP,
+            qr_gap=28,
+            group_row_gap=10,
+            title_gap=18,
+            tip_gap=20,
+            min_group_width=160,
         )
         footer_rect = (
             side,
@@ -625,25 +658,13 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             lines=header_title_lines,
             font=self.title_font,
             fill=self.theme.hero_title,
-            line_height=self._line_height_for_font(self.title_font),
+            line_height=line_height_for_font(self.title_font),
         )
         summary_top = (
             self.theme.hero_top
-            + len(header_title_lines) * self._line_height_for_font(self.title_font)
+            + len(header_title_lines) * line_height_for_font(self.title_font)
             + self.theme.hero_text_gap
         )
-        # self._draw_section_watermark(
-        #     draw,
-        #     rect=(
-        #         side,
-        #         summary_top + 4,
-        #         self.WIDTH - side - self.theme.hero_standee_size + 16,
-        #         hero_bottom,
-        #     ),
-        #     text="GROUP ACCESS",
-        #     font=self.watermark_font,
-        #     fill=self._rgba(self.theme.accent, self.WATERMARK_ALPHA_LARGE),
-        # )
         self._draw_multiline_text(
             draw,
             x=side,
@@ -651,7 +672,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             lines=header_summary_lines,
             font=self.summary_font,
             fill=self.theme.hero_summary,
-            line_height=self._line_height_for_font(
+            line_height=line_height_for_font(
                 self.summary_font,
                 minimum=self.theme.hero_summary_line_height,
             ),
@@ -670,21 +691,8 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             rect=rect,
             radius=self.GUIDE_SECTION_RADIUS,
             fill=self.theme.panel_bg,
-            outline=self._rgba(self.theme.accent, 62),
+            outline=rgba(self.theme.accent, 62),
         )
-        # self._draw_section_watermark(
-        #     draw,
-        #     rect=(
-        #         rect[0] + self.GUIDE_SECTION_PADDING_X,
-        #         rect[1] + 6,
-        #         rect[2] - self.GUIDE_SECTION_PADDING_X,
-        #         rect[1] + 70,
-        #     ),
-        #     text="ACCESS NOTE",
-        #     font=self.watermark_font_small,
-        #     fill=self._rgba(self.theme.accent, self.WATERMARK_ALPHA),
-        #     align="right",
-        # )
         command_rect = (
             rect[0] + self.GUIDE_SECTION_PADDING_X,
             rect[1] + self.GUIDE_SECTION_PADDING_Y,
@@ -741,7 +749,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
                 rect=demo_card_rect,
                 radius=self.GUIDE_SECTION_RADIUS,
                 fill=self.theme.panel_bg,
-                outline=self._rgba(self.theme.accent, 62),
+                outline=rgba(self.theme.accent, 62),
             )
             self._draw_capsule_title(
                 draw,
@@ -750,19 +758,6 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
                 fill=(255, 243, 228, 191),
                 outline=None,
             )
-            # self._draw_section_watermark(
-            #     draw,
-            #     rect=(
-            #         demo_card_rect[0] + self.GUIDE_SECTION_PADDING_X,
-            #         demo_card_rect[1] + 8,
-            #         demo_card_rect[2] - self.GUIDE_SECTION_PADDING_X,
-            #         demo_card_rect[1] + 78,
-            #     ),
-            #     text="DEMONSTRATION FLOW",
-            #     font=self.watermark_font_small,
-            #     fill=self._rgba(self.theme.accent, self.WATERMARK_ALPHA),
-            #     align="right",
-            # )
             badge_rect = (
                 demo_card_rect[0] + self.GUIDE_SECTION_PADDING_X,
                 demo_card_rect[1] + 28,
@@ -883,17 +878,17 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         )
         hero_bottom = (
             self.theme.hero_top
-            + len(header_title_lines) * self._line_height_for_font(self.title_font)
+            + len(header_title_lines) * line_height_for_font(self.title_font)
             + self.theme.hero_text_gap
             + len(header_summary_lines)
-            * self._line_height_for_font(
+            * line_height_for_font(
                 self.summary_font,
                 minimum=self.theme.hero_summary_line_height,
             )
             + self.theme.hero_bottom_padding
         )
         body_text = build_plugin_summary_copy(node).strip()
-        primary_feature = self._primary_feature_for_entry(node)
+        primary_feature = _primary_feature_for_entry(node)
         command_layout = None
         command_height = 0
         if primary_feature is not None:
@@ -904,7 +899,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
                 max_width=width
                 - self.GUIDE_SECTION_PADDING_X * 2
                 - self.theme.trigger_padding_x * 2,
-                line_height=self._line_height_for_font(self.body_font),
+                line_height=line_height_for_font(self.body_font),
                 indent_px=self.COMMAND_INDENT_PX,
                 measure_text=lambda value: self._text_width(value, self.body_font),
                 palette=self._command_palette(),
@@ -919,7 +914,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
                 font=self.instruction_font,
             )
         )
-        body_line_height = self._line_height_for_font(self.instruction_font)
+        body_line_height = line_height_for_font(self.instruction_font)
         body_content_height = len(body_lines) * body_line_height if body_lines else 0
         section_height = (
             self.GUIDE_SECTION_PADDING_Y * 2
@@ -934,9 +929,14 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             if body_lines
             else self.GUIDE_SECTION_PADDING_Y * 2 + command_height + 24
         )
-        support_layout = self._measure_showcase_support_strip(
+        support_layout = self._measure_support_strip(
             locale=locale,
             top=hero_bottom + section_height + self.SUPPORT_STRIP_GAP,
+            qr_gap=28,
+            group_row_gap=10,
+            title_gap=18,
+            tip_gap=20,
+            min_group_width=160,
         )
         footer_rect = (
             side,
@@ -957,25 +957,13 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             lines=header_title_lines,
             font=self.title_font,
             fill=self.theme.hero_title,
-            line_height=self._line_height_for_font(self.title_font),
+            line_height=line_height_for_font(self.title_font),
         )
         summary_top = (
             self.theme.hero_top
-            + len(header_title_lines) * self._line_height_for_font(self.title_font)
+            + len(header_title_lines) * line_height_for_font(self.title_font)
             + self.theme.hero_text_gap
         )
-        # self._draw_section_watermark(
-        #     draw,
-        #     rect=(
-        #         side,
-        #         summary_top + 4,
-        #         self.WIDTH - side - self.theme.hero_standee_size + 16,
-        #         hero_bottom,
-        #     ),
-        #     text="SUMMARY OVERVIEW",
-        #     font=self.watermark_font,
-        #     fill=self._rgba(self.theme.accent, self.WATERMARK_ALPHA_LARGE),
-        # )
         self._draw_multiline_text(
             draw,
             x=side,
@@ -983,7 +971,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             lines=header_summary_lines,
             font=self.summary_font,
             fill=self.theme.hero_summary,
-            line_height=self._line_height_for_font(
+            line_height=line_height_for_font(
                 self.summary_font,
                 minimum=self.theme.hero_summary_line_height,
             ),
@@ -997,7 +985,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         self._draw_standee(image, draw, standee_rect)
         if body_lines:
             rect = (side, hero_bottom, side + width, hero_bottom + section_height)
-            self._draw_shadowed_rect(
+            draw_shadowed_rect(
                 image,
                 rect=rect,
                 radius=self.GUIDE_SECTION_RADIUS,
@@ -1006,19 +994,6 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
                 shadow_blur=self.theme.instruction_shadow_blur,
                 fill=self.theme.panel_bg,
             )
-            # self._draw_section_watermark(
-            #     draw,
-            #     rect=(
-            #         rect[0] + self.GUIDE_SECTION_PADDING_X,
-            #         rect[1] + 8,
-            #         rect[2] - self.GUIDE_SECTION_PADDING_X,
-            #         rect[1] + 80,
-            #     ),
-            #     text="MODULE SUMMARY",
-            #     font=self.watermark_font_small,
-            #     fill=self._rgba(self.theme.accent, self.WATERMARK_ALPHA),
-            #     align="right",
-            # )
             cursor_y = rect[1] + self.GUIDE_SECTION_PADDING_Y
             if command_layout is not None:
                 command_rect = (
@@ -1033,7 +1008,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
                     command_rect,
                     radius=self.SINGLE_PAGE_COMMAND_RADIUS,
                     fill=self.theme.terminal_bg,
-                    outline=self._rgba(self.theme.accent, 52),
+                    outline=rgba(self.theme.accent, 52),
                 )
                 self._draw_command_layout(
                     draw,
@@ -1111,7 +1086,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             content_x + pill_width,
             category_top + pill_height,
         )
-        title_line_height = self._line_height_for_font(
+        title_line_height = line_height_for_font(
             self.summary_font,
             minimum=self._font_pixel_height(self.summary_font)
             + self.DASHBOARD_CARD_TEXT_SPACING,
@@ -1134,7 +1109,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         )
         title_top = category_rect[3] + self.DASHBOARD_CARD_TITLE_GAP
         title_block_height = self._line_block_height_with_spacing(
-            tuple(self._plain_text_from_line(line) for line in title_lines),
+            tuple(_plain_text_from_line(line) for line in title_lines),
             self.summary_font,
             self.DASHBOARD_CARD_TEXT_SPACING,
         )
@@ -1142,7 +1117,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         command_layout = build_command_layout(
             node_help_command(node),
             max_width=content_width - self.DASHBOARD_CARD_COMMAND_PADDING_X * 2,
-            line_height=self._line_height_for_font(self.note_font),
+            line_height=line_height_for_font(self.note_font),
             indent_px=self.COMMAND_INDENT_PX,
             measure_text=lambda value: self._text_width(value, self.note_font),
             palette=palette,
@@ -1180,13 +1155,13 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             line_spacing=self.DASHBOARD_CARD_TEXT_SPACING,
             ellipsis="...",
         )
-        summary_line_height = self._line_height_for_font(
+        summary_line_height = line_height_for_font(
             self.note_font,
             minimum=self._font_pixel_height(self.note_font)
             + self.DASHBOARD_CARD_TEXT_SPACING,
         )
         summary_block_height = self._line_block_height_with_spacing(
-            tuple(self._plain_text_from_line(line) for line in summary_lines),
+            tuple(_plain_text_from_line(line) for line in summary_lines),
             self.note_font,
             self.DASHBOARD_CARD_TEXT_SPACING,
         )
@@ -1209,84 +1184,6 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             height=height,
         )
 
-    def _draw_dashboard_card(
-        self,
-        image: Image.Image,
-        draw: ImageDraw.ImageDraw,
-        *,
-        card: DashboardCardLayout,
-        x: int,
-        y: int,
-        width: int,
-    ) -> None:
-        rect = (x, y, x + width, y + card.height)
-        self._draw_shadowed_rect(
-            image,
-            rect=rect,
-            radius=self.DASHBOARD_CARD_RADIUS,
-            shadow_color=self.theme.card_shadow,
-            shadow_offset_y=self.theme.instruction_shadow_offset_y,
-            shadow_blur=self.theme.instruction_shadow_blur,
-            fill=self.theme.panel_bg,
-        )
-        accent_rect = (x + 24, y + 24, x + 40, y + card.height - 24)
-        draw.rounded_rectangle(accent_rect, radius=8, fill=card.theme.accent)
-        content_x = x + card.content_x
-        category_rect = (
-            x + card.category_rect[0],
-            y + card.category_rect[1],
-            x + card.category_rect[2],
-            y + card.category_rect[3],
-        )
-        draw.rounded_rectangle(
-            category_rect,
-            radius=(category_rect[3] - category_rect[1]) // 2,
-            fill=card.theme.indigo_soft,
-        )
-        self._draw_text_centered(
-            draw,
-            category_rect,
-            card.node.category.upper(),
-            font=self.eyebrow_font,
-            fill=card.theme.indigo_text,
-        )
-        self._draw_multiline_text(
-            draw,
-            x=content_x,
-            y=y + card.title_top,
-            lines=card.title_lines,
-            font=self.summary_font,
-            fill=card.theme.deep,
-            line_height=card.title_line_height,
-            render_code_chip=False,
-        )
-        self._draw_multiline_text(
-            draw,
-            x=content_x,
-            y=y + card.summary_top,
-            lines=card.summary_lines,
-            font=self.note_font,
-            fill=card.theme.hint,
-            line_height=card.summary_line_height,
-            render_code_chip=False,
-        )
-        command_rect = (
-            x + card.command_rect[0],
-            y + card.command_rect[1],
-            x + card.command_rect[2],
-            y + card.command_rect[3],
-        )
-        draw.rounded_rectangle(command_rect, radius=20, fill=card.theme.panel_soft_bg)
-        self._draw_command_layout(
-            draw,
-            x=command_rect[0] + self.DASHBOARD_CARD_COMMAND_PADDING_X,
-            y=command_rect[1] + self.DASHBOARD_CARD_COMMAND_PADDING_Y,
-            layout=card.command_layout,
-            font=self.note_font,
-            default_fill=card.theme.deep,
-            guide_fill=card.theme.line,
-        )
-
     def _measure_dashboard_section_height(
         self,
         section: HelpDashboardSection,
@@ -1300,7 +1197,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
                 font=self.summary_font,
             )
         )
-        line_height = self._line_height_for_font(self.note_font)
+        line_height = line_height_for_font(self.note_font)
         item_height = 0
         for index, node in enumerate(section.nodes):
             summary_lines = tuple(
@@ -1310,14 +1207,14 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
                     font=self.note_font,
                 )
             )[:2]
-            item_height += self._line_height_for_font(self.instruction_font)
+            item_height += line_height_for_font(self.instruction_font)
             item_height += self.DASHBOARD_SECTION_SUMMARY_GAP
             item_height += len(summary_lines) * line_height
             item_height += self.DASHBOARD_SECTION_COMMAND_GAP
             command_layout = build_command_layout(
                 node_help_command(node),
                 max_width=content_width - 32,
-                line_height=self._line_height_for_font(self.note_font),
+                line_height=line_height_for_font(self.note_font),
                 indent_px=self.COMMAND_INDENT_PX,
                 measure_text=lambda value: self._text_width(value, self.note_font),
                 palette=self._command_palette(
@@ -1334,7 +1231,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
                 item_height += self.DASHBOARD_SECTION_ITEM_GAP
         return (
             self.GUIDE_SECTION_PADDING_Y * 2
-            + len(title_lines) * self._line_height_for_font(self.summary_font)
+            + len(title_lines) * line_height_for_font(self.summary_font)
             + self.DASHBOARD_SECTION_TITLE_GAP
             + item_height
         )
@@ -1351,7 +1248,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
     ) -> None:
         section_height = self._measure_dashboard_section_height(section, width)
         rect = (left, top, left + width, top + section_height)
-        self._draw_shadowed_rect(
+        draw_shadowed_rect(
             image,
             rect=rect,
             radius=self.GUIDE_SECTION_RADIUS,
@@ -1387,18 +1284,18 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             lines=title_lines,
             font=self.summary_font,
             fill=section.text or self.theme.deep,
-            line_height=self._line_height_for_font(self.summary_font),
+            line_height=line_height_for_font(self.summary_font),
             render_code_chip=False,
         )
         cursor_y += (
-            len(title_lines) * self._line_height_for_font(self.summary_font)
+            len(title_lines) * line_height_for_font(self.summary_font)
             + self.DASHBOARD_SECTION_TITLE_GAP
         )
         for node in section.nodes:
             command_layout = build_command_layout(
                 node_help_command(node),
                 max_width=content_width - 32,
-                line_height=self._line_height_for_font(self.note_font),
+                line_height=line_height_for_font(self.note_font),
                 indent_px=self.COMMAND_INDENT_PX,
                 measure_text=lambda value: self._text_width(value, self.note_font),
                 palette=self._command_palette(
@@ -1419,8 +1316,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
                 draw,
                 marker=section.marker,
                 left=content_left,
-                center_y=cursor_y
-                + self._line_height_for_font(self.instruction_font) // 2,
+                center_y=cursor_y + line_height_for_font(self.instruction_font) // 2,
                 color=section.accent or self.theme.accent,
             )
             self._draw_multiline_text(
@@ -1430,11 +1326,11 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
                 lines=(split_inline_text_spans(node.title),),
                 font=self.instruction_font,
                 fill=self.theme.deep,
-                line_height=self._line_height_for_font(self.instruction_font),
+                line_height=line_height_for_font(self.instruction_font),
                 render_code_chip=False,
             )
             cursor_y += (
-                self._line_height_for_font(self.instruction_font)
+                line_height_for_font(self.instruction_font)
                 + self.DASHBOARD_SECTION_SUMMARY_GAP
             )
             self._draw_multiline_text(
@@ -1444,11 +1340,11 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
                 lines=summary_lines,
                 font=self.note_font,
                 fill=section.hint or self.theme.hint,
-                line_height=self._line_height_for_font(self.note_font),
+                line_height=line_height_for_font(self.note_font),
                 render_code_chip=False,
             )
             cursor_y += (
-                len(summary_lines) * self._line_height_for_font(self.note_font)
+                len(summary_lines) * line_height_for_font(self.note_font)
                 + self.DASHBOARD_SECTION_COMMAND_GAP
             )
             command_rect = (
@@ -1465,7 +1361,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
                 fill=section.command_bg
                 or section.panel_soft_bg
                 or self.theme.panel_soft_bg,
-                outline=self._rgba(section.accent or self.theme.accent, 64),
+                outline=rgba(section.accent or self.theme.accent, 64),
                 width=1,
             )
             self._draw_command_layout(
@@ -1539,7 +1435,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         trigger_layout = build_command_layout(
             feature_command_for_display_text(node.bundle, feature, node.title),
             max_width=content_width - self.theme.trigger_padding_x * 2,
-            line_height=self._line_height_for_font(self.body_font),
+            line_height=line_height_for_font(self.body_font),
             indent_px=self.COMMAND_INDENT_PX,
             measure_text=lambda value: self._text_width(value, self.body_font),
             palette=self._command_palette(),
@@ -1547,7 +1443,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         demo_layout = build_command_layout(
             feature_demo_help_command(node, feature),
             max_width=content_width - self.theme.trigger_padding_x * 2,
-            line_height=self._line_height_for_font(self.note_font),
+            line_height=line_height_for_font(self.note_font),
             indent_px=self.COMMAND_INDENT_PX,
             measure_text=lambda value: self._text_width(value, self.note_font),
             palette=self._command_palette(),
@@ -1555,7 +1451,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         overview_layout = build_markdown_layout(
             feature.overview or feature.summary,
             max_width=content_width,
-            line_height=self._line_height_for_font(self.instruction_font),
+            line_height=line_height_for_font(self.instruction_font),
             indent_px=self.COMMAND_INDENT_PX,
             measure_text=lambda value, code: self._measure_markdown_text_width(
                 value,
@@ -1593,8 +1489,8 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             note_height = note_items[-1].rect[3] - note_items[0].rect[1]
         height = (
             self.GUIDE_SECTION_PADDING_Y * 2
-            + len(title_lines) * self._line_height_for_font(self.summary_font)
-            + len(summary_lines) * self._line_height_for_font(self.instruction_font)
+            + len(title_lines) * line_height_for_font(self.summary_font)
+            + len(summary_lines) * line_height_for_font(self.instruction_font)
             + trigger_layout.total_height
             + demo_layout.total_height
             + overview_layout.total_height
@@ -1627,7 +1523,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
     ) -> None:
         width = self.WIDTH - left * 2
         rect = (left, top, left + width, top + layout.height)
-        self._draw_shadowed_rect(
+        draw_shadowed_rect(
             image,
             rect=rect,
             radius=self.GUIDE_SECTION_RADIUS,
@@ -1645,10 +1541,10 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             lines=layout.title_lines,
             font=self.summary_font,
             fill=self.theme.deep,
-            line_height=self._line_height_for_font(self.summary_font),
+            line_height=line_height_for_font(self.summary_font),
         )
         cursor_y += (
-            len(layout.title_lines) * self._line_height_for_font(self.summary_font) + 12
+            len(layout.title_lines) * line_height_for_font(self.summary_font) + 12
         )
         self._draw_multiline_text(
             draw,
@@ -1657,13 +1553,11 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             lines=layout.summary_lines,
             font=self.instruction_font,
             fill=self.theme.hint,
-            line_height=self._line_height_for_font(self.instruction_font),
+            line_height=line_height_for_font(self.instruction_font),
             render_code_chip=False,
         )
         cursor_y += (
-            len(layout.summary_lines)
-            * self._line_height_for_font(self.instruction_font)
-            + 24
+            len(layout.summary_lines) * line_height_for_font(self.instruction_font) + 24
         )
         trigger_rect = (
             content_left,
@@ -1679,7 +1573,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             trigger_rect,
             radius=self.SINGLE_PAGE_COMMAND_RADIUS,
             fill=self.theme.terminal_bg,
-            outline=self._rgba(self.theme.accent, 48),
+            outline=rgba(self.theme.accent, 48),
         )
         self._draw_command_layout(
             draw,
@@ -1700,10 +1594,10 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             ),
             font=self.note_font,
             fill=self.theme.hint,
-            line_height=self._line_height_for_font(self.note_font),
+            line_height=line_height_for_font(self.note_font),
             render_code_chip=False,
         )
-        cursor_y += self._line_height_for_font(self.note_font) + 8
+        cursor_y += line_height_for_font(self.note_font) + 8
         demo_rect = (
             content_left,
             cursor_y,
@@ -1718,7 +1612,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             demo_rect,
             radius=self.SINGLE_PAGE_COMMAND_RADIUS,
             fill=self.theme.panel_soft_bg,
-            outline=self._rgba(self.theme.accent, 42),
+            outline=rgba(self.theme.accent, 42),
         )
         self._draw_command_layout(
             draw,
@@ -1819,180 +1713,6 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             )
             self._draw_turn(image, draw, shifted, locale=locale)
 
-    def _measure_advanced_item(
-        self,
-        *,
-        node: DocNode,
-        feature: FeatureDoc,
-        width: int,
-    ) -> GuideAdvancedItemLayout:
-        title_lines = tuple(
-            self._wrap_inline_text(
-                feature.title,
-                max_width=width,
-                font=self.instruction_font,
-            )
-        )[:2]
-        summary_lines = tuple(
-            self._wrap_inline_text(
-                feature.summary,
-                max_width=width,
-                font=self.note_font,
-            )
-        )[:2]
-        trigger_layout = build_command_layout(
-            feature_command_for_display_text(node.bundle, feature, node.title),
-            max_width=width,
-            line_height=self._line_height_for_font(self.note_font),
-            indent_px=self.COMMAND_INDENT_PX,
-            measure_text=lambda value: self._text_width(value, self.note_font),
-            palette=self._command_palette(),
-        )
-        demo_layout = build_command_layout(
-            feature_demo_help_command(node, feature),
-            max_width=width,
-            line_height=self._line_height_for_font(self.note_font),
-            indent_px=self.COMMAND_INDENT_PX,
-            measure_text=lambda value: self._text_width(value, self.note_font),
-            palette=self._command_palette(),
-        )
-        height = (
-            len(title_lines) * self._line_height_for_font(self.instruction_font)
-            + len(summary_lines) * self._line_height_for_font(self.note_font)
-            + trigger_layout.total_height
-            + demo_layout.total_height
-            + 48
-        )
-        return GuideAdvancedItemLayout(
-            feature=feature,
-            title_lines=title_lines,
-            summary_lines=summary_lines,
-            trigger_layout=trigger_layout,
-            demo_layout=demo_layout,
-            height=height,
-        )
-
-    def _draw_advanced_options(
-        self,
-        image: Image.Image,
-        draw: ImageDraw.ImageDraw,
-        *,
-        node: DocNode,
-        layouts: Sequence[GuideAdvancedItemLayout],
-        top: int,
-        left: int,
-        width: int,
-    ) -> None:
-        total_height = self.GUIDE_SECTION_PADDING_Y * 2 + 72
-        total_height += sum(layout.height for layout in layouts)
-        total_height += max(0, len(layouts) - 1) * 24
-        rect = (left, top, left + width, top + total_height)
-        self._draw_shadowed_rect(
-            image,
-            rect=rect,
-            radius=self.GUIDE_SECTION_RADIUS,
-            shadow_color=self.theme.card_shadow,
-            shadow_offset_y=self.theme.instruction_shadow_offset_y,
-            shadow_blur=self.theme.instruction_shadow_blur,
-            fill=self.theme.panel_bg,
-        )
-        content_left = rect[0] + self.GUIDE_SECTION_PADDING_X
-        cursor_y = rect[1] + self.GUIDE_SECTION_PADDING_Y
-        title_lines = tuple(
-            self._wrap_inline_text(
-                "Advanced Options",
-                max_width=width - self.GUIDE_SECTION_PADDING_X * 2,
-                font=self.summary_font,
-            )
-        )
-        self._draw_multiline_text(
-            draw,
-            x=content_left,
-            y=cursor_y,
-            lines=title_lines,
-            font=self.summary_font,
-            fill=self.theme.deep,
-            line_height=self._line_height_for_font(self.summary_font),
-        )
-        cursor_y += (
-            len(title_lines) * self._line_height_for_font(self.summary_font) + 24
-        )
-        for layout in layouts:
-            self._draw_multiline_text(
-                draw,
-                x=content_left,
-                y=cursor_y,
-                lines=layout.title_lines,
-                font=self.instruction_font,
-                fill=self.theme.deep,
-                line_height=self._line_height_for_font(self.instruction_font),
-            )
-            cursor_y += (
-                len(layout.title_lines)
-                * self._line_height_for_font(self.instruction_font)
-                + 8
-            )
-            self._draw_multiline_text(
-                draw,
-                x=content_left,
-                y=cursor_y,
-                lines=layout.summary_lines,
-                font=self.note_font,
-                fill=self.theme.hint,
-                line_height=self._line_height_for_font(self.note_font),
-                render_code_chip=False,
-            )
-            cursor_y += (
-                len(layout.summary_lines) * self._line_height_for_font(self.note_font)
-                + 12
-            )
-            trigger_rect = (
-                content_left,
-                cursor_y,
-                rect[2] - self.GUIDE_SECTION_PADDING_X,
-                cursor_y
-                + layout.trigger_layout.total_height
-                + self.theme.trigger_padding_y * 2,
-            )
-            draw.rounded_rectangle(
-                trigger_rect,
-                radius=self.theme.trigger_radius,
-                fill=self.theme.terminal_bg,
-            )
-            self._draw_command_layout(
-                draw,
-                x=trigger_rect[0] + self.theme.trigger_padding_x,
-                y=trigger_rect[1] + self.theme.trigger_padding_y,
-                layout=layout.trigger_layout,
-                font=self.note_font,
-                default_fill=self.theme.terminal_text,
-                guide_fill=self.theme.line,
-            )
-            cursor_y = trigger_rect[3] + 10
-            demo_rect = (
-                content_left,
-                cursor_y,
-                rect[2] - self.GUIDE_SECTION_PADDING_X,
-                cursor_y
-                + layout.demo_layout.total_height
-                + self.theme.trigger_padding_y * 2,
-            )
-            draw.rounded_rectangle(
-                demo_rect,
-                radius=self.theme.trigger_radius,
-                fill=self.theme.panel_soft_bg,
-            )
-            self._draw_command_layout(
-                draw,
-                x=demo_rect[0] + self.theme.trigger_padding_x,
-                y=demo_rect[1] + self.theme.trigger_padding_y,
-                layout=layout.demo_layout,
-                font=self.note_font,
-                default_fill=self.theme.accent,
-                guide_fill=self.theme.line,
-            )
-            cursor_y = demo_rect[3] + 24
-
     def _draw_trace_footer(
         self,
         draw: ImageDraw.ImageDraw,
@@ -2002,7 +1722,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         right_text: str,
     ) -> None:
         divider_y = footer_rect[1] + 8
-        self._draw_dashed_line(
+        draw_dashed_line(
             draw,
             start=(footer_rect[0], divider_y),
             end=(footer_rect[2], divider_y),
@@ -2125,14 +1845,16 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         )
         return encode_docs_image(canvas, webp_quality=88, webp_method=6)
 
-    def _primary_feature_for_entry(self, node: DocNode) -> FeatureDoc | None:
-        return node.features[0] if node.features else None
-
-    def _measure_showcase_support_strip(
+    def _measure_support_strip(
         self,
         *,
         locale: LocaleCode,
         top: int,
+        qr_gap: int = 24,
+        group_row_gap: int = 8,
+        title_gap: int = 16,
+        tip_gap: int = 16,
+        min_group_width: int | None = None,
     ) -> _SupportStripLayout:
         bundle = build_help_support_bundle(locale=locale)
         side = self.theme.hero_side_padding
@@ -2152,7 +1874,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             self.WIDTH
             - side * 2
             - self.SUPPORT_STRIP_PADDING_X * 2
-            - (qr_frame_width + 28 if qr_image is not None else 0)
+            - (qr_frame_width + qr_gap if qr_image is not None else 0)
         )
         title_lines = tuple(
             self._wrap_inline_text(
@@ -2168,24 +1890,35 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
                 font=self.note_font,
             )
         )
+        group_max_width = (
+            max(min_group_width, text_width)
+            if min_group_width is not None
+            else text_width
+        )
         group_lines = tuple(
             tuple(
                 self._wrap_inline_text(
                     group.title,
-                    max_width=max(160, text_width),
+                    max_width=group_max_width,
                     font=self.note_font,
                 )
             )
             for group in bundle.groups
         )
-        title_height = len(title_lines) * self._line_height_for_font(self.summary_font)
-        tip_height = len(tip_lines) * self._line_height_for_font(self.note_font)
+        title_height = len(title_lines) * line_height_for_font(self.summary_font)
+        tip_height = len(tip_lines) * line_height_for_font(self.note_font)
         groups_height = sum(
-            len(lines) * self._line_height_for_font(self.note_font) + 10
+            len(lines) * line_height_for_font(self.note_font) + group_row_gap
             for lines in group_lines
         )
         group_panel_height = groups_height if group_lines else 0
-        text_height = title_height + 18 + tip_height + 20 + group_panel_height
+        text_height = (
+            title_height
+            + title_gap
+            + tip_height
+            + tip_gap
+            + (group_panel_height if min_group_width is not None else groups_height)
+        )
         strip_height = max(
             text_height + self.SUPPORT_STRIP_PADDING_Y * 2,
             qr_frame_height + self.SUPPORT_STRIP_PADDING_Y * 2,
@@ -2234,12 +1967,10 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             lines=layout.title_lines,
             font=self.summary_font,
             fill=self.theme.deep,
-            line_height=self._line_height_for_font(self.summary_font),
+            line_height=line_height_for_font(self.summary_font),
             render_code_chip=False,
         )
-        text_y += (
-            len(layout.title_lines) * self._line_height_for_font(self.summary_font) + 18
-        )
+        text_y += len(layout.title_lines) * line_height_for_font(self.summary_font) + 18
         self._draw_multiline_text(
             draw,
             x=text_x,
@@ -2247,12 +1978,10 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             lines=layout.tip_lines,
             font=self.note_font,
             fill=self.theme.hint,
-            line_height=self._line_height_for_font(self.note_font),
+            line_height=line_height_for_font(self.note_font),
             render_code_chip=False,
         )
-        text_y += (
-            len(layout.tip_lines) * self._line_height_for_font(self.note_font) + 20
-        )
+        text_y += len(layout.tip_lines) * line_height_for_font(self.note_font) + 20
         if layout.group_lines:
             group_text_y = text_y
             for lines in layout.group_lines:
@@ -2263,12 +1992,10 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
                     lines=lines,
                     font=self.note_font,
                     fill=self.theme.deep,
-                    line_height=self._line_height_for_font(self.note_font),
+                    line_height=line_height_for_font(self.note_font),
                     render_code_chip=False,
                 )
-                group_text_y += (
-                    len(lines) * self._line_height_for_font(self.note_font) + 10
-                )
+                group_text_y += len(lines) * line_height_for_font(self.note_font) + 10
         if layout.qr_image is not None and layout.qr_rect is not None:
             qr_frame_rect = (
                 layout.qr_rect[0] - self.SUPPORT_STRIP_QR_FRAME_PADDING_X,
@@ -2282,7 +2009,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
                 qr_frame_rect,
                 radius=self.SUPPORT_STRIP_QR_FRAME_RADIUS,
                 fill="#FFFDFC",
-                outline=self._rgba(self.theme.accent, 48),
+                outline=rgba(self.theme.accent, 48),
             )
             image.alpha_composite(
                 layout.qr_image,
@@ -2297,7 +2024,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         layout: _SupportStripLayout,
         accent_width: int,
     ) -> None:
-        self._draw_shadowed_rect(
+        draw_shadowed_rect(
             image,
             rect=layout.rect,
             radius=self.SUPPORT_STRIP_RADIUS,
@@ -2306,11 +2033,11 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             shadow_blur=self.theme.instruction_shadow_blur,
             fill=self.theme.panel_bg,
         )
-        self._draw_panel_outline(
+        draw_panel_outline(
             draw,
             rect=layout.rect,
             radius=self.SUPPORT_STRIP_RADIUS,
-            outline=self._rgba(self.theme.accent, 62),
+            outline=rgba(self.theme.accent, 62),
         )
         accent_left = layout.rect[0]
         accent_top = layout.rect[1]
@@ -2334,7 +2061,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         accent_layer_draw = ImageDraw.Draw(accent_layer)
         accent_layer_draw.rectangle(
             (accent_left, accent_top, accent_right, accent_bottom),
-            fill=self._rgba(self.theme.accent, 255),
+            fill=rgba(self.theme.accent, 255),
         )
         image.paste(accent_layer, (0, 0), accent_mask)
 
@@ -2356,94 +2083,6 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         height = max(1, int(image.height * scale))
         return image.resize((width, height), Image.Resampling.LANCZOS)
 
-    def _measure_support_strip(
-        self,
-        *,
-        locale: LocaleCode,
-        top: int,
-    ) -> _SupportStripLayout:
-        bundle = build_help_support_bundle(locale=locale)
-        side = self.theme.hero_side_padding
-        qr_image = self._load_support_qr_image(bundle.qr_asset_path)
-        qr_width = qr_image.width if qr_image is not None else 0
-        qr_frame_width = (
-            qr_width + self.SUPPORT_STRIP_QR_FRAME_PADDING_X * 2
-            if qr_image is not None
-            else 0
-        )
-        qr_frame_height = (
-            qr_image.height + self.SUPPORT_STRIP_QR_FRAME_PADDING_Y * 2
-            if qr_image is not None
-            else 0
-        )
-        text_width = (
-            self.WIDTH
-            - side * 2
-            - self.SUPPORT_STRIP_PADDING_X * 2
-            - (qr_frame_width + 24 if qr_image is not None else 0)
-        )
-        title_lines = tuple(
-            self._wrap_inline_text(
-                bundle.title,
-                max_width=text_width,
-                font=self.summary_font,
-            )
-        )
-        tip_lines = tuple(
-            self._wrap_inline_text(
-                bundle.tip_text,
-                max_width=text_width,
-                font=self.note_font,
-            )
-        )
-        group_lines = tuple(
-            tuple(
-                self._wrap_inline_text(
-                    group.title,
-                    max_width=text_width,
-                    font=self.note_font,
-                )
-            )
-            for group in bundle.groups
-        )
-        title_height = len(title_lines) * self._line_height_for_font(self.summary_font)
-        tip_height = len(tip_lines) * self._line_height_for_font(self.note_font)
-        groups_height = sum(
-            len(lines) * self._line_height_for_font(self.note_font) + 8
-            for lines in group_lines
-        )
-        text_height = title_height + 16 + tip_height + 16 + groups_height
-        strip_height = max(
-            text_height + self.SUPPORT_STRIP_PADDING_Y * 2,
-            qr_frame_height + self.SUPPORT_STRIP_PADDING_Y * 2,
-        )
-        rect = (side, top, self.WIDTH - side, top + strip_height)
-        qr_rect = None
-        if qr_image is not None:
-            qr_frame_left = rect[2] - self.SUPPORT_STRIP_PADDING_X - qr_frame_width
-            qr_frame_top = (
-                rect[1]
-                + (strip_height - qr_frame_height) // 2
-                + self.SUPPORT_STRIP_QR_VERTICAL_OFFSET_Y
-            )
-            qr_frame_top = max(rect[1], qr_frame_top)
-            qr_left = qr_frame_left + self.SUPPORT_STRIP_QR_FRAME_PADDING_X
-            qr_top = qr_frame_top + self.SUPPORT_STRIP_QR_FRAME_PADDING_Y
-            qr_rect = (
-                qr_left,
-                qr_top,
-                qr_left + qr_image.width,
-                qr_top + qr_image.height,
-            )
-        return _SupportStripLayout(
-            rect=rect,
-            title_lines=title_lines,
-            tip_lines=tip_lines,
-            group_lines=group_lines,
-            qr_image=qr_image,
-            qr_rect=qr_rect,
-        )
-
     def _draw_support_strip(
         self,
         image: Image.Image,
@@ -2461,12 +2100,10 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             lines=layout.title_lines,
             font=self.summary_font,
             fill=self.theme.deep,
-            line_height=self._line_height_for_font(self.summary_font),
+            line_height=line_height_for_font(self.summary_font),
             render_code_chip=False,
         )
-        text_y += (
-            len(layout.title_lines) * self._line_height_for_font(self.summary_font) + 16
-        )
+        text_y += len(layout.title_lines) * line_height_for_font(self.summary_font) + 16
         self._draw_multiline_text(
             draw,
             x=text_x,
@@ -2474,12 +2111,10 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             lines=layout.tip_lines,
             font=self.note_font,
             fill=self.theme.hint,
-            line_height=self._line_height_for_font(self.note_font),
+            line_height=line_height_for_font(self.note_font),
             render_code_chip=False,
         )
-        text_y += (
-            len(layout.tip_lines) * self._line_height_for_font(self.note_font) + 16
-        )
+        text_y += len(layout.tip_lines) * line_height_for_font(self.note_font) + 16
         for lines in layout.group_lines:
             self._draw_multiline_text(
                 draw,
@@ -2488,10 +2123,10 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
                 lines=lines,
                 font=self.note_font,
                 fill=self.theme.deep,
-                line_height=self._line_height_for_font(self.note_font),
+                line_height=line_height_for_font(self.note_font),
                 render_code_chip=False,
             )
-            text_y += len(lines) * self._line_height_for_font(self.note_font) + 8
+            text_y += len(lines) * line_height_for_font(self.note_font) + 8
         if layout.qr_image is not None and layout.qr_rect is not None:
             draw.rounded_rectangle(
                 (
@@ -2621,7 +2256,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         current_chars: list[str] = []
         current_width = 0
         last_break_after = -1
-        allow_mid_word_break = self._looks_like_url(text)
+        allow_mid_word_break = _looks_like_url(text)
 
         for index, char in enumerate(text):
             char_width = self._pixel_text_width(char, font)
@@ -2635,7 +2270,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
 
             current_chars.append(char)
             current_width += char_width
-            if self._is_wrap_boundary(char):
+            if _is_wrap_boundary(char):
                 last_break_after = len(current_chars)
 
         return "".join(current_chars).rstrip(), ""
@@ -2679,15 +2314,16 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         return f"{candidate}{ellipsis}" if candidate else ellipsis
 
     def _pixel_text_width(self, text: str, font: DocsFont) -> int:
+        """逐字符测量用的宽度：getlength 免去构造 bbox，避免换行循环里重复开销。"""
         if not text:
             return 0
-        if not self._contains_emoji(text) and hasattr(font, "getlength"):
+        if not contains_emoji(text) and hasattr(font, "getlength"):
             return ceil(float(font.getlength(text)))
         return self._text_width(text, font)
 
     def _pixel_text_height(self, text: str, font: DocsFont) -> int:
         sample = text or "Ag"
-        if not self._contains_emoji(sample) and hasattr(font, "getbbox"):
+        if not contains_emoji(sample) and hasattr(font, "getbbox"):
             bbox = font.getbbox(sample)
             return int(bbox[3] - bbox[1])
         bbox = self._text_size(sample, font)
@@ -2710,13 +2346,3 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             if index < len(lines) - 1:
                 total += line_spacing
         return total
-
-    def _plain_text_from_line(self, line: Sequence[InlineTextSpan]) -> str:
-        return "".join(span.text for span in line)
-
-    def _is_wrap_boundary(self, char: str) -> bool:
-        return char.isspace() or char in "-/_,.;:|)]}>"
-
-    def _looks_like_url(self, text: str) -> bool:
-        lowered = text.lower()
-        return "://" in lowered or lowered.startswith("www.") or "www." in lowered

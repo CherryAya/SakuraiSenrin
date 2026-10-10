@@ -346,9 +346,9 @@ BOT: Beta 完成
     _, jobs = plugin_docs_script.collect_collection_jobs(columns=2)
     tile = jobs[0].tiles[0]
     renderer = plugin_docs_script.DemoCollectionRenderer(columns=2)
-    prepared = renderer._prepare_tile(  # pyright: ignore[reportPrivateUsage]
+    prepared = renderer._prepare_tile(
         tile,
-        renderer._card_width(2),  # pyright: ignore[reportPrivateUsage]
+        renderer._card_width(2),
     )
 
     assert prepared.index == 1
@@ -362,7 +362,7 @@ BOT: Beta 完成
 def test_collection_header_layout_stays_within_reasonable_height() -> None:
     renderer = plugin_docs_script.DemoCollectionRenderer(columns=2)
 
-    layout = renderer._measure_header_layout(  # pyright: ignore[reportPrivateUsage]
+    layout = renderer._measure_header_layout(
         title="学习模块",
         summary=(
             "学习模块保留传统 `study` / `学习` 快捷入口，用于把常用词条提交到 "
@@ -378,7 +378,7 @@ def test_collection_header_layout_stays_within_reasonable_height() -> None:
 def test_collection_renderer_keeps_requested_two_column_layout() -> None:
     renderer = plugin_docs_script.DemoCollectionRenderer(columns=2)
 
-    assert renderer._effective_columns(14) == 2  # pyright: ignore[reportPrivateUsage]
+    assert renderer._effective_columns(14) == 2
 
 
 def test_build_command_layout_breaks_flags_into_hanging_indent_lines() -> None:
@@ -397,9 +397,9 @@ def test_build_command_layout_breaks_flags_into_hanging_indent_lines() -> None:
             "--prob 0.0-1.0 --weight 1-5"
         ),
         max_width=720,
-        line_height=renderer._line_height_for_font(renderer.body_font),  # pyright: ignore[reportPrivateUsage]
+        line_height=_tile_line_height(renderer.body_font),
         indent_px=48,
-        measure_text=lambda value: renderer._text_width(value, renderer.body_font),  # pyright: ignore[reportPrivateUsage]
+        measure_text=lambda value: _text_width(value, renderer.body_font),
         palette=palette,
     )
 
@@ -424,11 +424,9 @@ def test_build_command_layout_wraps_long_flag_values_with_double_indent() -> Non
     layout = build_command_layout(
         "wordbank add 触发词 => 响应词 --role owner|admin|member|visitor|reviewer",
         max_width=408,
-        line_height=renderer._line_height_for_font(renderer.tile_command_font),  # pyright: ignore[reportPrivateUsage]
+        line_height=_tile_line_height(renderer.tile_command_font),
         indent_px=48,
-        measure_text=lambda value: renderer._text_width(
-            value, renderer.tile_command_font
-        ),  # pyright: ignore[reportPrivateUsage]
+        measure_text=lambda value: _text_width(value, renderer.tile_command_font),
         palette=plugin_docs_module.CommandPalette(
             root=renderer.theme.indigo_text,
             text=renderer.theme.deep,
@@ -457,11 +455,9 @@ def test_build_command_layout_splits_root_level_alternatives() -> None:
             "#admin.invite reject --all"
         ),
         max_width=320,
-        line_height=renderer._line_height_for_font(renderer.tile_command_font),  # pyright: ignore[reportPrivateUsage]
+        line_height=_tile_line_height(renderer.tile_command_font),
         indent_px=48,
-        measure_text=lambda value: renderer._text_width(
-            value, renderer.tile_command_font
-        ),  # pyright: ignore[reportPrivateUsage]
+        measure_text=lambda value: _text_width(value, renderer.tile_command_font),
         palette=plugin_docs_module.CommandPalette(
             root=renderer.theme.indigo_text,
             text=renderer.theme.deep,
@@ -486,11 +482,9 @@ def test_build_command_layout_splits_consecutive_inline_code_variants() -> None:
         "`wordbank trigger prob <group_id> <0.0-1.0>` "
         "`wordbank trigger set <group_id> <新触发内容>`",
         max_width=408,
-        line_height=renderer._line_height_for_font(renderer.tile_command_font),  # pyright: ignore[reportPrivateUsage]
+        line_height=_tile_line_height(renderer.tile_command_font),
         indent_px=48,
-        measure_text=lambda value: renderer._text_width(
-            value, renderer.tile_command_font
-        ),  # pyright: ignore[reportPrivateUsage]
+        measure_text=lambda value: _text_width(value, renderer.tile_command_font),
         palette=plugin_docs_module.CommandPalette(
             root=renderer.theme.indigo_text,
             text=renderer.theme.deep,
@@ -981,9 +975,7 @@ def test_plugin_docs_build_skips_when_cached_content_hash_matches(
 
     assert calls == []
     assert "content unchanged, skipping" in capsys.readouterr().out
-    cache_path = plugin_docs_script._build_docs_cache_path(  # pyright: ignore[reportPrivateUsage]
-        root=tmp_path
-    )
+    cache_path = plugin_docs_script._build_docs_cache_path(root=tmp_path)
     cache_payload = json.loads(cache_path.read_text(encoding="utf-8"))
     assert cache_payload["latest"]["content_hash"]
     assert len(cache_payload["history"]) == 1

@@ -3,7 +3,11 @@
 from PIL import ImageDraw
 
 from src.lib.plugin_docs.models import DocsDemoTurn
-from src.lib.plugin_docs.render.demo import build_trace_footer_left_text
+from src.lib.plugin_docs.render.demo import (
+    _normalize_demo_text,
+    build_trace_footer_left_text,
+    line_height_for_font,
+)
 from src.lib.plugin_docs.render.encoding import WEBP_MAX_DIMENSION, encode_docs_image
 from tests.test_plugin_docs_support import *
 
@@ -222,21 +226,23 @@ def test_demo_image_renderer_measure_layout_includes_footer_traceability() -> No
     generated_at = datetime(2026, 6, 16, 21, 30, 45)
 
     layout = renderer._measure_layout(
-        plugin_title="测试插件",
-        feature_title="查询功能",
-        feature_summary="用于查询状态。",
-        feature_trigger="#query",
-        feature_overview="输入命令后即可查看状态。",
-        feature_preconditions="需要在群聊中调用。",
-        feature_failures="参数错误时会提示原因。",
-        feature_flow_notes="支持直接回复触发。",
-        plugin_trigger="指令触发",
-        feature_permission="普通用户",
-        plugin_version="v1.2.3",
-        plugin_author="SakuraiCora",
-        turns=(),
-        locale="zh-CN",
-        generated_at=generated_at,
+        DemoRenderParams(
+            plugin_title="测试插件",
+            feature_title="查询功能",
+            feature_summary="用于查询状态。",
+            feature_trigger="#query",
+            feature_overview="输入命令后即可查看状态。",
+            feature_preconditions="需要在群聊中调用。",
+            feature_failures="参数错误时会提示原因。",
+            feature_flow_notes="支持直接回复触发。",
+            plugin_trigger="指令触发",
+            feature_permission="普通用户",
+            plugin_version="v1.2.3",
+            plugin_author="SakuraiCora",
+            turns=(),
+            locale="zh-CN",
+            generated_at=generated_at,
+        )
     )
 
     assert layout.footer_left_text == "测试插件 · 查询功能 · v1.2.3 · By SakuraiCora"
@@ -264,56 +270,58 @@ def test_build_trace_footer_left_text_dedupes_same_plugin_and_feature_title() ->
 def test_demo_image_renderer_measure_layout_uses_structured_trigger_layout() -> None:
     renderer = DemoImageRenderer(impression_color="#3BC9DB")
 
-    layout = renderer._measure_layout(  # pyright: ignore[reportPrivateUsage]
-        plugin_title="测试插件",
-        feature_title="复杂命令",
-        feature_summary="测试结构化命令布局。",
-        feature_trigger=(
-            "wordbank search [关键词] [图片] --field all|trigger|response "
-            "--creator 账号 --page 页码 --limit 每页数量"
-        ),
-        feature_overview="测试说明。",
-        feature_preconditions="无",
-        feature_failures="无",
-        feature_flow_notes="",
-        plugin_trigger="指令触发",
-        feature_permission="普通用户",
-        plugin_version="v1.2.3",
-        plugin_author="SakuraiCora",
-        turns=(),
-        locale="zh-CN",
-        generated_at=datetime(2026, 6, 16, 21, 30, 45),
+    layout = renderer._measure_layout(
+        DemoRenderParams(
+            plugin_title="测试插件",
+            feature_title="复杂命令",
+            feature_summary="测试结构化命令布局。",
+            feature_trigger=(
+                "wordbank search [关键词] [图片] --field all|trigger|response "
+                "--creator 账号 --page 页码 --limit 每页数量"
+            ),
+            feature_overview="测试说明。",
+            feature_preconditions="无",
+            feature_failures="无",
+            feature_flow_notes="",
+            plugin_trigger="指令触发",
+            feature_permission="普通用户",
+            plugin_version="v1.2.3",
+            plugin_author="SakuraiCora",
+            turns=(),
+            locale="zh-CN",
+            generated_at=datetime(2026, 6, 16, 21, 30, 45),
+        )
     )
 
     assert layout.trigger_layout.lines[0].kind == "root"
     assert any(line.kind == "flag" for line in layout.trigger_layout.lines[1:])
-    assert layout.trigger_layout.total_height > renderer._line_height_for_font(
-        renderer.body_font
-    )  # pyright: ignore[reportPrivateUsage]
+    assert layout.trigger_layout.total_height > line_height_for_font(renderer.body_font)
 
 
 def test_demo_image_renderer_measure_layout_uses_alt_lines_for_multi_commands() -> None:
     renderer = DemoImageRenderer(impression_color="#3BC9DB")
 
-    layout = renderer._measure_layout(  # pyright: ignore[reportPrivateUsage]
-        plugin_title="测试插件",
-        feature_title="多指令命令",
-        feature_summary="测试多指令布局。",
-        feature_trigger=(
-            "wordbank trigger prob <group_id> <0.0-1.0>；"
-            "wordbank trigger set <group_id> <新触发内容>"
-        ),
-        feature_overview="测试说明。",
-        feature_preconditions="无",
-        feature_failures="无",
-        feature_flow_notes="",
-        plugin_trigger="指令触发",
-        feature_permission="普通用户",
-        plugin_version="v1.2.3",
-        plugin_author="SakuraiCora",
-        turns=(),
-        locale="zh-CN",
-        generated_at=datetime(2026, 6, 16, 21, 30, 45),
+    layout = renderer._measure_layout(
+        DemoRenderParams(
+            plugin_title="测试插件",
+            feature_title="多指令命令",
+            feature_summary="测试多指令布局。",
+            feature_trigger=(
+                "wordbank trigger prob <group_id> <0.0-1.0>；"
+                "wordbank trigger set <group_id> <新触发内容>"
+            ),
+            feature_overview="测试说明。",
+            feature_preconditions="无",
+            feature_failures="无",
+            feature_flow_notes="",
+            plugin_trigger="指令触发",
+            feature_permission="普通用户",
+            plugin_version="v1.2.3",
+            plugin_author="SakuraiCora",
+            turns=(),
+            locale="zh-CN",
+            generated_at=datetime(2026, 6, 16, 21, 30, 45),
+        )
     )
 
     assert layout.trigger_layout.lines[0].kind == "root"
@@ -328,7 +336,7 @@ def test_demo_image_renderer_measure_layout_uses_alt_lines_for_multi_commands() 
 def test_demo_image_renderer_measures_short_bubbles_without_min_width() -> None:
     renderer = DemoImageRenderer(impression_color="#3BC9DB")
 
-    spec = renderer._measure_turn(  # pyright: ignore[reportPrivateUsage]
+    spec = renderer._measure_turn(
         DocsDemoTurn(
             speaker="USER",
             text="hi",
@@ -337,7 +345,7 @@ def test_demo_image_renderer_measures_short_bubbles_without_min_width() -> None:
     )
 
     expected_width = (
-        renderer._max_inline_line_width(spec.lines, renderer.body_font)  # pyright: ignore[reportPrivateUsage]
+        renderer._max_inline_line_width(spec.lines, renderer.body_font)
         + renderer.theme.bubble_padding_x * 2
     )
     assert spec.width == expected_width
@@ -345,11 +353,7 @@ def test_demo_image_renderer_measures_short_bubbles_without_min_width() -> None:
 
 
 def test_demo_image_renderer_normalizes_trailing_whitespace_only() -> None:
-    renderer = DemoImageRenderer(impression_color="#3BC9DB")
-
-    normalized = renderer._normalize_demo_text(  # pyright: ignore[reportPrivateUsage]
-        "  keep-leading  \nline two\t \n   \n"
-    )
+    normalized = _normalize_demo_text("  keep-leading  \nline two\t \n   \n")
 
     assert normalized == "  keep-leading\nline two\n\n"
 
@@ -357,31 +361,31 @@ def test_demo_image_renderer_normalizes_trailing_whitespace_only() -> None:
 def test_demo_image_renderer_ignores_wu_placeholder_in_note_lines() -> None:
     renderer = DemoImageRenderer(impression_color="#3BC9DB")
 
-    assert renderer._split_note_lines("无") == ()  # pyright: ignore[reportPrivateUsage]
-    assert renderer._split_note_lines("- 需要管理员\n无") == (  # pyright: ignore[reportPrivateUsage]
-        "需要管理员",
-    )
+    assert renderer._split_note_lines("无") == ()
+    assert renderer._split_note_lines("- 需要管理员\n无") == ("需要管理员",)
 
 
 def test_demo_image_renderer_hides_duplicate_plugin_kicker_for_simple_leaf() -> None:
     renderer = DemoImageRenderer(impression_color="#3BC9DB")
 
-    layout = renderer._measure_layout(  # pyright: ignore[reportPrivateUsage]
-        plugin_title="凛凛的妙妙小工具",
-        feature_title="凛凛的妙妙小工具",
-        feature_summary="用于测试 simple-leaf 同名标题去重。",
-        feature_trigger="词条触发 / #help 查询",
-        feature_overview="目录说明。",
-        feature_preconditions="无",
-        feature_failures="无",
-        feature_flow_notes="",
-        plugin_trigger="词条触发",
-        feature_permission="普通用户",
-        plugin_version="v0.1.0",
-        plugin_author="SakuraiCora",
-        turns=(),
-        locale="zh-CN",
-        generated_at=datetime(2026, 6, 19, 9, 31, 24),
+    layout = renderer._measure_layout(
+        DemoRenderParams(
+            plugin_title="凛凛的妙妙小工具",
+            feature_title="凛凛的妙妙小工具",
+            feature_summary="用于测试 simple-leaf 同名标题去重。",
+            feature_trigger="词条触发 / #help 查询",
+            feature_overview="目录说明。",
+            feature_preconditions="无",
+            feature_failures="无",
+            feature_flow_notes="",
+            plugin_trigger="词条触发",
+            feature_permission="普通用户",
+            plugin_version="v0.1.0",
+            plugin_author="SakuraiCora",
+            turns=(),
+            locale="zh-CN",
+            generated_at=datetime(2026, 6, 19, 9, 31, 24),
+        )
     )
 
     assert layout.plugin_lines == ()
@@ -400,22 +404,24 @@ def test_demo_image_renderer_builds_full_section_bands_for_study_demo() -> None:
     feature = next(item for item in node.bundle.index if item.slug == "main")
     renderer = DemoImageRenderer(impression_color=node.bundle.impression_color)
 
-    layout = renderer._measure_layout(  # pyright: ignore[reportPrivateUsage]
-        plugin_title=node.bundle.title,
-        feature_title=feature.title,
-        feature_summary=feature.summary,
-        feature_trigger=feature.trigger,
-        feature_overview=feature.overview,
-        feature_preconditions=feature.preconditions,
-        feature_failures=feature.failures,
-        feature_flow_notes=feature.flow_notes,
-        plugin_trigger=node.bundle.trigger,
-        feature_permission=str(feature.permission),
-        plugin_version=node.bundle.version,
-        plugin_author=node.bundle.author,
-        turns=feature.demo_turns,
-        locale="zh-CN",
-        generated_at=datetime(2026, 6, 19, 16, 44, 50),
+    layout = renderer._measure_layout(
+        DemoRenderParams(
+            plugin_title=node.bundle.title,
+            feature_title=feature.title,
+            feature_summary=feature.summary,
+            feature_trigger=feature.trigger,
+            feature_overview=feature.overview,
+            feature_preconditions=feature.preconditions,
+            feature_failures=feature.failures,
+            feature_flow_notes=feature.flow_notes,
+            plugin_trigger=node.bundle.trigger,
+            feature_permission=str(feature.permission),
+            plugin_version=node.bundle.version,
+            plugin_author=node.bundle.author,
+            turns=feature.demo_turns,
+            locale="zh-CN",
+            generated_at=datetime(2026, 6, 19, 16, 44, 50),
+        )
     )
 
     assert layout.demo_heading_rect is not None
@@ -448,22 +454,24 @@ def test_demo_image_renderer_left_aligns_block_section_title_text() -> None:
     feature = next(item for item in node.bundle.index if item.slug == "main")
     renderer = DemoImageRenderer(impression_color=node.bundle.impression_color)
 
-    layout = renderer._measure_layout(  # pyright: ignore[reportPrivateUsage]
-        plugin_title=node.bundle.title,
-        feature_title=feature.title,
-        feature_summary=feature.summary,
-        feature_trigger=feature.trigger,
-        feature_overview=feature.overview,
-        feature_preconditions=feature.preconditions,
-        feature_failures=feature.failures,
-        feature_flow_notes=feature.flow_notes,
-        plugin_trigger=node.bundle.trigger,
-        feature_permission=str(feature.permission),
-        plugin_version=node.bundle.version,
-        plugin_author=node.bundle.author,
-        turns=feature.demo_turns,
-        locale="zh-CN",
-        generated_at=datetime(2026, 6, 19, 16, 44, 50),
+    layout = renderer._measure_layout(
+        DemoRenderParams(
+            plugin_title=node.bundle.title,
+            feature_title=feature.title,
+            feature_summary=feature.summary,
+            feature_trigger=feature.trigger,
+            feature_overview=feature.overview,
+            feature_preconditions=feature.preconditions,
+            feature_failures=feature.failures,
+            feature_flow_notes=feature.flow_notes,
+            plugin_trigger=node.bundle.trigger,
+            feature_permission=str(feature.permission),
+            plugin_version=node.bundle.version,
+            plugin_author=node.bundle.author,
+            turns=feature.demo_turns,
+            locale="zh-CN",
+            generated_at=datetime(2026, 6, 19, 16, 44, 50),
+        )
     )
     band = layout.demo_section_bands[0]
     label_text = band.title
@@ -485,7 +493,7 @@ def test_demo_image_renderer_left_aligns_block_section_title_text() -> None:
 
     image = Image.new("RGBA", (renderer.WIDTH, layout.total_height), "#FFFFFF")
     draw = ImageDraw.Draw(image)
-    renderer._draw_demo(  # pyright: ignore[reportPrivateUsage]
+    renderer._draw_demo(
         image,
         draw,
         layout,
@@ -499,7 +507,7 @@ def test_demo_image_renderer_left_aligns_block_section_title_text() -> None:
 
 def test_demo_image_renderer_uses_card_style_for_system_turn() -> None:
     renderer = DemoImageRenderer(impression_color="#3BC9DB")
-    spec = renderer._measure_turn(  # pyright: ignore[reportPrivateUsage]
+    spec = renderer._measure_turn(
         DocsDemoTurn(
             speaker="SYSTEM",
             text="`a` 表示对所有人有效，`f` 表示关闭群组隔离，因此会映射到更宽范围。",
@@ -508,7 +516,7 @@ def test_demo_image_renderer_uses_card_style_for_system_turn() -> None:
         960,
     )
 
-    placement = renderer._place_turn(  # pyright: ignore[reportPrivateUsage]
+    placement = renderer._place_turn(
         spec,
         top=120,
         left=120,
@@ -642,7 +650,7 @@ def test_support_strip_qr_layout_applies_optical_vertical_offset(
     qr_image = Image.new("RGBA", (160, 160), (255, 255, 255, 255))
     monkeypatch.setattr(renderer, "_load_support_qr_image", lambda _path: qr_image)
 
-    layout = renderer._measure_support_strip(  # pyright: ignore[reportPrivateUsage]
+    layout = renderer._measure_support_strip(
         locale="zh-CN",
         top=240,
     )
@@ -674,7 +682,7 @@ def test_render_with_support_strip_trims_existing_source_footer() -> None:
         - renderer.theme.footer_height
         - renderer.theme.outer_margin
     )
-    support_layout = renderer._measure_support_strip(  # pyright: ignore[reportPrivateUsage]
+    support_layout = renderer._measure_support_strip(
         locale="zh-CN",
         top=trimmed_source_height + renderer.SUPPORT_STRIP_GAP,
     )
@@ -724,7 +732,7 @@ def test_dashboard_section_height_includes_command_block() -> None:
 
     measured = renderer._measure_dashboard_section_height(section, section_width)
     content_width = section_width - renderer.GUIDE_SECTION_PADDING_X * 2
-    title_height = renderer._line_height_for_font(renderer.summary_font)
+    title_height = line_height_for_font(renderer.summary_font)
     summary_height = min(
         2,
         len(
@@ -736,11 +744,11 @@ def test_dashboard_section_height_includes_command_block() -> None:
                 )
             )
         ),
-    ) * renderer._line_height_for_font(renderer.note_font)
+    ) * line_height_for_font(renderer.note_font)
     command_layout = build_command_layout(
         f"#help {node.title}",
         max_width=content_width - 32,
-        line_height=renderer._line_height_for_font(renderer.note_font),
+        line_height=line_height_for_font(renderer.note_font),
         indent_px=renderer.COMMAND_INDENT_PX,
         measure_text=lambda value: renderer._text_width(value, renderer.note_font),
         palette=renderer._command_palette(),
@@ -749,7 +757,7 @@ def test_dashboard_section_height_includes_command_block() -> None:
         renderer.GUIDE_SECTION_PADDING_Y * 2
         + title_height
         + renderer.DASHBOARD_SECTION_TITLE_GAP
-        + renderer._line_height_for_font(renderer.instruction_font)
+        + line_height_for_font(renderer.instruction_font)
         + summary_height
         + renderer.DASHBOARD_SECTION_SUMMARY_GAP
         + renderer.DASHBOARD_SECTION_COMMAND_GAP

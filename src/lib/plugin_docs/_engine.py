@@ -6,7 +6,7 @@ from collections.abc import Awaitable, Callable, Sequence
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Literal, NamedTuple
 
 from markdown_it import MarkdownIt
 from markdown_it.token import Token
@@ -189,7 +189,11 @@ from .readme import (
 from .readme import (
     split_csv as split_csv_impl,
 )
-from .render.demo import DemoImageRenderer, build_trace_footer_left_text
+from .render.demo import (
+    DemoImageRenderer,
+    DemoRenderParams,
+    build_trace_footer_left_text,
+)
 from .render.progressive import ProgressiveDisclosureRenderer
 from .static_assets import (
     dashboard_target_key,
@@ -1078,21 +1082,23 @@ def render_demo_png(
     demo_result = DemoImageRenderer(
         impression_color=bundle.impression_color
     ).render_with_audit(
-        plugin_title=bundle.title,
-        feature_title=feature.title,
-        feature_summary=feature.summary,
-        feature_trigger=feature.trigger,
-        feature_overview=feature.overview,
-        feature_preconditions=feature.preconditions,
-        feature_failures=feature.failures,
-        feature_flow_notes=feature.flow_notes,
-        plugin_trigger=bundle.trigger,
-        feature_permission=_permission_label(feature.permission),
-        plugin_version=bundle.version,
-        plugin_author=bundle.author,
-        turns=feature.demo_turns,
-        locale="zh-CN",
-        generated_at=generated,
+        DemoRenderParams(
+            plugin_title=bundle.title,
+            feature_title=feature.title,
+            feature_summary=feature.summary,
+            feature_trigger=feature.trigger,
+            feature_overview=feature.overview,
+            feature_preconditions=feature.preconditions,
+            feature_failures=feature.failures,
+            feature_flow_notes=feature.flow_notes,
+            plugin_trigger=bundle.trigger,
+            feature_permission=_permission_label(feature.permission),
+            plugin_version=bundle.version,
+            plugin_author=bundle.author,
+            turns=feature.demo_turns,
+            locale="zh-CN",
+            generated_at=generated,
+        )
     )
     return ProgressiveDisclosureRenderer(
         impression_color=bundle.impression_color
@@ -1122,21 +1128,23 @@ def render_demo_png_with_audit(
     result = DemoImageRenderer(
         impression_color=bundle.impression_color
     ).render_with_audit(
-        plugin_title=bundle.title,
-        feature_title=feature.title,
-        feature_summary=feature.summary,
-        feature_trigger=feature.trigger,
-        feature_overview=feature.overview,
-        feature_preconditions=feature.preconditions,
-        feature_failures=feature.failures,
-        feature_flow_notes=feature.flow_notes,
-        plugin_trigger=bundle.trigger,
-        feature_permission=_permission_label(feature.permission),
-        plugin_version=bundle.version,
-        plugin_author=bundle.author,
-        turns=feature.demo_turns,
-        locale="zh-CN",
-        generated_at=generated_at,
+        DemoRenderParams(
+            plugin_title=bundle.title,
+            feature_title=feature.title,
+            feature_summary=feature.summary,
+            feature_trigger=feature.trigger,
+            feature_overview=feature.overview,
+            feature_preconditions=feature.preconditions,
+            feature_failures=feature.failures,
+            feature_flow_notes=feature.flow_notes,
+            plugin_trigger=bundle.trigger,
+            feature_permission=_permission_label(feature.permission),
+            plugin_version=bundle.version,
+            plugin_author=bundle.author,
+            turns=feature.demo_turns,
+            locale="zh-CN",
+            generated_at=generated_at,
+        ),
         render_image=render_image,
     )
     return result.data, result.errors
@@ -1165,21 +1173,23 @@ def render_feature_deep_dive(
     demo_result = DemoImageRenderer(
         impression_color=node.bundle.impression_color
     ).render_with_audit(
-        plugin_title=node.bundle.title,
-        feature_title=feature.title,
-        feature_summary=feature.summary,
-        feature_trigger=feature.trigger,
-        feature_overview=feature.overview,
-        feature_preconditions=feature.preconditions,
-        feature_failures=feature.failures,
-        feature_flow_notes=feature.flow_notes,
-        plugin_trigger=node.bundle.trigger,
-        feature_permission=_permission_label(feature.permission),
-        plugin_version=node.bundle.version,
-        plugin_author=node.bundle.author,
-        turns=feature.demo_turns,
-        locale=locale,
-        generated_at=generated_at,
+        DemoRenderParams(
+            plugin_title=node.bundle.title,
+            feature_title=feature.title,
+            feature_summary=feature.summary,
+            feature_trigger=feature.trigger,
+            feature_overview=feature.overview,
+            feature_preconditions=feature.preconditions,
+            feature_failures=feature.failures,
+            feature_flow_notes=feature.flow_notes,
+            plugin_trigger=node.bundle.trigger,
+            feature_permission=_permission_label(feature.permission),
+            plugin_version=node.bundle.version,
+            plugin_author=node.bundle.author,
+            turns=feature.demo_turns,
+            locale=locale,
+            generated_at=generated_at,
+        ),
     )
     return ProgressiveDisclosureRenderer(
         impression_color=node.bundle.impression_color
@@ -1416,6 +1426,37 @@ def feature_command_sections(
         feature,
         node_title,
         normalize_inline_text=_normalize_inline_text,
+    )
+
+
+class PluginDocIdentity(NamedTuple):
+    """插件文档身份：错误示范与帮助文案共用的元信息。"""
+
+    source: str | Path
+    name: str
+    description: str
+    permission: Permission = Permission.NORMAL
+
+
+def build_plugin_error_demo(
+    identity: PluginDocIdentity,
+    locale: LocaleCode,
+    message: str,
+    *,
+    feature_query: str | None = None,
+    actor_permission: Permission | None = None,
+) -> MessagePlanEntry:
+    """构造「用法错误 + 对应帮助示范」的计划条目。"""
+    return build_doc_demo_plan_entry(
+        source=identity.source,
+        name=identity.name,
+        description=identity.description,
+        trigger=TriggerType.COMMAND,
+        permission=identity.permission,
+        actor_permission=actor_permission,
+        locale=locale,
+        feature_query=feature_query,
+        prefix_text=message,
     )
 
 

@@ -1,6 +1,7 @@
 """Stable public facade for plugin docs helpers."""
 
 from ._engine import DemoImageRenderer as DemoImageRenderer
+from ._engine import DemoRenderParams as DemoRenderParams
 from ._engine import DocNode as DocNode
 from ._engine import DocsDemoTurn as DocsDemoTurn
 from ._engine import DocsMeta as DocsMeta
@@ -9,6 +10,7 @@ from ._engine import FeatureDoc as FeatureDoc
 from ._engine import HelpDashboardSection as HelpDashboardSection
 from ._engine import InlineTextSpan as InlineTextSpan
 from ._engine import PluginDocBundle as PluginDocBundle
+from ._engine import PluginDocIdentity as PluginDocIdentity
 from ._engine import ProgressiveDisclosureRenderer as ProgressiveDisclosureRenderer
 from ._engine import VirtualPluginDocSpec as VirtualPluginDocSpec
 from ._engine import _support_note as _support_note
@@ -20,6 +22,7 @@ from ._engine import build_doc_tree as build_doc_tree
 from ._engine import build_feature_copy_text as build_feature_copy_text
 from ._engine import build_help_home_sections as build_help_home_sections
 from ._engine import build_help_home_text as build_help_home_text
+from ._engine import build_plugin_error_demo as build_plugin_error_demo
 from ._engine import build_plugin_guide_copy_text as build_plugin_guide_copy_text
 from ._engine import build_plugin_summary_copy_text as build_plugin_summary_copy_text
 from ._engine import build_readme_docs as build_readme_docs

@@ -11,12 +11,13 @@ import re
 
 from markdown_it import MarkdownIt
 from markdown_it.token import Token
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageFont
 
 from src.lib.consts import MAPLE_FONT_PATH
 from src.lib.demo_theme import DEFAULT_DEMO_THEME, SENRIN_V3_THEME, get_demo_theme
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
+from src.lib.plugin_docs.render.demo import draw_shadowed_rect
 
 from .command_layout import (
     CommandLayout,
@@ -87,6 +88,136 @@ class HeaderLayout:
     summary_y: int
     summary_lines: tuple[tuple[tuple[str, bool], ...], ...]
     height: int
+
+
+def rgba(color: str, alpha: int) -> tuple[int, int, int, int]:
+    value = color.lstrip("#")
+    return (
+        int(value[0:2], 16),
+        int(value[2:4], 16),
+        int(value[4:6], 16),
+        alpha,
+    )
+
+
+def _append_inline_char(
+    current: list[InlineSpan],
+    char: str,
+    *,
+    code: bool,
+) -> list[tuple[str, bool]]:
+    if current and current[-1][1] == code:
+        current[-1] = (current[-1][0] + char, code)
+        return current
+    return [*current, (char, code)]
+
+
+def _split_code_units(text: str) -> tuple[str, ...]:
+    parts = re.split(r"( => | --|\||/|_| )", text)
+    segments: list[str] = []
+    for part in parts:
+        if not part:
+            continue
+        if part in {" => ", " --", "|", "/", "_", " "} and segments:
+            segments[-1] += part
+            continue
+        segments.append(part)
+    return tuple(segments)
+
+
+def _split_wrappable_segments(text: str) -> tuple[str, ...]:
+    separators = (" => ", " --", "|", "/", "_", " ")
+    segments: list[str] = []
+    buffer = text
+    while buffer:
+        matched = False
+        for separator in separators:
+            if separator in buffer:
+                head, tail = buffer.split(separator, 1)
+                if head:
+                    segments.append(head + separator)
+                elif segments:
+                    segments[-1] += separator
+                else:
+                    segments.append(separator)
+                buffer = tail
+                matched = True
+                break
+        if not matched:
+            segments.append(buffer)
+            break
+    return tuple(segment for segment in segments if segment)
+
+
+def _tile_line_height(
+    font: ImageFont.ImageFont | ImageFont.FreeTypeFont,
+) -> int:
+    """卡片行高：在小字号下保底 size + 8，保证瓦片可读。"""
+    size = int(getattr(font, "size", 16))
+    return ((max(ceil(size * 1.4), size + 8) + 7) // 8) * 8
+
+
+def _text_width(
+    text: str,
+    font: ImageFont.ImageFont | ImageFont.FreeTypeFont,
+) -> int:
+    bbox = ImageDraw.Draw(Image.new("RGB", (1, 1))).textbbox(
+        (0, 0),
+        text,
+        font=font,
+    )
+    return int(bbox[2] - bbox[0])
+
+
+def draw_zigzag(
+    draw: ImageDraw.ImageDraw,
+    *,
+    start: tuple[int, int],
+    fill: tuple[int, int, int, int],
+) -> None:
+    x, y = start
+    points = [
+        (x, y),
+        (x + 16, y - 8),
+        (x + 32, y),
+        (x + 48, y - 8),
+        (x + 64, y),
+    ]
+    draw.line(points, fill=fill, width=3)
+
+
+def draw_hollow_circle(
+    draw: ImageDraw.ImageDraw,
+    *,
+    center: tuple[int, int],
+    radius: int,
+    outline: tuple[int, int, int, int],
+) -> None:
+    draw.ellipse(
+        (
+            center[0] - radius,
+            center[1] - radius,
+            center[0] + radius,
+            center[1] + radius,
+        ),
+        outline=outline,
+        width=3,
+    )
+
+
+def draw_plus_cluster(
+    draw: ImageDraw.ImageDraw,
+    *,
+    origin_x: int,
+    origin_y: int,
+    fill: tuple[int, int, int, int],
+) -> None:
+    offsets = ((0, 0), (28, 12), (12, 32))
+    for offset_x, offset_y in offsets:
+        cx = origin_x + offset_x
+        cy = origin_y + offset_y
+        draw.line((cx - 6, cy, cx + 6, cy), fill=fill, width=2)
+        draw.line((cx, cy - 6, cx, cy + 6), fill=fill, width=2)
 
 
 class DemoCollectionRenderer:
@@ -183,11 +314,9 @@ class DemoCollectionRenderer:
                 max_lines=3,
             )
         )
-        title_height = self._line_height_for_font(self.title_font)
+        title_height = _tile_line_height(self.title_font)
         summary_y = title_y + title_height + 24
-        summary_height = len(summary_lines) * self._line_height_for_font(
-            self.summary_font
-        )
+        summary_height = len(summary_lines) * _tile_line_height(self.summary_font)
         height = max(200, (summary_y - self.OUTER_MARGIN) + summary_height)
         _ = title
         return HeaderLayout(
@@ -224,27 +353,23 @@ class DemoCollectionRenderer:
         trigger_layout = build_command_layout(
             tile.trigger.strip() or f"#help {tile.slug}",
             max_width=content_width - self.CARD_COMMAND_PADDING_X * 2,
-            line_height=self._line_height_for_font(self.tile_command_font),
+            line_height=_tile_line_height(self.tile_command_font),
             indent_px=self.COMMAND_INDENT_PX,
-            measure_text=lambda value: self._text_width(value, self.tile_command_font),
+            measure_text=lambda value: _text_width(value, self.tile_command_font),
             palette=self._command_palette(),
             parse_inline_tokens=_parse_inline_tokens,
         )
         demo_layout = build_command_layout(
             tile.demo_help,
             max_width=content_width - self.CARD_COMMAND_PADDING_X * 2,
-            line_height=self._line_height_for_font(self.tile_command_font),
+            line_height=_tile_line_height(self.tile_command_font),
             indent_px=self.COMMAND_INDENT_PX,
-            measure_text=lambda value: self._text_width(value, self.tile_command_font),
+            measure_text=lambda value: _text_width(value, self.tile_command_font),
             palette=self._command_palette(),
             parse_inline_tokens=_parse_inline_tokens,
         )
-        title_height = len(title_lines) * self._line_height_for_font(
-            self.tile_title_font
-        )
-        summary_height = len(summary_lines) * self._line_height_for_font(
-            self.tile_summary_font
-        )
+        title_height = len(title_lines) * _tile_line_height(self.tile_title_font)
+        summary_height = len(summary_lines) * _tile_line_height(self.tile_summary_font)
         trigger_box_height = (
             trigger_layout.total_height + self.CARD_COMMAND_PADDING_Y * 2
         )
@@ -314,8 +439,7 @@ class DemoCollectionRenderer:
             self._draw_inline_line(
                 draw,
                 x=layout.left_x,
-                y=layout.summary_y
-                + index * self._line_height_for_font(self.summary_font),
+                y=layout.summary_y + index * _tile_line_height(self.summary_font),
                 line=line,
                 font=self.summary_font,
                 fill=self.theme.hint,
@@ -325,7 +449,7 @@ class DemoCollectionRenderer:
             "docs.render.collection.card_count",
             count=f"{tile_count:02d}",
         )
-        count_width = self._text_width(count_text, self.tile_command_font) + 40
+        count_width = _text_width(count_text, self.tile_command_font) + 40
         chip_height = 48
         chip_right = self.CANVAS_WIDTH - self.OUTER_MARGIN
         chip_left = chip_right - count_width
@@ -353,7 +477,15 @@ class DemoCollectionRenderer:
         width: int,
     ) -> None:
         rect = (x, y, x + width, y + tile.height)
-        self._draw_shadowed_rect(image, rect=rect, radius=self.CARD_RADIUS)
+        draw_shadowed_rect(
+            image,
+            rect=rect,
+            radius=self.CARD_RADIUS,
+            shadow_color=self.theme.card_shadow,
+            shadow_offset_y=self.theme.instruction_shadow_offset_y,
+            shadow_blur=self.theme.instruction_shadow_blur,
+            fill=self.theme.panel_bg,
+        )
         title_x = x + self.CARD_PADDING_X
         title_y = y + self.CARD_PADDING_Y
         draw.text(
@@ -367,26 +499,23 @@ class DemoCollectionRenderer:
             self._draw_inline_line(
                 draw,
                 x=title_text_x,
-                y=title_y + index * self._line_height_for_font(self.tile_title_font),
+                y=title_y + index * _tile_line_height(self.tile_title_font),
                 line=line,
                 font=self.tile_title_font,
                 fill=self.theme.deep,
             )
-        title_height = len(tile.title_lines) * self._line_height_for_font(
-            self.tile_title_font
-        )
+        title_height = len(tile.title_lines) * _tile_line_height(self.tile_title_font)
         summary_y = title_y + title_height + self.CARD_INNER_GAP
         for index, line in enumerate(tile.summary_lines):
             self._draw_inline_line(
                 draw,
                 x=title_x,
-                y=summary_y
-                + index * self._line_height_for_font(self.tile_summary_font),
+                y=summary_y + index * _tile_line_height(self.tile_summary_font),
                 line=line,
                 font=self.tile_summary_font,
                 fill=self.theme.hint,
             )
-        summary_height = len(tile.summary_lines) * self._line_height_for_font(
+        summary_height = len(tile.summary_lines) * _tile_line_height(
             self.tile_summary_font
         )
         trigger_y = summary_y + summary_height + self.CARD_INNER_GAP
@@ -421,7 +550,7 @@ class DemoCollectionRenderer:
             fill=self.theme.hint,
             font=self.tile_summary_font,
         )
-        demo_label_height = self._line_height_for_font(self.tile_summary_font)
+        demo_label_height = _tile_line_height(self.tile_summary_font)
         demo_height = tile.demo_layout.total_height + self.CARD_COMMAND_PADDING_Y * 2
         demo_rect = (
             title_x,
@@ -433,7 +562,7 @@ class DemoCollectionRenderer:
             demo_rect,
             radius=20,
             fill=self.theme.panel_bg,
-            outline=self._rgba(self.theme.line, 110),
+            outline=rgba(self.theme.line, 110),
             width=2,
         )
         self._draw_command_layout(
@@ -446,36 +575,6 @@ class DemoCollectionRenderer:
             guide_fill=self.theme.line,
         )
 
-    def _draw_shadowed_rect(
-        self,
-        image: Image.Image,
-        *,
-        rect: tuple[int, int, int, int],
-        radius: int,
-    ) -> None:
-        shadow = Image.new("RGBA", image.size, (0, 0, 0, 0))
-        shadow_draw = ImageDraw.Draw(shadow)
-        shadow_rect = (
-            rect[0],
-            rect[1] + self.theme.instruction_shadow_offset_y,
-            rect[2],
-            rect[3] + self.theme.instruction_shadow_offset_y,
-        )
-        shadow_draw.rounded_rectangle(
-            shadow_rect,
-            radius=radius,
-            fill=self.theme.card_shadow,
-        )
-        shadow = shadow.filter(
-            ImageFilter.GaussianBlur(self.theme.instruction_shadow_blur)
-        )
-        image.alpha_composite(shadow)
-        ImageDraw.Draw(image).rounded_rectangle(
-            rect,
-            radius=radius,
-            fill=self.theme.panel_bg,
-        )
-
     def _draw_dot_matrix(
         self,
         draw: ImageDraw.ImageDraw,
@@ -483,7 +582,7 @@ class DemoCollectionRenderer:
         width: int,
         height: int,
     ) -> None:
-        dot_fill = self._rgba(self.theme.grid_color, 38)
+        dot_fill = rgba(self.theme.grid_color, 38)
         radius = 1
         max_height = min(height, max(height // 2 + 160, 480))
         for y in range(self.HEADER_TOP // 2, max_height, self.theme.grid_spacing):
@@ -504,81 +603,30 @@ class DemoCollectionRenderer:
         width: int,
         height: int,
     ) -> None:
-        decor_fill = self._rgba(self.theme.decor_color, 72)
+        decor_fill = rgba(self.theme.decor_color, 72)
         plus_origins = (
             (self.OUTER_MARGIN - 8, self.HEADER_TOP + 16),
             (width - self.OUTER_MARGIN - 176, self.HEADER_TOP + 104),
             (width - self.OUTER_MARGIN - 72, height - 160),
         )
         for origin_x, origin_y in plus_origins:
-            self._draw_plus_cluster(
+            draw_plus_cluster(
                 draw,
                 origin_x=origin_x,
                 origin_y=origin_y,
                 fill=decor_fill,
             )
-        self._draw_hollow_circle(
+        draw_hollow_circle(
             draw,
             center=(width - self.OUTER_MARGIN - 128, self.HEADER_TOP + 172),
             radius=28,
             outline=decor_fill,
         )
-        self._draw_zigzag(
+        draw_zigzag(
             draw,
             start=(width - self.OUTER_MARGIN - 216, height // 2 + 72),
             fill=decor_fill,
         )
-
-    def _draw_plus_cluster(
-        self,
-        draw: ImageDraw.ImageDraw,
-        *,
-        origin_x: int,
-        origin_y: int,
-        fill: tuple[int, int, int, int],
-    ) -> None:
-        offsets = ((0, 0), (28, 12), (12, 32))
-        for offset_x, offset_y in offsets:
-            cx = origin_x + offset_x
-            cy = origin_y + offset_y
-            draw.line((cx - 6, cy, cx + 6, cy), fill=fill, width=2)
-            draw.line((cx, cy - 6, cx, cy + 6), fill=fill, width=2)
-
-    def _draw_hollow_circle(
-        self,
-        draw: ImageDraw.ImageDraw,
-        *,
-        center: tuple[int, int],
-        radius: int,
-        outline: tuple[int, int, int, int],
-    ) -> None:
-        draw.ellipse(
-            (
-                center[0] - radius,
-                center[1] - radius,
-                center[0] + radius,
-                center[1] + radius,
-            ),
-            outline=outline,
-            width=3,
-        )
-
-    def _draw_zigzag(
-        self,
-        draw: ImageDraw.ImageDraw,
-        *,
-        start: tuple[int, int],
-        fill: tuple[int, int, int, int],
-    ) -> None:
-        x, y = start
-        points = [
-            (x, y),
-            (x + 16, y - 8),
-            (x + 32, y),
-            (x + 48, y - 8),
-            (x + 64, y),
-        ]
-        draw.line(points, fill=fill, width=3)
 
     def _card_width(self, columns: int) -> int:
         total_gap = max(0, columns - 1) * self.GRID_GAP_X
@@ -588,25 +636,6 @@ class DemoCollectionRenderer:
 
     def _effective_columns(self, tile_count: int) -> int:
         return max(1, min(self.columns, tile_count or 1))
-
-    def _text_width(
-        self,
-        text: str,
-        font: ImageFont.ImageFont | ImageFont.FreeTypeFont,
-    ) -> int:
-        bbox = ImageDraw.Draw(Image.new("RGB", (1, 1))).textbbox(
-            (0, 0),
-            text,
-            font=font,
-        )
-        return int(bbox[2] - bbox[0])
-
-    def _line_height_for_font(
-        self,
-        font: ImageFont.ImageFont | ImageFont.FreeTypeFont,
-    ) -> int:
-        size = int(getattr(font, "size", 16))
-        return ((max(ceil(size * 1.4), size + 8) + 7) // 8) * 8
 
     def _wrap_inline_text(
         self,
@@ -665,7 +694,7 @@ class DemoCollectionRenderer:
             prefix = next((item for item in separators if text.startswith(item)), "")
             if not prefix:
                 continue
-            normalized[index - 1] = self._append_inline_char(
+            normalized[index - 1] = _append_inline_char(
                 normalized[index - 1],
                 prefix,
                 code=code,
@@ -685,7 +714,7 @@ class DemoCollectionRenderer:
         max_width: int,
     ) -> tuple[list[InlineSpan], list[InlineLine]]:
         flushed: list[InlineLine] = []
-        for segment in self._split_wrappable_segments(text):
+        for segment in _split_wrappable_segments(text):
             candidate = [*current, (segment, False)]
             if self._inline_line_width(candidate, font) <= max_width:
                 current = candidate
@@ -697,7 +726,7 @@ class DemoCollectionRenderer:
                 current = [(segment, False)]
                 continue
             for char in segment:
-                candidate = self._append_inline_char(current, char, code=False)
+                candidate = _append_inline_char(current, char, code=False)
                 if not current or self._inline_line_width(candidate, font) <= max_width:
                     current = candidate
                     continue
@@ -720,7 +749,7 @@ class DemoCollectionRenderer:
             if current:
                 flushed.append(tuple(current))
             return [(text, True)], flushed
-        for segment in self._split_wrappable_segments(text):
+        for segment in _split_wrappable_segments(text):
             candidate = [*current, (segment, True)]
             if self._inline_line_width(candidate, font) <= max_width:
                 current = candidate
@@ -742,29 +771,6 @@ class DemoCollectionRenderer:
                 current.append((piece, True))
         return current, flushed
 
-    def _split_wrappable_segments(self, text: str) -> tuple[str, ...]:
-        separators = (" => ", " --", "|", "/", "_", " ")
-        segments: list[str] = []
-        buffer = text
-        while buffer:
-            matched = False
-            for separator in separators:
-                if separator in buffer:
-                    head, tail = buffer.split(separator, 1)
-                    if head:
-                        segments.append(head + separator)
-                    elif segments:
-                        segments[-1] += separator
-                    else:
-                        segments.append(separator)
-                    buffer = tail
-                    matched = True
-                    break
-            if not matched:
-                segments.append(buffer)
-                break
-        return tuple(segment for segment in segments if segment)
-
     def _split_oversized_code_segment(
         self,
         text: str,
@@ -773,7 +779,7 @@ class DemoCollectionRenderer:
     ) -> tuple[str, ...]:
         chunks: list[str] = []
         current = ""
-        for segment in self._split_code_units(text):
+        for segment in _split_code_units(text):
             candidate = current + segment
             if (
                 current
@@ -798,30 +804,6 @@ class DemoCollectionRenderer:
             chunks.append(current)
         return tuple(chunks)
 
-    def _split_code_units(self, text: str) -> tuple[str, ...]:
-        parts = re.split(r"( => | --|\||/|_| )", text)
-        segments: list[str] = []
-        for part in parts:
-            if not part:
-                continue
-            if part in {" => ", " --", "|", "/", "_", " "} and segments:
-                segments[-1] += part
-                continue
-            segments.append(part)
-        return tuple(segments)
-
-    def _append_inline_char(
-        self,
-        current: list[InlineSpan],
-        char: str,
-        *,
-        code: bool,
-    ) -> list[tuple[str, bool]]:
-        if current and current[-1][1] == code:
-            current[-1] = (current[-1][0] + char, code)
-            return current
-        return [*current, (char, code)]
-
     def _inline_line_width(
         self,
         line: Sequence[tuple[str, bool]],
@@ -829,7 +811,7 @@ class DemoCollectionRenderer:
     ) -> int:
         width = 0
         for text, code in line:
-            width += self._text_width(text, font)
+            width += _text_width(text, font)
             if code:
                 width += self.theme.inline_code_pad_x * 2
         return width
@@ -885,7 +867,7 @@ class DemoCollectionRenderer:
                 continue
             span_fill = span.fill or fill
             draw.text((cursor_x, y), span.text, fill=span_fill, font=font)
-            cursor_x += self._text_width(span.text, font)
+            cursor_x += _text_width(span.text, font)
 
     def _draw_inline_line(
         self,
@@ -902,15 +884,15 @@ class DemoCollectionRenderer:
         cursor_x = x
         chip_background = code_background or self.theme.inline_code_bg
         chip_fill = code_fill or self.theme.inline_code_text
-        chip_height = self._line_height_for_font(font)
+        chip_height = _tile_line_height(font)
         for text, code in line:
             if not text:
                 continue
             if not code:
                 draw.text((cursor_x, y), text, fill=fill, font=font)
-                cursor_x += self._text_width(text, font)
+                cursor_x += _text_width(text, font)
                 continue
-            text_width = self._text_width(text, font)
+            text_width = _text_width(text, font)
             chip_width = text_width + self.theme.inline_code_pad_x * 2
             draw.rounded_rectangle(
                 (cursor_x, y - 2, cursor_x + chip_width, y - 2 + chip_height),
@@ -924,15 +906,6 @@ class DemoCollectionRenderer:
                 font=font,
             )
             cursor_x += chip_width
-
-    def _rgba(self, color: str, alpha: int) -> tuple[int, int, int, int]:
-        value = color.lstrip("#")
-        return (
-            int(value[0:2], 16),
-            int(value[2:4], 16),
-            int(value[4:6], 16),
-            alpha,
-        )
 
 
 def render_collection_png(job: DemoCollectionJob) -> bytes:
