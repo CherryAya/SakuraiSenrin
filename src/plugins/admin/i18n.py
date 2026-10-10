@@ -17,16 +17,21 @@ from src.lib.i18n.types import LocaleCode
 from src.lib.message_plan import MessagePlanInput, finish_with_message
 from src.lib.plugin_docs import (
     DocsRenderContext,
-    build_doc_demo_plan_entry,
+    PluginDocIdentity,
+    build_plugin_error_demo,
     build_readme_docs_plan_entry,
     create_docs_meta,
 )
 from src.lib.plugin_meta import create_plugin_metadata
 from src.repositories import i18n_repo
 
+admin_command_group = CommandGroup("admin")
+
+
 name = tr("zh-CN", "plugin.admin_i18n.name")
 description = tr("zh-CN", "plugin.admin_i18n.description")
 DOCS_SOURCE = Path(__file__).parent / "docs" / "i18n" / "README.MD"
+IDENTITY = PluginDocIdentity(DOCS_SOURCE, name, description, Permission.SUPERUSER)
 
 
 def build_docs(ctx: DocsRenderContext | None = None) -> MessagePlanInput:
@@ -43,17 +48,10 @@ def build_docs(ctx: DocsRenderContext | None = None) -> MessagePlanInput:
 def _build_error_demo(
     locale: LocaleCode,
     message: str,
-    feature_query: str | None,
+    feature_query: str | None = None,
 ) -> MessagePlanInput:
-    return build_doc_demo_plan_entry(
-        source=DOCS_SOURCE,
-        name=name,
-        description=description,
-        trigger=TriggerType.COMMAND,
-        permission=Permission.SUPERUSER,
-        locale=locale,
-        feature_query=feature_query,
-        prefix_text=message,
+    return build_plugin_error_demo(
+        IDENTITY, locale, message, feature_query=feature_query
     )
 
 
@@ -81,7 +79,6 @@ __plugin_meta__ = create_plugin_metadata(
     },
 )
 
-admin_command_group = CommandGroup("admin")
 admin_i18n = admin_command_group.command(
     "i18n",
     aliases={"语言管理"},

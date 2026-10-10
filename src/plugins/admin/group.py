@@ -33,7 +33,8 @@ from src.lib.message_plan import (
 )
 from src.lib.plugin_docs import (
     DocsRenderContext,
-    build_doc_demo_plan_entry,
+    PluginDocIdentity,
+    build_plugin_error_demo,
     build_readme_docs_plan_entry,
     create_docs_meta,
 )
@@ -50,6 +51,7 @@ from src.services.member_sync_admin import (
 name = tr("zh-CN", "plugin.admin_group.name")
 description = tr("zh-CN", "plugin.admin_group.description")
 DOCS_SOURCE = Path(__file__).parent / "docs" / "group" / "README.MD"
+IDENTITY = PluginDocIdentity(DOCS_SOURCE, name, description, Permission.SUPERUSER)
 
 
 def build_docs(ctx: DocsRenderContext | None = None) -> MessagePlanInput:
@@ -66,17 +68,10 @@ def build_docs(ctx: DocsRenderContext | None = None) -> MessagePlanInput:
 def _build_error_demo(
     locale: LocaleCode,
     message: str,
-    feature_query: str | None,
+    feature_query: str | None = None,
 ) -> MessagePlanInput:
-    return build_doc_demo_plan_entry(
-        source=DOCS_SOURCE,
-        name=name,
-        description=description,
-        trigger=TriggerType.COMMAND,
-        permission=Permission.SUPERUSER,
-        locale=locale,
-        feature_query=feature_query,
-        prefix_text=message,
+    return build_plugin_error_demo(
+        IDENTITY, locale, message, feature_query=feature_query
     )
 
 
@@ -104,7 +99,9 @@ __plugin_meta__ = create_plugin_metadata(
     },
 )
 
+
 admin_command_group = CommandGroup("admin")
+
 admin_group = admin_command_group.command(
     "group",
     aliases={"群组管理", "admin group"},

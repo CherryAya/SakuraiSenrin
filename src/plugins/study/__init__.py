@@ -72,22 +72,34 @@ from src.lib.plugin_docs import (
 )
 from src.lib.plugin_meta import create_plugin_metadata
 from src.logger import logger
-from src.plugins.wordbank.debug import (
+from src.plugins.wordbank.api import (
+    MessageShape,
+    RuleError,
+    SubmissionLifecycle,
+    SubmissionPayload,
+    build_legacy_study_shortcut_rule,
+    build_message_shape_from_message,
+    build_response_input_payload,
+    default_i18n_text,
     describe_batch_errors,
     describe_message_segments,
     describe_shape,
-)
-from src.plugins.wordbank.forward_batch import (
-    build_response_input_payload,
+    extract_image_urls,
+    fetch_image_bytes_from_message,
+    handle_guided_study_shape_result,
+    handle_study_with_media_result,
+    has_meaningful_text,
     is_forward_input,
+    localize_command_error,
+    parse_guided_weight,
+    parse_study_group_block_choice,
+    parse_study_mode_choice,
+    rest_after_token,
+    shape_from_trigger_text_value,
+    tokenize_shell_like,
+    wordbank_media_service,
+    wordbank_service,
 )
-from src.plugins.wordbank.handlers.commands import default_i18n_text
-from src.plugins.wordbank.handlers.submission import (
-    SubmissionLifecycle,
-    SubmissionPayload,
-)
-from src.plugins.wordbank.message_model import MessageShape
-from src.plugins.wordbank.text_parsing import has_meaningful_text
 
 name = tr("zh-CN", "plugin.study.name")
 description = tr("zh-CN", "plugin.study.description")
@@ -99,7 +111,6 @@ def _study_error_plan_entry(
     exc: Exception,
     locale: LocaleCode,
 ) -> MessagePlanEntry:
-    from src.plugins.wordbank.handlers.commands import localize_command_error
 
     return build_doc_demo_plan_entry(
         source=DOCS_SOURCE,
@@ -189,7 +200,6 @@ STUDY_SNAPSHOT_KEYS_AFTER_WEIGHT: tuple[str, ...] = (
 # 两边共享的 state 内核已收敛到 src/lib/guided_state.py。
 @lru_cache(maxsize=1)
 def _build_study_submission_lifecycle() -> SubmissionLifecycle:
-    from src.plugins.wordbank.services import wordbank_media_service, wordbank_service
 
     return SubmissionLifecycle(
         service=wordbank_service,
@@ -339,16 +349,6 @@ async def _start_guided_study_from_partial_args(
     *,
     has_images: bool,
 ) -> bool:
-    from src.plugins.wordbank.handlers.commands import (
-        parse_study_group_block_choice,
-        parse_study_mode_choice,
-    )
-    from src.plugins.wordbank.handlers.media_helpers import (
-        shape_from_trigger_text_value,
-    )
-    from src.plugins.wordbank.services import wordbank_service
-    from src.plugins.wordbank.services.rules import RuleError
-    from src.plugins.wordbank.text_parsing import rest_after_token, tokenize_shell_like
 
     source = text
     if not source or _contains_study_pair_separator(source):
@@ -435,11 +435,6 @@ async def _record_study_trigger(
     state: T_State,
     locale: LocaleCode,
 ) -> None:
-    from src.plugins.wordbank.handlers import build_message_shape_from_message
-    from src.plugins.wordbank.handlers.media_helpers import (
-        shape_from_trigger_text_value,
-    )
-    from src.plugins.wordbank.services import wordbank_media_service
 
     plain_text = event.message.extract_plain_text()
     if has_meaningful_text(plain_text) and len(event.message) == 1:
@@ -491,7 +486,6 @@ async def _record_study_response(
     state: T_State,
     locale: LocaleCode,
 ) -> None:
-    from src.plugins.wordbank.services import wordbank_media_service
 
     if is_forward_input(event):
         state["study_forward_response_pending"] = True
@@ -577,7 +571,6 @@ async def _record_study_forward_response_choice(
     state: T_State,
     locale: LocaleCode,
 ) -> None:
-    from src.plugins.wordbank.services import wordbank_media_service
 
     if not state.get("study_forward_response_pending"):
         return
@@ -705,10 +698,6 @@ async def _record_study_weight_and_finish(
     state: T_State,
     locale: LocaleCode,
 ) -> None:
-    from src.plugins.wordbank.handlers.commands import (
-        parse_guided_weight,
-    )
-    from src.plugins.wordbank.services.rules import RuleError
 
     try:
         parse_guided_weight(event.message.extract_plain_text())
@@ -742,14 +731,6 @@ async def _finish_guided_study(
     state: T_State,
     locale: LocaleCode,
 ) -> None:
-    from src.plugins.wordbank.handlers import (
-        handle_guided_study_shape_result,
-    )
-    from src.plugins.wordbank.services import wordbank_service
-    from src.plugins.wordbank.services.rules import (
-        RuleError,
-        build_legacy_study_shortcut_rule,
-    )
 
     try:
         state_keys = _study_state_keys(state)
@@ -857,8 +838,6 @@ async def _start_guided_study_with_trigger_image(
     locale: LocaleCode,
     arg: Message,
 ) -> None:
-    from src.plugins.wordbank.handlers import build_message_shape_from_message
-    from src.plugins.wordbank.services import wordbank_media_service, wordbank_service
 
     await wordbank_service.initialize()
     state["study_locale"] = locale
@@ -902,13 +881,6 @@ async def _(
     state: T_State,
     arg: Message = CommandArg(),
 ) -> None:
-    from src.plugins.wordbank.handlers import (
-        extract_image_urls,
-        fetch_image_bytes_from_message,
-        handle_study_with_media_result,
-    )
-    from src.plugins.wordbank.services import wordbank_media_service, wordbank_service
-    from src.plugins.wordbank.services.rules import RuleError
 
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     await _abort_study_on_revoke(matcher, event, locale)
@@ -1001,10 +973,6 @@ async def _(
 
 @study_command.handle()
 async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> None:
-    from src.plugins.wordbank.handlers.commands import (
-        parse_study_mode_choice,
-    )
-    from src.plugins.wordbank.services.rules import RuleError
 
     locale = _study_locale(state)
     await _abort_study_on_revoke(matcher, event, locale)
@@ -1047,10 +1015,6 @@ async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> 
 
 @study_command.handle()
 async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> None:
-    from src.plugins.wordbank.handlers.commands import (
-        parse_study_group_block_choice,
-    )
-    from src.plugins.wordbank.services.rules import RuleError
 
     locale = _study_locale(state)
     await _abort_study_on_revoke(matcher, event, locale)

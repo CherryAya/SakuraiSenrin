@@ -5,6 +5,7 @@ import nonebot
 from nonebot.adapters.onebot.v11 import Bot, Message, MessageSegment
 from nonebug import App
 import pytest
+import pytest_asyncio
 
 from src.lib.messages import empty_message, text_message
 
@@ -20,6 +21,10 @@ nonebot.init(
     command_sep={"."},
 )
 
+if nonebot.get_plugin("wordbank") is None:
+    sys.modules.pop("src.plugins.wordbank", None)
+    nonebot.load_plugin("src.plugins.wordbank")
+
 if nonebot.get_plugin("study") is None:
     sys.modules.pop("src.plugins.study", None)
     nonebot.load_plugin("src.plugins.study")
@@ -27,7 +32,6 @@ if nonebot.get_plugin("study") is None:
 from src.lib.i18n.runtime import tr
 from src.lib.message_assets import message_asset_repo
 from src.plugins import study as study_plugin
-from src.plugins.wordbank import handlers as wordbank_handlers
 from src.plugins.wordbank.handlers import submission as wordbank_submission_handlers
 from src.plugins.wordbank.message_model import (
     shape_from_event,
@@ -48,6 +52,13 @@ def _disable_runtime_processor(monkeypatch: pytest.MonkeyPatch) -> None:
         "src.hooks.processor._runtime_check",
         AsyncMock(return_value=None),
     )
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _init_wordbank_tables() -> None:
+    from src.plugins.wordbank.database import wordbank_repo
+
+    await wordbank_repo.init_all_tables()
 
 
 @pytest.mark.asyncio
@@ -250,7 +261,7 @@ async def test_study_guided_flow_submits_pending_entry(
         AsyncMock(return_value="zh-CN"),
     )
     monkeypatch.setattr(
-        wordbank_handlers,
+        study_plugin,
         "handle_guided_study_shape_result",
         handle_guided,
     )
@@ -380,7 +391,7 @@ async def test_study_guided_flow_parses_response_placeholders(
         AsyncMock(return_value="zh-CN"),
     )
     monkeypatch.setattr(
-        wordbank_handlers,
+        study_plugin,
         "handle_guided_study_shape_result",
         handle_guided,
     )
@@ -507,7 +518,7 @@ async def test_study_guided_flow_accepts_event_trigger_text(
         AsyncMock(return_value="zh-CN"),
     )
     monkeypatch.setattr(
-        wordbank_handlers,
+        study_plugin,
         "handle_guided_study_shape_result",
         handle_guided,
     )
@@ -632,7 +643,7 @@ async def test_study_guided_flow_accepts_bracket_event_trigger_text(
         AsyncMock(return_value="zh-CN"),
     )
     monkeypatch.setattr(
-        wordbank_handlers,
+        study_plugin,
         "handle_guided_study_shape_result",
         handle_guided,
     )
@@ -757,7 +768,7 @@ async def test_study_prefilled_trigger_parses_event_shape(
         AsyncMock(return_value="zh-CN"),
     )
     monkeypatch.setattr(
-        wordbank_handlers,
+        study_plugin,
         "handle_guided_study_shape_result",
         handle_guided,
     )
@@ -855,17 +866,17 @@ async def test_study_direct_media_submission_sends_processing_hint_before_result
         AsyncMock(return_value="zh-CN"),
     )
     monkeypatch.setattr(
-        wordbank_handlers,
+        study_plugin,
         "extract_image_urls",
         lambda _message: ["https://example.test/image.png"],
     )
     monkeypatch.setattr(
-        wordbank_handlers,
+        study_plugin,
         "fetch_image_bytes_from_message",
         AsyncMock(return_value=[b"image-bytes"]),
     )
     monkeypatch.setattr(
-        wordbank_handlers,
+        study_plugin,
         "handle_study_with_media_result",
         handle_with_media,
     )

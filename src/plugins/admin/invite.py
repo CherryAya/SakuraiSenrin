@@ -54,7 +54,8 @@ from src.lib.message_plan import (
 )
 from src.lib.plugin_docs import (
     DocsRenderContext,
-    build_doc_demo_plan_entry,
+    PluginDocIdentity,
+    build_plugin_error_demo,
     build_readme_docs_plan_entry,
     create_docs_meta,
 )
@@ -73,9 +74,13 @@ from src.repositories import group_repo, invite_repo, user_repo
 from src.services.info import resolve_user_name
 from src.services.runtime_policy import resolve_invitation_transition
 
+admin_command_group = CommandGroup("admin")
+
+
 name = tr("zh-CN", "plugin.admin_invite.name")
 description = tr("zh-CN", "plugin.admin_invite.description")
 DOCS_SOURCE = Path(__file__).parent / "docs" / "invite" / "README.MD"
+IDENTITY = PluginDocIdentity(DOCS_SOURCE, name, description, Permission.SUPERUSER)
 INVITATION_AVATAR_CONCURRENCY = 8
 
 
@@ -93,17 +98,10 @@ def build_docs(ctx: DocsRenderContext | None = None) -> MessagePlanInput:
 def _build_error_demo(
     locale: LocaleCode,
     message: str,
-    feature_query: str | None,
+    feature_query: str | None = None,
 ) -> MessagePlanInput:
-    return build_doc_demo_plan_entry(
-        source=DOCS_SOURCE,
-        name=name,
-        description=description,
-        trigger=TriggerType.COMMAND,
-        permission=Permission.SUPERUSER,
-        locale=locale,
-        feature_query=feature_query,
-        prefix_text=message,
+    return build_plugin_error_demo(
+        IDENTITY, locale, message, feature_query=feature_query
     )
 
 
@@ -219,7 +217,6 @@ log_parser = subparsers.add_parser("log", aliases=["日志"], help="查看邀请
 log_parser.add_argument("-g", "--gid", type=str, help="群组 ID")
 # fmt: on
 
-admin_command_group = CommandGroup("admin")
 admin_invite = admin_command_group.command(
     "invite",
     aliases={"邀请管理"},

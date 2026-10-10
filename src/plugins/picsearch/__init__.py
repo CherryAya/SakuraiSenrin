@@ -49,7 +49,8 @@ from src.lib.message_plan import (
 )
 from src.lib.plugin_docs import (
     DocsRenderContext,
-    build_doc_demo_plan_entry,
+    PluginDocIdentity,
+    build_plugin_error_demo,
     build_readme_docs_plan_entry,
     create_docs_meta,
 )
@@ -59,6 +60,7 @@ from src.logger import logger
 name = tr("zh-CN", "plugin.picsearch.name")
 description = tr("zh-CN", "plugin.picsearch.description")
 DOCS_SOURCE = Path(__file__).parent / "docs" / "README.MD"
+IDENTITY = PluginDocIdentity(DOCS_SOURCE, name, description, Permission.NORMAL)
 MAX_IMAGE_SELECTION = 3
 
 
@@ -89,16 +91,7 @@ def build_docs(ctx: DocsRenderContext | None = None) -> MessagePlanInput:
 
 
 def _build_error_demo(locale: LocaleCode, message: str) -> MessagePlanEntry:
-    return build_doc_demo_plan_entry(
-        source=DOCS_SOURCE,
-        name=name,
-        description=description,
-        trigger=TriggerType.COMMAND,
-        permission=Permission.NORMAL,
-        locale=locale,
-        feature_query="main",
-        prefix_text=message,
-    )
+    return build_plugin_error_demo(IDENTITY, locale, message, feature_query="main")
 
 
 __plugin_meta__ = create_plugin_metadata(

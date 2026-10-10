@@ -32,7 +32,8 @@ from src.lib.i18n.types import LocaleCode
 from src.lib.message_plan import MessagePlanInput, finish_with_message
 from src.lib.plugin_docs import (
     DocsRenderContext,
-    build_doc_demo_plan_entry,
+    PluginDocIdentity,
+    build_plugin_error_demo,
     build_readme_docs_plan_entry,
     create_docs_meta,
 )
@@ -42,9 +43,13 @@ from src.lib.utils.common import get_current_time, time_to_timedelta
 from src.repositories import blacklist_repo, group_repo, user_repo
 from src.services.info import resolve_user_name
 
+admin_command_group = CommandGroup("admin")
+
+
 name = tr("zh-CN", "plugin.admin_user.name")
 description = tr("zh-CN", "plugin.admin_user.description")
 DOCS_SOURCE = Path(__file__).parent / "docs" / "user" / "README.MD"
+IDENTITY = PluginDocIdentity(DOCS_SOURCE, name, description, Permission.SUPERUSER)
 
 
 def build_docs(ctx: DocsRenderContext | None = None) -> MessagePlanInput:
@@ -61,17 +66,10 @@ def build_docs(ctx: DocsRenderContext | None = None) -> MessagePlanInput:
 def _build_error_demo(
     locale: LocaleCode,
     message: str,
-    feature_query: str | None,
+    feature_query: str | None = None,
 ) -> MessagePlanInput:
-    return build_doc_demo_plan_entry(
-        source=DOCS_SOURCE,
-        name=name,
-        description=description,
-        trigger=TriggerType.COMMAND,
-        permission=Permission.SUPERUSER,
-        locale=locale,
-        feature_query=feature_query,
-        prefix_text=message,
+    return build_plugin_error_demo(
+        IDENTITY, locale, message, feature_query=feature_query
     )
 
 
@@ -130,7 +128,6 @@ status_parser = subparsers.add_parser("status", aliases=["状态"], help="查询
 status_parser.add_argument("uids", nargs="+", help="目标用户 ID 列表")
 # fmt: on
 
-admin_command_group = CommandGroup("admin")
 admin_user = admin_command_group.command(
     "user",
     aliases={"用户管理"},
