@@ -6,10 +6,15 @@ from dataclasses import dataclass
 from math import floor, sqrt
 
 import arrow
+from pil_utils import BuildImage
 
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
-from src.plugins.water.renderers.common import format_rank, short_exp
+from src.plugins.water.renderers.common import (
+    SYS_FONT_NAME,
+    format_rank,
+    short_exp,
+)
 from src.plugins.water.renderers.models import WaterProfileCardData
 from src.plugins.water.services.achievement import ACHIEVEMENT_RULES
 
@@ -224,3 +229,61 @@ def compute_profile_progress_metrics(
         gmt_ratio=gmt_ratio,
         gmt_gap=gmt_gap,
     )
+
+
+def draw_history_rows(
+    card: BuildImage,
+    rows: list[tuple[str, str]],
+    *,
+    scale: float,
+    pad: int,
+    width: int,
+    height: int,
+    list_start: int,
+    row_h: int,
+    date_col_w: int,
+    theme: object,
+    accent: str,
+    strong: str,
+) -> None:
+    for idx, (title, date_text) in enumerate(rows):
+        row_top = list_start + idx * row_h
+        if idx > 0:
+            card.draw.line(
+                (
+                    pad + int(18 * scale),
+                    row_top,
+                    width - pad - int(18 * scale),
+                    row_top,
+                ),
+                fill=theme.history_divider,  # type: ignore[attr-defined]
+                width=max(1, int(1.2 * scale)),
+            )
+        card.draw_text(
+            (
+                pad + int(18 * scale),
+                row_top + int(3 * scale),
+                width - pad - date_col_w - int(10 * scale),
+                row_top + row_h - int(3 * scale),
+            ),
+            title,
+            max_fontsize=int(11 * scale),
+            min_fontsize=int(9 * scale),
+            fill=accent,
+            halign="left",
+            font_families=[SYS_FONT_NAME],
+        )
+        card.draw_text(
+            (
+                width - pad - date_col_w,
+                row_top + int(3 * scale),
+                width - pad - int(18 * scale),
+                row_top + row_h - int(3 * scale),
+            ),
+            date_text,
+            max_fontsize=int(11 * scale),
+            min_fontsize=int(9 * scale),
+            fill=strong,
+            halign="right",
+            font_families=[SYS_FONT_NAME],
+        )

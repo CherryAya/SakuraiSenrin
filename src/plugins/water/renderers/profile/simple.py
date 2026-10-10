@@ -26,6 +26,7 @@ from src.services.info import resolve_group_card
 
 from .shared import (
     build_copyright_text,
+    draw_history_rows,
     format_profile_exp,
     format_profile_rank,
     level_progress,
@@ -582,47 +583,20 @@ async def build_my_water_simple_image(
             row_h = int(24 * scale)
             list_start = y + int(30 * scale)
             date_col_w = int(86 * scale)
-            for idx, (title, date_text) in enumerate(history_show):
-                row_top = list_start + idx * row_h
-                if idx > 0:
-                    card.draw.line(
-                        (
-                            pad + int(18 * scale),
-                            row_top,
-                            width - pad - int(18 * scale),
-                            row_top,
-                        ),
-                        fill=theme.history_divider,
-                        width=max(1, int(1.2 * scale)),
-                    )
-                card.draw_text(
-                    (
-                        pad + int(18 * scale),
-                        row_top + int(3 * scale),
-                        width - pad - date_col_w - int(10 * scale),
-                        row_top + row_h - int(3 * scale),
-                    ),
-                    title,
-                    max_fontsize=int(11 * scale),
-                    min_fontsize=int(9 * scale),
-                    fill=accent,
-                    halign="left",
-                    font_families=[SYS_FONT_NAME],
-                )
-                card.draw_text(
-                    (
-                        width - pad - date_col_w,
-                        row_top + int(3 * scale),
-                        width - pad - int(18 * scale),
-                        row_top + row_h - int(3 * scale),
-                    ),
-                    date_text,
-                    max_fontsize=int(11 * scale),
-                    min_fontsize=int(9 * scale),
-                    fill=strong,
-                    halign="right",
-                    font_families=[SYS_FONT_NAME],
-                )
+            draw_history_rows(
+                card,
+                history_show,
+                scale=scale,
+                pad=pad,
+                width=width,
+                height=height,
+                list_start=list_start,
+                row_h=row_h,
+                date_col_w=date_col_w,
+                theme=theme,
+                accent=accent,
+                strong=strong,
+            )
 
         now = arrow.get(get_current_time()).datetime
         card.draw.text(

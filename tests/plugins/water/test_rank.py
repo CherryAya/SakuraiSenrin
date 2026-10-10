@@ -1,7 +1,7 @@
 # 测试/脚本需直接验证内部不变量，故关闭跨模块私有符号告警
 # pyright: reportPrivateUsage=false
 import asyncio
-from time import perf_counter
+from dataclasses import replace
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -16,7 +16,6 @@ from src.plugins.water.database.repo_models import (
 )
 from src.plugins.water.renderers import (
     WaterGroupDailyRankCardItem,
-    WaterGroupRankTrendSeries,
     WaterGroupReportImageData,
     WaterGroupShareSlice,
     WaterPeriodRankCardData,
@@ -324,7 +323,7 @@ async def test_build_day_rank_data_uses_i18n_labels(
     )
     monkeypatch.setattr(
         query_module.water_rank_service,
-        "_build_view_items",
+        "build_view_items",
         AsyncMock(
             return_value=[
                 WaterRankCardItem(
@@ -486,7 +485,7 @@ async def test_rank_query_service_routes_day_and_non_day(
     )
     monkeypatch.setattr(
         query_module.water_rank_service,
-        "_build_view_items",
+        "build_view_items",
         AsyncMock(
             return_value=[
                 WaterRankCardItem(
@@ -600,10 +599,69 @@ async def test_build_water_period_rank_image_uses_bucket_histogram(
     assert [label for label in calls[1]["labels"] if label][-1] == "2025-09-29"
 
 
-@pytest.mark.asyncio
-async def test_build_water_group_report_image_smoke() -> None:
-    avatar = BuildImage.new("RGBA", (128, 128), "#F6B7D2")
-    data = WaterGroupReportImageData(
+def _report_avatar() -> BuildImage:
+    return BuildImage.new("RGBA", (128, 128), "#F6B7D2")
+
+
+def _report_user_item(
+    avatar: BuildImage,
+    *,
+    rank: int,
+    name: str | None = None,
+    msg_count: int = 120,
+) -> WaterRankCardItem:
+    return WaterRankCardItem(
+        entity_id=f"1000{rank}",
+        display_name=name or f"User{rank}",
+        secondary_label=f"用户 1000{rank}",
+        avatar=avatar,
+        msg_count=msg_count,
+        active_days=15,
+        active_hours=28 - rank,
+        hourly_counts=[(idx % 5) + 1 for idx in range(24)],
+        current_rank=rank,
+        trend=3 - rank,
+    )
+
+
+def _report_group_item(
+    avatar: BuildImage,
+    *,
+    rank: int,
+    name: str = "测试群",
+    mgid: str = "20001",
+    msg_count: int = 120,
+) -> WaterGroupDailyRankCardItem:
+    return WaterGroupDailyRankCardItem(
+        group_id=mgid,
+        display_name=name,
+        avatar=avatar,
+        msg_count=msg_count,
+        current_rank=rank,
+        trend=1,
+        is_focus_group=(rank <= 3),
+    )
+
+
+def _report_share_slice(
+    *,
+    mgid: str,
+    name: str,
+    msg_count: int,
+    total: int,
+) -> WaterGroupShareSlice:
+    return WaterGroupShareSlice(
+        group_id=mgid,
+        display_name=name,
+        msg_count=msg_count,
+        share_ratio=msg_count / total,
+        is_focus_group=(mgid == "20001"),
+    )
+
+
+def _build_group_report_data() -> WaterGroupReportImageData:
+    avatar = _report_avatar()
+    return WaterGroupReportImageData(
         title="Senrin水王日报",
         badge="",
         range_text="统计日期: 2026.06.14 · 今日实时快照",
@@ -615,50 +673,15 @@ async def test_build_water_group_report_image_smoke() -> None:
         peak_hour=5,
         previous_total_msg_count=390,
         top_items=[
-            WaterRankCardItem(
-                entity_id="10001",
-                display_name="Alice",
-                secondary_label="用户 10001",
-                avatar=avatar,
-                msg_count=120,
-                active_days=15,
-                active_hours=28,
-                hourly_counts=[(idx % 5) + 1 for idx in range(24)],
-                current_rank=1,
-                trend=3,
-            ),
-            WaterRankCardItem(
-                entity_id="10002",
-                display_name="Bob",
-                secondary_label="用户 10002",
-                avatar=avatar,
-                msg_count=90,
-                active_days=14,
-                active_hours=24,
-                hourly_counts=[(idx % 4) + 1 for idx in range(24)],
-                current_rank=2,
-                trend=-1,
-            ),
+            _report_user_item(avatar, rank=1, name="Alice"),
+            _report_user_item(avatar, rank=2, name="Bob", msg_count=90),
         ],
         group_rank_title="群聊当日排名",
         group_rank_summary="本群当前排名 #3 / 12 · 较昨日 +1",
         group_rank_items=[
-            WaterGroupDailyRankCardItem(
-                group_id="20001",
-                display_name="测试群",
-                avatar=avatar,
-                msg_count=120,
-                current_rank=3,
-                trend=1,
-                is_focus_group=True,
-            ),
-            WaterGroupDailyRankCardItem(
-                group_id="20002",
-                display_name="隔壁群",
-                avatar=avatar,
-                msg_count=98,
-                current_rank=4,
-                trend=-1,
+            _report_group_item(avatar, rank=3),
+            _report_group_item(
+                avatar, rank=4, name="隔壁群", mgid="20002", msg_count=98
             ),
         ],
         previous_hourly_counts=[(idx % 4) + 1 for idx in range(24)],
@@ -671,482 +694,90 @@ async def test_build_water_group_report_image_smoke() -> None:
         group_rank_has_hidden_before=True,
         group_rank_has_hidden_after=True,
         group_share_slices=[
-            WaterGroupShareSlice(
-                group_id="20001",
-                display_name="测试群",
-                msg_count=120,
-                share_ratio=0.4,
-                is_focus_group=True,
-            ),
-            WaterGroupShareSlice(
-                group_id="20002",
-                display_name="隔壁群",
-                msg_count=98,
-                share_ratio=98 / 300,
-            ),
-            WaterGroupShareSlice(
-                group_id="20003",
-                display_name="第三群",
-                msg_count=82,
-                share_ratio=82 / 300,
-            ),
+            _report_share_slice(mgid="20001", name="测试群", msg_count=120, total=300),
+            _report_share_slice(mgid="20002", name="隔壁群", msg_count=98, total=300),
+            _report_share_slice(mgid="20003", name="第三群", msg_count=82, total=300),
         ],
     )
 
-    from src.plugins.water.renderers import build_water_group_report_image
 
-    img = await build_water_group_report_image(data, "zh-CN")
-
-    assert img is not None
-    assert img.startswith(b"\x89PNG")
-
-
-@pytest.mark.asyncio
-async def test_build_water_group_report_image_balanced_panel_smoke() -> None:
-    avatar = BuildImage.new("RGBA", (128, 128), "#F6B7D2")
-    top_items = [
-        WaterRankCardItem(
-            entity_id=f"1000{idx}",
-            display_name=f"User{idx}",
-            secondary_label=f"用户 1000{idx}",
-            avatar=avatar,
-            msg_count=120 - idx * 10,
-            active_days=12,
-            active_hours=18 - idx,
-            hourly_counts=[(hour + idx) % 5 + 1 for hour in range(24)],
-            current_rank=idx + 1,
-            trend=1 - idx,
-        )
-        for idx in range(3)
-    ]
-    data = WaterGroupReportImageData(
-        title="Senrin水王日报",
-        badge="",
-        range_text="统计日期: 2026.06.14 · 今日实时快照",
-        compare_text="对比日期: 2026.06.13 · 消息 +30 · 活跃成员 +1",
-        generated_at=1_747_960_000,
-        total_msg_count=620,
-        active_user_count=88,
-        hourly_counts=[(idx % 6) + 1 for idx in range(24)],
-        peak_hour=5,
-        previous_total_msg_count=540,
-        top_items=top_items,
-        group_rank_title="群聊当日排名",
-        group_rank_summary="本群当前排名 #4 / 12 · 较昨日 +1",
-        group_rank_items=[
-            WaterGroupDailyRankCardItem(
-                group_id="20001",
-                display_name="测试群",
-                avatar=avatar,
-                msg_count=220,
-                current_rank=4,
-                trend=1,
-                is_focus_group=True,
-            ),
-            WaterGroupDailyRankCardItem(
-                group_id="20002",
-                display_name="隔壁群",
-                avatar=avatar,
-                msg_count=198,
-                current_rank=5,
-                trend=-1,
-            ),
-            WaterGroupDailyRankCardItem(
-                group_id="20003",
-                display_name="第三群",
-                avatar=avatar,
-                msg_count=170,
-                current_rank=6,
-                trend=0,
-            ),
-        ],
-        previous_hourly_counts=[(idx % 4) + 1 for idx in range(24)],
-        right_panel_layout_tier="balanced",
-        group_rank_share_ratio=220 / 620,
-        group_rank_total_msg_count=620,
-        group_rank_focus_msg_count=220,
-        group_rank_prev_gap_msg_count=18,
-        group_rank_next_gap_msg_count=22,
-        group_rank_has_hidden_before=False,
-        group_rank_has_hidden_after=True,
-        group_share_slices=[
-            WaterGroupShareSlice(
-                group_id="20004",
-                display_name="榜一群",
-                msg_count=260,
-                share_ratio=260 / 620,
-            ),
-            WaterGroupShareSlice(
-                group_id="20001",
-                display_name="测试群",
-                msg_count=220,
-                share_ratio=220 / 620,
-                is_focus_group=True,
-            ),
-            WaterGroupShareSlice(
-                group_id="20002",
-                display_name="隔壁群",
-                msg_count=90,
-                share_ratio=90 / 620,
-            ),
-            WaterGroupShareSlice(
-                group_id="20003",
-                display_name="第三群",
-                msg_count=50,
-                share_ratio=50 / 620,
-            ),
-        ],
-    )
-
-    from src.plugins.water.renderers import build_water_group_report_image
-
-    img = await build_water_group_report_image(data, "zh-CN")
-
-    assert img is not None
-    assert img.startswith(b"\x89PNG")
-
-
-@pytest.mark.asyncio
-async def test_build_water_group_report_image_expanded_panel_smoke() -> None:
-    avatar = BuildImage.new("RGBA", (128, 128), "#F6B7D2")
-    top_items = [
-        WaterRankCardItem(
-            entity_id=f"1000{idx}",
-            display_name=f"User{idx}",
-            secondary_label=f"用户 1000{idx}",
-            avatar=avatar,
-            msg_count=180 - idx * 8,
-            active_days=15,
-            active_hours=24 - idx,
-            hourly_counts=[(hour + idx) % 6 + 1 for hour in range(24)],
-            current_rank=idx + 1,
-            trend=2 - idx,
-        )
-        for idx in range(10)
-    ]
-    data = WaterGroupReportImageData(
-        title="Senrin水王日报",
-        badge="",
-        range_text="统计日期: 2026.06.14 · 今日实时快照",
-        compare_text="对比日期: 2026.06.13 · 消息 +30 · 活跃成员 +1",
-        generated_at=1_747_960_000,
-        total_msg_count=1240,
-        active_user_count=166,
-        hourly_counts=[((idx * 3) % 9) + 1 for idx in range(24)],
-        peak_hour=7,
-        previous_total_msg_count=1100,
-        top_items=top_items,
-        group_rank_title="群聊当日排名",
-        group_rank_summary="本群当前排名 #2 / 41 · 较昨日 +3",
-        group_rank_items=[
-            WaterGroupDailyRankCardItem(
-                group_id="20001",
-                display_name="测试群",
-                avatar=avatar,
-                msg_count=540,
-                current_rank=2,
-                trend=3,
-                is_focus_group=True,
-            ),
-            WaterGroupDailyRankCardItem(
-                group_id="20002",
-                display_name="榜一群",
-                avatar=avatar,
-                msg_count=598,
-                current_rank=1,
-                trend=0,
-            ),
-            WaterGroupDailyRankCardItem(
-                group_id="20003",
-                display_name="第三群",
-                avatar=avatar,
-                msg_count=418,
-                current_rank=3,
-                trend=-1,
-            ),
-        ],
-        previous_hourly_counts=[((idx * 2) % 7) + 1 for idx in range(24)],
-        right_panel_layout_tier="expanded",
-        group_rank_share_ratio=540 / 1240,
-        group_rank_total_msg_count=1240,
-        group_rank_focus_msg_count=540,
-        group_rank_prev_gap_msg_count=58,
-        group_rank_next_gap_msg_count=122,
-        group_rank_has_hidden_before=False,
-        group_rank_has_hidden_after=True,
-        group_share_slices=[
-            WaterGroupShareSlice(
-                group_id="20002",
-                display_name="榜一群",
-                msg_count=598,
-                share_ratio=598 / 1240,
-            ),
-            WaterGroupShareSlice(
-                group_id="20001",
-                display_name="测试群",
-                msg_count=540,
-                share_ratio=540 / 1240,
-                is_focus_group=True,
-            ),
-            WaterGroupShareSlice(
-                group_id="20003",
-                display_name="第三群",
-                msg_count=102,
-                share_ratio=102 / 1240,
-            ),
-        ],
-        group_rank_trend_labels=["05/01", "05/08", "05/15", "05/22", "05/29"],
-        group_rank_trend_series=[
-            WaterGroupRankTrendSeries(
-                group_id="20002",
-                display_name="榜一群",
-                ranks=[1, 1, 1, 1, 1],
-            ),
-            WaterGroupRankTrendSeries(
-                group_id="20001",
-                display_name="测试群",
-                ranks=[4, 3, 3, 2, 2],
-                is_focus_group=True,
-            ),
-            WaterGroupRankTrendSeries(
-                group_id="20003",
-                display_name="第三群",
-                ranks=[2, 2, 4, 4, 3],
-            ),
-        ],
-    )
-
-    from src.plugins.water.renderers import build_water_group_report_image
-
-    img = await build_water_group_report_image(data, "zh-CN")
-
-    assert img is not None
-    assert img.startswith(b"\x89PNG")
-
-
-@pytest.mark.asyncio
-async def test_build_water_group_report_image_without_group_rank_block() -> None:
-    avatar = BuildImage.new("RGBA", (128, 128), "#F6B7D2")
-    data = WaterGroupReportImageData(
-        title="Senrin水王日报",
-        badge="",
-        range_text="统计日期: 2026.06.14 · 今日实时快照",
-        compare_text="对比日期: 2026.06.13 · 消息 +30 · 活跃成员 +1",
-        generated_at=1_747_960_000,
-        total_msg_count=420,
-        active_user_count=66,
-        hourly_counts=[(idx % 6) + 1 for idx in range(24)],
-        peak_hour=5,
-        previous_total_msg_count=390,
-        top_items=[
-            WaterRankCardItem(
-                entity_id="10001",
-                display_name="Alice",
-                secondary_label="用户 10001",
-                avatar=avatar,
-                msg_count=120,
-                active_days=15,
-                active_hours=28,
-                hourly_counts=[(idx % 5) + 1 for idx in range(24)],
-                current_rank=1,
-                trend=3,
-            )
-        ],
-        group_rank_title="群聊当日排名",
-        group_rank_summary="",
-        group_rank_items=[],
-    )
-
-    from src.plugins.water.renderers import build_water_group_report_image
-
-    img = await build_water_group_report_image(data, "zh-CN")
-
-    assert img is not None
-    assert img.startswith(b"\x89PNG")
-
-
-@pytest.mark.asyncio
-async def test_build_water_group_report_image_truncates_long_group_rank_names() -> None:
-    avatar = BuildImage.new("RGBA", (128, 128), "#F6B7D2")
-    data = WaterGroupReportImageData(
-        title="Senrin水王日报",
-        badge="",
-        range_text="统计日期: 2026.06.14 · 今日实时快照",
-        compare_text="对比日期: 2026.06.13 · 消息 +30 · 活跃成员 +1",
-        generated_at=1_747_960_000,
-        total_msg_count=420,
-        active_user_count=66,
-        hourly_counts=[(idx % 6) + 1 for idx in range(24)],
-        peak_hour=5,
-        previous_total_msg_count=390,
-        top_items=[
-            WaterRankCardItem(
-                entity_id="10001",
-                display_name="Alice",
-                secondary_label="用户 10001",
-                avatar=avatar,
-                msg_count=120,
-                active_days=15,
-                active_hours=28,
-                hourly_counts=[(idx % 5) + 1 for idx in range(24)],
-                current_rank=1,
-                trend=3,
-            )
-        ],
-        group_rank_title="群聊当日排名",
-        group_rank_summary="本群当前排名 #3 / 12 · 较昨日 +1",
-        group_rank_items=[
-            WaterGroupDailyRankCardItem(
-                group_id="20001",
-                display_name=(
-                    "这是一个非常非常非常非常非常长的群聊名称"
-                    " With Extra Long Mixed Content 1234567890"
-                ),
-                avatar=avatar,
-                msg_count=120,
-                current_rank=3,
-                trend=1,
-                is_focus_group=True,
-            ),
-            WaterGroupDailyRankCardItem(
-                group_id="20002",
-                display_name=(
-                    "隔壁那个名字也很长很长很长的测试群"
-                    " Another Extremely Long Group Name"
-                ),
-                avatar=avatar,
-                msg_count=98,
-                current_rank=4,
-                trend=-1,
-            ),
-        ],
-        group_rank_has_hidden_before=True,
-        group_rank_has_hidden_after=True,
-    )
-
-    from src.plugins.water.renderers import build_water_group_report_image
-
-    img = await build_water_group_report_image(data, "zh-CN")
-
-    assert img is not None
-    assert img.startswith(b"\x89PNG")
-
-
-@pytest.mark.asyncio
-async def test_group_report_image_truncates_long_group_rank_summary() -> None:
-    avatar = BuildImage.new("RGBA", (128, 128), "#F6B7D2")
-    data = WaterGroupReportImageData(
-        title="Senrin水王日报",
-        badge="",
-        range_text="统计日期: 2026.06.14 · 今日实时快照",
-        compare_text="对比日期: 2026.06.13 · 消息 +30 · 活跃成员 +1",
-        generated_at=1_747_960_000,
-        total_msg_count=420,
-        active_user_count=66,
-        hourly_counts=[(idx % 6) + 1 for idx in range(24)],
-        peak_hour=5,
-        previous_total_msg_count=390,
-        top_items=[
-            WaterRankCardItem(
-                entity_id="10001",
-                display_name="Alice",
-                secondary_label="用户 10001",
-                avatar=avatar,
-                msg_count=120,
-                active_days=15,
-                active_hours=28,
-                hourly_counts=[(idx % 5) + 1 for idx in range(24)],
-                current_rank=1,
-                trend=3,
-            )
-        ],
-        group_rank_title="群聊当日排名",
-        group_rank_summary=(
-            "本群当前排名 #3 / 9999 · 较昨日 +123456789 "
-            "这是一个非常非常非常非常非常长的摘要说明，用来验证右侧摘要在固定宽度里会被安全截断"
+@pytest.mark.parametrize(
+    ("case_name", "overrides"),
+    [
+        ("compact_default", {}),
+        ("balanced_tier", {"right_panel_layout_tier": "balanced"}),
+        ("expanded_tier", {"right_panel_layout_tier": "expanded"}),
+        (
+            "without_group_rank_block",
+            {"group_rank_items": [], "group_rank_summary": ""},
         ),
-        group_rank_items=[
-            WaterGroupDailyRankCardItem(
-                group_id="20001",
-                display_name="测试群",
-                avatar=avatar,
-                msg_count=120,
-                current_rank=3,
-                trend=1,
-                is_focus_group=True,
-            )
-        ],
-        group_rank_has_hidden_before=False,
-        group_rank_has_hidden_after=False,
-    )
-
-    from src.plugins.water.renderers import build_water_group_report_image
-
-    img = await build_water_group_report_image(data, "zh-CN")
-
-    assert img is not None
-    assert img.startswith(b"\x89PNG")
-
-
+        (
+            "truncates_long_group_rank_names",
+            {
+                "group_rank_items": [
+                    _report_group_item(
+                        _report_avatar(),
+                        rank=3,
+                        name=(
+                            "这是一个非常非常非常非常非常长的群聊名称"
+                            " With Extra Long Mixed Content 1234567890"
+                        ),
+                    ),
+                    _report_group_item(
+                        _report_avatar(),
+                        rank=4,
+                        name=(
+                            "隔壁那个名字也很长很长很长的测试群"
+                            " Another Extremely Long Group Name"
+                        ),
+                        mgid="20002",
+                        msg_count=98,
+                    ),
+                ],
+            },
+        ),
+        (
+            "truncates_long_group_rank_summary",
+            {
+                "group_rank_summary": (
+                    "本群当前排名 #3 / 9999 · 较昨日 +123456789 "
+                    "这是一个非常非常非常非常非常长的摘要说明，用来验证右侧摘要在固定宽度里会被安全截断"
+                ),
+                "group_rank_has_hidden_before": False,
+                "group_rank_has_hidden_after": False,
+            },
+        ),
+        (
+            "three_digit_group_rank_labels",
+            {
+                "group_rank_summary": "本群当前排名 #128 / 512 · 较昨日 +12",
+                "group_rank_items": [
+                    _report_group_item(_report_avatar(), rank=128),
+                    _report_group_item(
+                        _report_avatar(),
+                        rank=129,
+                        name="隔壁群",
+                        mgid="20002",
+                        msg_count=118,
+                    ),
+                ],
+            },
+        ),
+    ],
+)
 @pytest.mark.asyncio
-async def test_group_report_image_supports_three_digit_group_rank_labels() -> None:
-    avatar = BuildImage.new("RGBA", (128, 128), "#F6B7D2")
-    data = WaterGroupReportImageData(
-        title="Senrin水王日报",
-        badge="",
-        range_text="统计日期: 2026.06.14 · 今日实时快照",
-        compare_text="对比日期: 2026.06.13 · 消息 +30 · 活跃成员 +1",
-        generated_at=1_747_960_000,
-        total_msg_count=420,
-        active_user_count=66,
-        hourly_counts=[(idx % 6) + 1 for idx in range(24)],
-        peak_hour=5,
-        previous_total_msg_count=390,
-        top_items=[
-            WaterRankCardItem(
-                entity_id="10001",
-                display_name="Alice",
-                secondary_label="用户 10001",
-                avatar=avatar,
-                msg_count=120,
-                active_days=15,
-                active_hours=28,
-                hourly_counts=[(idx % 5) + 1 for idx in range(24)],
-                current_rank=1,
-                trend=3,
-            )
-        ],
-        group_rank_title="群聊当日排名",
-        group_rank_summary="本群当前排名 #128 / 512 · 较昨日 +12",
-        group_rank_items=[
-            WaterGroupDailyRankCardItem(
-                group_id="20001",
-                display_name="测试群",
-                avatar=avatar,
-                msg_count=120,
-                current_rank=128,
-                trend=1,
-                is_focus_group=True,
-            ),
-            WaterGroupDailyRankCardItem(
-                group_id="20002",
-                display_name="隔壁群",
-                avatar=avatar,
-                msg_count=118,
-                current_rank=129,
-                trend=-1,
-            ),
-        ],
-        group_rank_has_hidden_before=True,
-        group_rank_has_hidden_after=True,
-    )
+async def test_build_water_group_report_image_renders_all_edge_inputs(
+    case_name: str,
+    overrides: dict[str, Any],
+) -> None:
+    data = replace(_build_group_report_data(), **overrides)
 
     from src.plugins.water.renderers import build_water_group_report_image
 
     img = await build_water_group_report_image(data, "zh-CN")
 
-    assert img is not None
-    assert img.startswith(b"\x89PNG")
+    assert img is not None, case_name
+    assert img.startswith(b"\x89PNG"), case_name
 
 
 def _build_fake_natural_items(
@@ -1353,26 +984,43 @@ async def test_build_rank_message_renders_all_legal_combinations(
         _fake_avatar,
     )
 
-    timings: list[tuple[str, str, str, float]] = []
-    for subject, scopes in legal_scopes.items():
-        for scope in scopes:
-            for period in periods:
-                started = perf_counter()
-                message = await water_rank_query_service.build_rank_message(
-                    subject=subject,
-                    scope=scope,
-                    period=period,
-                    group_id="20001",
-                    locale="zh-CN",
-                )
-                timings.append(
-                    (subject, scope, period, (perf_counter() - started) * 1000)
-                )
-                assert "CQ:image" in str(render_message_plan_input(message)), (
-                    subject,
-                    scope,
-                    period,
-                )
+    stub_png = b"\x89PNG\r\n\x1a\n" + b"stub"
+    calls: list[tuple[str, str, str]] = []
 
-    assert max(elapsed_ms for *_rest, elapsed_ms in timings) >= 0
-    assert len(timings) == 36
+    async def _stub_day_image(data: object, locale: object) -> bytes:
+        _ = (data, locale)
+        return stub_png
+
+    async def _stub_period_image(data: object, locale: object) -> bytes:
+        _ = (data, locale)
+        return stub_png
+
+    monkeypatch.setattr(
+        query_module, "build_water_day_rank_image", _stub_day_image, raising=False
+    )
+    monkeypatch.setattr(
+        query_module, "build_water_period_rank_image", _stub_period_image, raising=False
+    )
+
+    combos = [
+        (subject, scope, period)
+        for subject, scopes in legal_scopes.items()
+        for scope in scopes
+        for period in periods
+    ]
+    for subject, scope, period in combos:
+        message = await water_rank_query_service.build_rank_message(
+            subject=subject,
+            scope=scope,
+            period=period,
+            group_id="20001",
+            locale="zh-CN",
+        )
+        assert "CQ:image" in str(render_message_plan_input(message)), (
+            subject,
+            scope,
+            period,
+        )
+        calls.append((subject, scope, period))
+
+    assert len(calls) == 36

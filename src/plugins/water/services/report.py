@@ -393,6 +393,61 @@ def build_daily_report_prepare_result_from_manifest(
     )
 
 
+def _build_group_rank_metrics(
+    snapshot: WaterGroupDailyRankSnapshot | None,
+    report_snapshot: WaterGroupReportSnapshot,
+) -> dict[str, int | float | None]:
+    empty_metrics: dict[str, int | float | None] = {
+        "share_ratio": 0.0,
+        "total_msg_count": 0,
+        "focus_msg_count": 0,
+        "prev_gap_msg_count": None,
+        "next_gap_msg_count": None,
+        "peak_hour": report_snapshot.peak_hour,
+    }
+    if snapshot is None or not snapshot.leaderboard:
+        return empty_metrics
+
+    focus_index = next(
+        (
+            index
+            for index, item in enumerate(snapshot.leaderboard)
+            if item.group_id == snapshot.focus_group_id
+        ),
+        None,
+    )
+    if focus_index is None:
+        return empty_metrics
+
+    focus_item = snapshot.leaderboard[focus_index]
+    previous_item = snapshot.leaderboard[focus_index - 1] if focus_index > 0 else None
+    next_item = (
+        snapshot.leaderboard[focus_index + 1]
+        if focus_index + 1 < len(snapshot.leaderboard)
+        else None
+    )
+    return {
+        "share_ratio": (
+            focus_item.msg_count / snapshot.total_msg_count
+            if snapshot.total_msg_count > 0
+            else 0.0
+        ),
+        "total_msg_count": snapshot.total_msg_count,
+        "focus_msg_count": focus_item.msg_count,
+        "prev_gap_msg_count": (
+            previous_item.msg_count - focus_item.msg_count
+            if previous_item is not None
+            else None
+        ),
+        "next_gap_msg_count": (
+            focus_item.msg_count - next_item.msg_count
+            if next_item is not None
+            else None
+        ),
+        "peak_hour": report_snapshot.peak_hour,
+    }
+
+
 class WaterReportService:
     def resolve_next_daily_report_push(
         self,
@@ -1063,7 +1118,7 @@ class WaterReportService:
             batch_context=batch_context,
             locale=locale,
         )
-        group_rank_metrics = self._build_group_rank_metrics(
+        group_rank_metrics = _build_group_rank_metrics(
             group_rank_snapshot,
             snapshot,
         )
@@ -1560,63 +1615,6 @@ class WaterReportService:
             total_groups=snapshot.total_groups,
             trend=trend_text,
         )
-
-    def _build_group_rank_metrics(
-        self,
-        snapshot: WaterGroupDailyRankSnapshot | None,
-        report_snapshot: WaterGroupReportSnapshot,
-    ) -> dict[str, int | float | None]:
-        empty_metrics: dict[str, int | float | None] = {
-            "share_ratio": 0.0,
-            "total_msg_count": 0,
-            "focus_msg_count": 0,
-            "prev_gap_msg_count": None,
-            "next_gap_msg_count": None,
-            "peak_hour": report_snapshot.peak_hour,
-        }
-        if snapshot is None or not snapshot.leaderboard:
-            return empty_metrics
-
-        focus_index = next(
-            (
-                index
-                for index, item in enumerate(snapshot.leaderboard)
-                if item.group_id == snapshot.focus_group_id
-            ),
-            None,
-        )
-        if focus_index is None:
-            return empty_metrics
-
-        focus_item = snapshot.leaderboard[focus_index]
-        previous_item = (
-            snapshot.leaderboard[focus_index - 1] if focus_index > 0 else None
-        )
-        next_item = (
-            snapshot.leaderboard[focus_index + 1]
-            if focus_index + 1 < len(snapshot.leaderboard)
-            else None
-        )
-        return {
-            "share_ratio": (
-                focus_item.msg_count / snapshot.total_msg_count
-                if snapshot.total_msg_count > 0
-                else 0.0
-            ),
-            "total_msg_count": snapshot.total_msg_count,
-            "focus_msg_count": focus_item.msg_count,
-            "prev_gap_msg_count": (
-                previous_item.msg_count - focus_item.msg_count
-                if previous_item is not None
-                else None
-            ),
-            "next_gap_msg_count": (
-                focus_item.msg_count - next_item.msg_count
-                if next_item is not None
-                else None
-            ),
-            "peak_hour": report_snapshot.peak_hour,
-        }
 
     def _build_group_rank_insights(
         self,

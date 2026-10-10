@@ -47,6 +47,11 @@ class MatrixSuggestionService:
             await water_repo.get_marked_first_record_groups()
         )
 
+    def clear_runtime_caches(self) -> None:
+        """清空进程内运行时缓存，供备份恢复后的重载使用。"""
+        self._first_record_seen_cache.clear()
+        self._group_locks.clear()
+
     async def maybe_suggest_on_first_record(self, bot: Bot, group_id: str) -> None:
         if group_id in self._first_record_seen_cache:
             return

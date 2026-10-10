@@ -6,7 +6,7 @@ from collections.abc import Awaitable, Callable, Coroutine
 from pathlib import Path
 from typing import Protocol, cast
 
-from nonebot import get_bots, get_driver, on_message, on_notice, require
+from nonebot import get_driver, on_message, on_notice, require
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import (
     FriendRecallNoticeEvent,
@@ -69,9 +69,6 @@ from src.lib.message_plan import (
 )
 from src.lib.plugin_docs import build_doc_demo_plan_entry, create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
-from src.lib.types import as_int
-from src.logger import logger
-from src.services.startup_sync import ensure_restore_not_in_progress
 
 from .database import water_repo
 from .handlers import (
@@ -98,7 +95,6 @@ from .handlers import (
     is_water_merge_superuser_event,
     water_help_message,
 )
-from .services.cron_orchestrator import run_water_subprocess_job
 from .services.matrix_suggestion import matrix_suggestion_service
 from .services.query_router import WaterQuerySpec, water_query_router
 from .services.rank_query import water_rank_query_service
@@ -109,14 +105,10 @@ from .services.rank_types import (
     WaterRankScope,
     WaterRankSubject,
 )
-from .services.report import (
-    build_daily_report_prepare_result_from_manifest,
-    water_report_service,
-)
-from .services.settlement import build_settlement_result_from_manifest
+from .services.report import water_report_service
 
 require("nonebot_plugin_apscheduler")
-from nonebot_plugin_apscheduler import scheduler
+from . import schedulers as schedulers
 
 name = tr("zh-CN", "plugin.water.name")
 description = tr("zh-CN", "plugin.water.description")
@@ -408,6 +400,22 @@ async def initialize_water_plugin() -> None:
     _water_plugin_initialized = True
 
 
+def reset_water_plugin_initialized() -> None:
+    """复位初始化标记与运行时缓存，供备份恢复后的重载流程强制重新初始化。"""
+    global _water_plugin_initialized
+    _water_plugin_initialized = False
+    clear_water_query_cooldowns()
+    water_report_service.clear_today_report_cooldowns()
+    water_repo.clear_runtime_caches()
+    matrix_suggestion_service.clear_runtime_caches()
+
+
+async def reload_water_runtime_state() -> None:
+    """清空运行时状态并重新初始化，供备份恢复后调用。"""
+    reset_water_plugin_initialized()
+    await initialize_water_plugin()
+
+
 driver = get_driver()
 
 
@@ -439,179 +447,6 @@ water_admin = on_command(
 water_merge = on_command("water.merge", aliases={"water合并"}, priority=5, block=True)
 water_recorder = on_message(priority=4, block=False)
 water_notice = on_notice(priority=5, block=False)
-
-
-@scheduler.scheduled_job(
-    "cron",
-    hour=0,
-    minute=5,
-    id="water_daily_settlement",
-    coalesce=True,
-    misfire_grace_time=300,
-    max_instances=1,
-)
-async def _water_daily_settlement_job() -> None:
-    try:
-        async with LongTaskRunner(
-            LongTaskSpec(
-                task_name="water.daily_settlement",
-                source_kind="water_daily_settlement",
-                threshold_ms=0,
-            ),
-            sink=LoggerProgressSink(),
-        ) as long_task:
-            ensure_restore_not_in_progress(source="water_daily_settlement")
-            await long_task.advance("processing_items")
-            worker_result = await run_water_subprocess_job("settlement")
-            if worker_result.manifest is None:
-                raise RuntimeError(
-                    f"water settlement manifest missing, exit={worker_result.exit_code}"
-                )
-            result = build_settlement_result_from_manifest(worker_result.manifest)
-        if result.success:
-            logger.success(
-                "[Water] cron settlement done: "
-                f"date={result.record_date} "
-                f"rows={result.aggregate_rows} "
-                f"achievements={result.unlocked_achievements}"
-            )
-        else:
-            logger.warning(
-                "[Water] cron settlement skipped: "
-                f"date={result.record_date} reason={result.reason}"
-            )
-    except Exception as e:
-        logger.exception(f"[Water] cron settlement failed: {e}")
-
-
-@scheduler.scheduled_job(
-    "cron",
-    hour=0,
-    minute=25,
-    id="water_message_archive",
-    coalesce=True,
-    misfire_grace_time=300,
-    max_instances=1,
-)
-async def _water_message_archive_job() -> None:
-    try:
-        async with LongTaskRunner(
-            LongTaskSpec(
-                task_name="water.message_archive",
-                source_kind="water_message_archive",
-                threshold_ms=0,
-            ),
-            sink=LoggerProgressSink(),
-        ) as long_task:
-            ensure_restore_not_in_progress(source="water_message_archive")
-            await long_task.advance("archiving")
-            worker_result = await run_water_subprocess_job("message_archive")
-            if worker_result.manifest is None:
-                raise RuntimeError(
-                    f"water archive manifest missing, exit={worker_result.exit_code}"
-                )
-        logger.success(
-            "[Water] cron archive done: "
-            f"status={worker_result.manifest.status} "
-            f"elapsed_ms={worker_result.elapsed_ms:.2f}"
-        )
-    except Exception as e:
-        logger.exception(f"[Water] cron archive failed: {e}")
-
-
-@scheduler.scheduled_job(
-    "cron",
-    hour=0,
-    minute=35,
-    id="water_summary_archive",
-    coalesce=True,
-    misfire_grace_time=300,
-    max_instances=1,
-)
-async def _water_summary_archive_job() -> None:
-    try:
-        async with LongTaskRunner(
-            LongTaskSpec(
-                task_name="water.summary_archive",
-                source_kind="water_summary_archive",
-                threshold_ms=0,
-            ),
-            sink=LoggerProgressSink(),
-        ) as long_task:
-            ensure_restore_not_in_progress(source="water_summary_archive")
-            await long_task.advance("archiving")
-            worker_result = await run_water_subprocess_job("summary_archive")
-            if worker_result.manifest is None:
-                raise RuntimeError(
-                    "water summary archive manifest missing, "
-                    f"exit={worker_result.exit_code}"
-                )
-        pruned = as_int(worker_result.manifest.metrics.get("pruned", 0), 0)
-        logger.success(
-            f"[Water] cron summary archive done: pruned={pruned} "
-            f"elapsed_ms={worker_result.elapsed_ms:.2f}"
-        )
-    except Exception as e:
-        logger.exception(f"[Water] cron summary archive failed: {e}")
-
-
-@scheduler.scheduled_job(
-    "cron",
-    hour=0,
-    minute=40,
-    id="water_daily_report_push",
-    coalesce=True,
-    misfire_grace_time=300,
-    max_instances=1,
-)
-async def _water_daily_report_push_job() -> None:
-    try:
-        async with LongTaskRunner(
-            LongTaskSpec(
-                task_name="water.daily_report_push",
-                source_kind="water_daily_report_push",
-                threshold_ms=0,
-            ),
-            sink=LoggerProgressSink(),
-        ) as long_task:
-            ensure_restore_not_in_progress(source="water_daily_report_push")
-            bots = list(get_bots().values())
-            if not bots:
-                logger.warning("[Water][ReportPush] skipped: no bot connected")
-                return
-            await long_task.advance("preparing")
-            worker_result = await run_water_subprocess_job(
-                "daily_report_prepare",
-                locale="zh-CN",
-            )
-            if worker_result.manifest is None:
-                raise RuntimeError(
-                    f"water report manifest missing, exit={worker_result.exit_code}"
-                )
-            prepared = build_daily_report_prepare_result_from_manifest(
-                worker_result.manifest
-            )
-            if prepared.candidate_groups <= 0:
-                logger.warning(
-                    "[Water][ReportPush] skipped: no report candidates "
-                    f"date={prepared.record_date}"
-                )
-                return
-            await long_task.advance("sending")
-            result = await water_report_service.send_prepared_daily_group_report_push(
-                bot=cast(Bot, bots[0]),
-                prepared=prepared,
-                output_dir=worker_result.output_dir,
-                locale="zh-CN",
-                task=long_task,
-            )
-        logger.success(
-            "[Water][ReportPush] cron done: "
-            f"date={result.record_date} candidates={result.candidate_groups} "
-            f"sent={result.sent_groups} failed={result.failed_groups}"
-        )
-    except Exception as e:
-        logger.exception(f"[Water][ReportPush] cron failed: {e}")
 
 
 @water_recorder.handle()

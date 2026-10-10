@@ -223,7 +223,7 @@ class WaterRankService:
             return None
 
         hydrate_started = perf_counter()
-        view_items = await self._build_view_items(subject, top_items, locale)
+        view_items = await self.build_view_items(subject, top_items, locale)
         hydrate_elapsed = (perf_counter() - hydrate_started) * 1000
         champion = view_items[0]
         runner_up_count = view_items[1].msg_count if len(view_items) > 1 else 0
@@ -394,7 +394,7 @@ class WaterRankService:
         quarter = (day.month - 1) // 3 + 1
         return f"{day.year} S{quarter}"
 
-    async def _build_view_items(
+    async def build_view_items(
         self,
         subject: WaterRankSubject,
         items: list[NaturalRankItem],
@@ -536,8 +536,6 @@ class WaterRankService:
         group_count: int,
         locale: LocaleCode,
     ) -> str:
-        # if subject == "group":
-        # return tr(locale, "water.rank.secondary.group", entity_id=entity_id)
         if subject == "matrix":
             return tr(
                 locale,
@@ -545,10 +543,7 @@ class WaterRankService:
                 entity_id=entity_id,
                 group_count=group_count,
             )
-        else:
-            # return entity_id
-            return ""
-        # return tr(locale, "water.image.day_rank.member_fallback", tail=entity_id[-4:])
+        return ""
 
     @staticmethod
     async def _resolve_avatar(

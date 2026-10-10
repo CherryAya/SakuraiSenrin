@@ -11,7 +11,6 @@ from nonebot.adapters.onebot.v11.event import MessageEvent
 from nonebot.matcher import Matcher
 
 from src.database.core.consts import Permission
-from src.lib.consts import TriggerType
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.long_task import (
@@ -22,7 +21,7 @@ from src.lib.long_task import (
     MessageEventProgressSink,
 )
 from src.lib.message_plan import MessagePlanInput, finish_with_message
-from src.lib.plugin_docs import build_doc_demo_plan_entry
+from src.lib.plugin_docs import PluginDocIdentity, build_plugin_error_demo
 from src.lib.utils.common import get_current_time
 from src.plugins.water.database import water_repo
 from src.plugins.water.renderers import render_season_list
@@ -46,6 +45,7 @@ from src.plugins.water.services.settlement import (
 DOCS_SOURCE = Path(__file__).resolve().parent.parent / "docs" / "README.MD"
 PLUGIN_NAME = tr("zh-CN", "plugin.water.name")
 PLUGIN_DESCRIPTION = tr("zh-CN", "plugin.water.description")
+WATER_DOC_IDENTITY = PluginDocIdentity(DOCS_SOURCE, PLUGIN_NAME, PLUGIN_DESCRIPTION)
 
 
 @dataclass
@@ -68,16 +68,12 @@ async def _finish_admin(ctx: WaterAdminContext, message: MessagePlanInput) -> No
 
 
 def _build_error_demo(locale: LocaleCode, message: str) -> MessagePlanInput:
-    return build_doc_demo_plan_entry(
-        source=DOCS_SOURCE,
-        name=PLUGIN_NAME,
-        description=PLUGIN_DESCRIPTION,
-        trigger=TriggerType.COMMAND,
-        permission=Permission.NORMAL,
-        actor_permission=Permission.SUPERUSER,
-        locale=locale,
+    return build_plugin_error_demo(
+        WATER_DOC_IDENTITY,
+        locale,
+        message,
         feature_query="admin-maintenance",
-        prefix_text=message,
+        actor_permission=Permission.SUPERUSER,
     )
 
 

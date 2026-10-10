@@ -13,7 +13,7 @@ from sqlalchemy import func, select
 from src.database.system_migration import LegacyPgConfig
 from src.lib.utils.common import get_current_time
 from src.plugins.water import migration as migration_module
-from src.plugins.water.database import ops as water_ops_module
+from src.plugins.water.database import ops_message as water_message_ops_module
 from src.plugins.water.database import water_repo
 from src.plugins.water.database.instances import water_core_db, water_message
 from src.plugins.water.database.tables import (
@@ -330,7 +330,7 @@ async def test_buffered_cross_month_messages_settle_full_august_day() -> None:
 async def test_import_legacy_water_rows_splits_large_sqlite_batches(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(water_ops_module, "_sqlite_max_variable_number", 50)
+    monkeypatch.setattr(water_message_ops_module, "_sqlite_max_variable_number", 50)
     rows = build_legacy_water_rows(
         [
             {

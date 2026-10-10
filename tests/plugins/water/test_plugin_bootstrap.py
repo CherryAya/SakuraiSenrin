@@ -102,3 +102,77 @@ assert scheduler.get_job("water_daily_report_push") is None
     output = f"{result.stdout}\n{result.stderr}"
 
     assert result.returncode == 0, output
+
+
+def test_water_runtime_reload_reinitializes_plugin() -> None:
+    script = """
+import asyncio
+import nonebot
+
+nonebot.init(
+    superusers={"1"},
+    SUPERUSERS={"1"},
+    IGNORED_USERS=set(),
+    MAIN_GROUP_ID="10001",
+    GITHUB_TOKEN="test-token",
+    GITHUB_REPO="owner/repo",
+    GITHUB_BRANCH="main",
+    command_start={"#", "＃", "井"},
+    command_sep={"."},
+)
+
+nonebot.require("nonebot_plugin_apscheduler")
+import src.plugins.water as water_module
+from src.plugins.water.database import water_repo
+from src.plugins.water.services import matrix_suggestion
+
+calls = []
+
+async def _fake_init_all_tables():
+    calls.append("init_all_tables")
+
+async def _fake_warm_first():
+    calls.append("warm_first")
+
+async def _fake_warm_matrix():
+    calls.append("warm_matrix")
+
+water_repo.init_all_tables = _fake_init_all_tables
+water_repo.warm_up_group_matrix_cache = _fake_warm_matrix
+(
+    matrix_suggestion.matrix_suggestion_service.warm_up_first_record_cache
+) = _fake_warm_first
+
+async def main():
+    await water_module.initialize_water_plugin()
+    first = list(calls)
+    calls.clear()
+    await water_module.initialize_water_plugin()
+    assert calls == [], f"未复位时应早退，实际 {calls}"
+
+    water_module.reset_water_plugin_initialized()
+    await water_module.initialize_water_plugin()
+    assert calls == ["init_all_tables", "warm_first", "warm_matrix"], (
+        f"复位后应重新初始化，实际 {calls}"
+    )
+    assert first == ["init_all_tables", "warm_first", "warm_matrix"]
+
+    # 恢复重载入口必须自行复位后重新初始化
+    calls.clear()
+    await water_module.reload_water_runtime_state()
+    assert calls == ["init_all_tables", "warm_first", "warm_matrix"], (
+        f"reload 入口应复位并重新初始化，实际 {calls}"
+    )
+
+asyncio.run(main())
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    output = f"{result.stdout}\n{result.stderr}"
+
+    assert result.returncode == 0, output

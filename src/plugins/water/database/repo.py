@@ -92,6 +92,12 @@ class WaterRepository(
         self._group_matrix_locks: dict[str, asyncio.Lock] = {}
         self._merge_state_locks: dict[str, asyncio.Lock] = {}
 
+    def clear_runtime_caches(self) -> None:
+        """清空进程内运行时缓存，供备份恢复后的重载使用。"""
+        self._group_matrix_cache.clear()
+        self._group_matrix_locks.clear()
+        self._merge_state_locks.clear()
+
     @classmethod
     async def init_all_tables(cls) -> None:
         await water_message.init(WaterMessageBase)

@@ -9,9 +9,6 @@ from .ops_admin import (
 )
 from .ops_levels import WaterLevelOps
 from .ops_message import WaterMessageOps
-from .ops_message import (
-    _sqlite_max_variable_number as _sqlite_max_variable_number,  # pyright: ignore[reportPrivateUsage]
-)
 from .ops_summary import (
     WaterArchivedSummaryOps,
     WaterGroupMatrixMapOps,
@@ -31,5 +28,4 @@ __all__ = [
     "WaterPenaltyOps",
     "WaterSettlementJobOps",
     "WaterSummaryOps",
-    "_sqlite_max_variable_number",
 ]
