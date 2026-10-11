@@ -10,7 +10,7 @@ from pathlib import Path
 import shutil
 import sqlite3
 
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 
 
 @dataclass(slots=True, frozen=True)

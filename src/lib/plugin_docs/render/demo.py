@@ -36,7 +36,7 @@ from src.lib.plugin_docs.markdown_layout import (
 )
 from src.lib.plugin_docs.models import DocsDemoTurn
 from src.lib.plugin_docs.render.encoding import encode_docs_image
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 
 DEMO_ASSETS_DIR = Path(__file__).resolve().parents[2] / "assets"
 DEMO_AVATAR_PATH = DEMO_ASSETS_DIR / "senrin-demo-avatar.png"

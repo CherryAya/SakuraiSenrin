@@ -11,9 +11,9 @@ from pil_utils import BuildImage
 from src.lib.consts import MAPLE_FONT_PATH
 from src.lib.i18n.catalog import tr
 from src.lib.i18n.types import LocaleCode
-from src.lib.utils.common import get_current_time
 from src.lib.utils.img import QQAvatar
 from src.lib.utils.text_draw import draw_text_in_region
+from src.lib.utils.time_utils import get_current_time
 from src.logger import logger
 from src.plugins.water.renderers.common import (
     SYS_FONT_NAME,

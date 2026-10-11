@@ -68,8 +68,8 @@ from src.lib.reply_router import (
     register_reply_route,
 )
 from src.lib.types import UNSET, Unset, is_set
-from src.lib.utils.common import get_current_time
 from src.lib.utils.img import QQAvatar
+from src.lib.utils.time_utils import get_current_time
 from src.repositories import group_repo, invite_repo, user_repo
 from src.services.info import resolve_user_name
 from src.services.runtime_policy import resolve_invitation_transition

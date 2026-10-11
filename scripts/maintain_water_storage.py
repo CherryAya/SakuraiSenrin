@@ -18,8 +18,9 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.audit_water_storage import build_water_storage_audit_report, write_report
-from src.lib.utils.common import get_current_time, split_list
+from src.lib.utils.time_utils import get_current_time
 from src.logger import logger
+from src.plugins.water.database.chunking import split_chunks
 
 if TYPE_CHECKING:
     from src.plugins.water.database.types import WaterSummaryPayload
@@ -209,7 +210,7 @@ async def _flush_summary_payloads(
     written = 0
     for shard_key, shard_payloads in routed.items():
         async with water_summary.write_session_for(shard_key) as session:
-            for chunk in split_list(shard_payloads, 100):
+            for chunk in split_chunks(shard_payloads, 100):
                 written += await WaterArchivedSummaryOps(session).bulk_upsert_summary(
                     chunk
                 )

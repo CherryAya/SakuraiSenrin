@@ -71,7 +71,7 @@ from src.lib.plugin_docs import (
 from src.lib.plugin_docs.meta import HELP_SUPPORT_QR_ASSET, resolve_support_groups
 from src.lib.plugin_docs.query import can_view_node, filter_features_by_permission
 from src.lib.types import JsonValue
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 
 DemoCollectionRenderer = _DemoCollectionRenderer
 

@@ -9,8 +9,8 @@ from sqlalchemy.engine.row import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.lib.db.ops import BaseOps, affected_rows
-from src.lib.utils.common import split_list
 
+from .chunking import split_chunks
 from .tables import (
     WaterArchivedDailySummary,
     WaterDailySummary,
@@ -393,7 +393,7 @@ class WaterGroupStatsOps:
         if not keys:
             return {}
         rows: dict[tuple[str, str], tuple[int, int, int]] = {}
-        for chunk in split_list(keys, 400):
+        for chunk in split_chunks(keys, 400):
             conditions = [
                 (WaterGroupUserTotal.group_id == group_id)
                 & (WaterGroupUserTotal.user_id == user_id)
@@ -428,7 +428,7 @@ class WaterGroupStatsOps:
         if not group_ids:
             return {}
         rows: dict[str, tuple[int, int, int]] = {}
-        for chunk in split_list(group_ids, 400):
+        for chunk in split_chunks(group_ids, 400):
             stmt = select(
                 WaterGroupTotal.group_id,
                 WaterGroupTotal.msg_count,

@@ -7,8 +7,8 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.lib.db.ops import affected_rows
-from src.lib.utils.common import split_list
 
+from .chunking import split_chunks
 from .tables import WaterGlobalLevel, WaterMatrixLevel, WaterMatrixTotalLevel
 from .types import WaterMatrixExpPayload, WaterUserExpPayload
 
@@ -35,7 +35,7 @@ class WaterLevelOps:
         if not keys:
             return {}
         rows: dict[tuple[str, str], tuple[int, int, int]] = {}
-        for chunk in split_list(keys, self._READ_CHUNK_SIZE):
+        for chunk in split_chunks(keys, self._READ_CHUNK_SIZE):
             conditions = [
                 (WaterMatrixLevel.matrix_id == matrix_id)
                 & (WaterMatrixLevel.user_id == user_id)
@@ -82,7 +82,7 @@ class WaterLevelOps:
         if not user_ids:
             return {}
         rows: dict[str, tuple[int, int, int]] = {}
-        for chunk in split_list(user_ids, self._READ_CHUNK_SIZE):
+        for chunk in split_chunks(user_ids, self._READ_CHUNK_SIZE):
             stmt = select(
                 WaterGlobalLevel.user_id,
                 WaterGlobalLevel.exp,
@@ -150,7 +150,7 @@ class WaterLevelOps:
         if not matrix_ids:
             return {}
         rows: dict[str, tuple[int, int, int]] = {}
-        for chunk in split_list(matrix_ids, self._READ_CHUNK_SIZE):
+        for chunk in split_chunks(matrix_ids, self._READ_CHUNK_SIZE):
             stmt = select(
                 WaterMatrixTotalLevel.matrix_id,
                 WaterMatrixTotalLevel.exp,

@@ -14,7 +14,7 @@ from pil_utils import BuildImage
 from src.lib.i18n.catalog import tr, tr_template
 from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.types import LocaleCode
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 from src.logger import logger
 from src.plugins.water.database import water_repo
 from src.plugins.water.database.repo_models import NaturalRankItem

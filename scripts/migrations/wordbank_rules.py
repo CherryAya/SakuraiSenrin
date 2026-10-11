@@ -12,7 +12,7 @@ import re
 from PIL import Image, UnidentifiedImageError
 
 from src.lib.types import JsonValue
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 
 from .wordbank_types import LegacyEntryState, LegacyImportTarget
 

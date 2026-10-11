@@ -19,8 +19,9 @@ from zoneinfo import ZoneInfo
 import arrow
 
 from src.database.system_migration import LegacyPgConfig
-from src.lib.utils.common import get_current_time, split_list
+from src.lib.utils.time_utils import get_current_time
 from src.plugins.water.database import water_repo
+from src.plugins.water.database.chunking import split_chunks
 from src.plugins.water.database.types import WaterMessagePayload
 from src.plugins.water.services.settlement import water_settlement_service
 
@@ -313,7 +314,7 @@ async def import_legacy_water_rows(
             payloads.append(payload)
 
     inserted = 0
-    for chunk in split_list(payloads, chunk_size):
+    for chunk in split_chunks(payloads, chunk_size):
         inserted += await water_repo.import_message_batch(chunk)
     return inserted
 

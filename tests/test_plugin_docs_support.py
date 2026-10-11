@@ -17,7 +17,7 @@ from src.lib.demo_theme import (
     get_demo_theme,
     normalize_hex_color,
 )
-from src.lib.i18n.runtime import tr
+from src.lib.i18n.catalog import tr
 from src.lib.message_plan import MessagePlanEntry, render_message_plan_entry
 import src.lib.plugin_docs as plugin_docs_module
 from src.lib.plugin_docs import (

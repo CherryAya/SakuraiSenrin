@@ -13,7 +13,7 @@ from src.database.instances import log_db
 from src.database.log.ops import TraceEventLogOps
 from src.database.log.tables import LogBase, TraceEventLog
 from src.lib.db.connectors import ColdPolicy
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 
 
 def parse_args() -> argparse.Namespace:

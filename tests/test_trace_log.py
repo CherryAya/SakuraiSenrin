@@ -8,7 +8,7 @@ from sqlalchemy import select
 from src.database.instances import log_db
 from src.database.log.tables import TraceEventLog
 from src.lib.trace_log import configure_logging, flush_trace_logging, log_trace_event
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 
 
 @pytest.mark.asyncio

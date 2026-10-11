@@ -9,8 +9,8 @@ from sqlalchemy.engine.row import Row
 from sqlalchemy.sql import text
 
 from src.lib.db.ops import BaseOps, affected_rows
-from src.lib.utils.common import split_list
 
+from .chunking import split_chunks
 from .tables import WaterHourlyCounter
 from .types import WaterMessagePayload
 
@@ -46,7 +46,7 @@ class WaterMessageOps(BaseOps[WaterHourlyCounter]):
             return 0
         chunk_size = await self._resolve_message_insert_chunk_size()
         inserted = 0
-        for chunk in split_list(data, chunk_size):
+        for chunk in split_chunks(data, chunk_size):
             stmt = sqlite_insert(WaterHourlyCounter).values(chunk)
             stmt = stmt.on_conflict_do_update(
                 index_elements=[

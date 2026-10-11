@@ -21,7 +21,7 @@ from src.lib.types import (
     is_object_mapping,
     is_object_sequence,
 )
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 from src.logger import logger
 
 

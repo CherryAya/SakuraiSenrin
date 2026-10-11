@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from sqlalchemy import and_, delete, func, or_, select
 
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 
 from .instances import self_unban_db
 from .tables import SelfUnbanAttempt, SelfUnbanBase

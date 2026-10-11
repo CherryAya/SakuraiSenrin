@@ -27,7 +27,7 @@ if nonebot.get_plugin("wordbank") is None:
     sys.modules.pop("src.plugins.wordbank", None)
     nonebot.load_plugin("src.plugins.wordbank")
 
-from src.lib.i18n.runtime import tr
+from src.lib.i18n.catalog import tr
 from src.lib.message_assets import message_asset_repo
 from src.plugins import wordbank as wordbank_plugin
 from src.plugins.wordbank import entry_commands

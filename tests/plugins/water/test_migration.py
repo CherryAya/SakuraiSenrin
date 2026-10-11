@@ -11,7 +11,7 @@ import pytest_asyncio
 from sqlalchemy import func, select
 
 from src.database.system_migration import LegacyPgConfig
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 from src.plugins.water import migration as migration_module
 from src.plugins.water.database import ops_message as water_message_ops_module
 from src.plugins.water.database import water_repo

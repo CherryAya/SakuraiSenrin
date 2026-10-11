@@ -16,7 +16,7 @@ from nonebot.adapters.onebot.v11.bot import Bot
 from src.database.core.consts import Permission
 from src.lib.display import fallback_group_name
 from src.lib.types import UNSET
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 from src.logger import logger
 from src.repositories import group_repo, member_repo, user_repo
 from src.services.info import resolve_group_name

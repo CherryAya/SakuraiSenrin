@@ -10,7 +10,7 @@ from pathlib import Path
 import re
 from typing import TypedDict
 
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 from src.locales.zh_cn import CATALOG as ZH_CATALOG
 
 ROOT = Path(__file__).resolve().parents[2]

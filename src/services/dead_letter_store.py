@@ -25,7 +25,7 @@ from src.database.instances import core_db
 from src.lib.db.batch import DeadLetterRecord
 from src.lib.db.ops import BaseOps, affected_rows
 from src.lib.trace_log import log_trace_event
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 from src.logger import logger
 
 # 落库保留上限：超过后清理最旧的已落库记录，防止 core_db 无限增长

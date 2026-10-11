@@ -22,7 +22,7 @@ from src.lib.long_task import (
 )
 from src.lib.message_plan import MessagePlanInput, finish_with_message
 from src.lib.plugin_docs import PluginDocIdentity, build_plugin_error_demo
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 from src.plugins.water.database import water_repo
 from src.plugins.water.renderers import render_season_list
 from src.plugins.water.services.cron_orchestrator import run_water_subprocess_job

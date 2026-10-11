@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, cast
 
 from src.database.log.types import TraceEventLogPayload
 from src.lib.types import JsonObject
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 from src.logger import logger
 
 if TYPE_CHECKING:

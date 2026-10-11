@@ -17,7 +17,7 @@ from src.lib.cache.field import (
 )
 from src.lib.consts import GLOBAL_GROUP_FLAG
 from src.lib.types import UNSET, Unset, is_set, resolve_unset
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 
 from .base import BaseCache
 

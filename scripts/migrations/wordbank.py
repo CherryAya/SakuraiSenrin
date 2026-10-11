@@ -8,7 +8,7 @@ from pathlib import Path
 import shutil
 
 from src.database.consts import WritePolicy
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 from src.plugins.wordbank.database.instances import wordbank_main_db
 from src.plugins.wordbank.database.repo import WordbankRepository
 from src.plugins.wordbank.database.types import WordbankResponseSpec

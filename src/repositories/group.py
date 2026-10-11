@@ -22,7 +22,7 @@ from src.lib.cache.field import GroupCacheItem
 from src.lib.cache.impl import GroupCache
 from src.lib.db.atomic import system_atomic_session
 from src.lib.types import UNSET, Unset, is_set, resolve_unset
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 from src.services.writers import (
     group_create_writer,
     group_update_name_writer,

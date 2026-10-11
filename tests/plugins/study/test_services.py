@@ -10,7 +10,7 @@ from nonebot.adapters.onebot.v11 import Bot, Message, MessageSegment
 from nonebot.matcher import Matcher
 import pytest
 
-from src.lib.i18n.runtime import tr
+from src.lib.i18n.catalog import tr
 from tests.plugins.water.helpers import build_group_message_event
 
 nonebot.init(

@@ -30,7 +30,7 @@ from src.lib.consts import GLOBAL_DB_ROOT
 from src.lib.db.backup import BackupSource
 from src.lib.trace_log import log_trace_event
 from src.lib.types import JsonObject, JsonValue
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 from src.logger import logger
 
 from .manager import db_manager

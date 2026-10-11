@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock
 from nonebot.adapters.onebot.v11 import Bot
 import pytest
 
-from src.lib.i18n.runtime import tr
+from src.lib.i18n.catalog import tr
 from src.lib.message_plan import render_message_plan_input
 from src.plugins.wordbank import pending_batch as pending_batch_module
 from src.plugins.wordbank.database.types import WordbankSearchItem

@@ -39,7 +39,7 @@ from src.lib.plugin_docs import (
 )
 from src.lib.plugin_meta import create_plugin_metadata
 from src.lib.types import UNSET, Unset, is_set, resolve_unset
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 from src.repositories import blacklist_repo, group_repo, user_repo
 from src.services.info import resolve_user_name
 

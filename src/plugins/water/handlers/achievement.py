@@ -6,7 +6,7 @@ from nonebot.matcher import Matcher
 
 from src.lib.i18n.types import LocaleCode
 from src.lib.message_plan import finish_with_message
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 from src.plugins.water.database import water_repo
 from src.plugins.water.services.achievement import achievement_service
 

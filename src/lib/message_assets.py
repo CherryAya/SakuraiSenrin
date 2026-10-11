@@ -24,7 +24,7 @@ from src.lib.backup import register_backup_database
 from src.lib.db.connectors import StateStore
 from src.lib.db.orm import TimeMixin
 from src.lib.db.schema import SchemaPatch
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 from src.logger import logger
 
 

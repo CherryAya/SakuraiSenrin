@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 
 
 def parse_args() -> argparse.Namespace:

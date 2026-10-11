@@ -13,8 +13,8 @@ from src.lib.consts import MAPLE_FONT_NAME
 from src.lib.demo_theme import SENRIN_V3_WATER_IMAGE_THEME, WaterImageTheme
 from src.lib.i18n.catalog import tr
 from src.lib.i18n.types import LocaleCode
-from src.lib.utils.common import get_current_time
 from src.lib.utils.text_draw import draw_text_in_region
+from src.lib.utils.time_utils import get_current_time
 
 SYS_FONT_NAME = MAPLE_FONT_NAME
 WATER_THEME = SENRIN_V3_WATER_IMAGE_THEME

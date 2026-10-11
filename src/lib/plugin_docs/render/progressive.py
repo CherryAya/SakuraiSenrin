@@ -24,7 +24,7 @@ from src.lib.plugin_docs.command_layout import (
 )
 from src.lib.plugin_docs.markdown_layout import MarkdownLayout, build_markdown_layout
 from src.lib.plugin_docs.models import DocNode, FeatureDoc, HelpDashboardSection
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 
 from .demo import (
     DemoImageRenderer,

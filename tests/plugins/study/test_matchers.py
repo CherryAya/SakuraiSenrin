@@ -29,7 +29,7 @@ if nonebot.get_plugin("study") is None:
     sys.modules.pop("src.plugins.study", None)
     nonebot.load_plugin("src.plugins.study")
 
-from src.lib.i18n.runtime import tr
+from src.lib.i18n.catalog import tr
 from src.lib.message_assets import message_asset_repo
 from src.plugins import study as study_plugin
 from src.plugins.wordbank.handlers import submission as wordbank_submission_handlers

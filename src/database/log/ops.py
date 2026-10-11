@@ -16,7 +16,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from src.lib.db.ops import BaseOps, affected_rows
 from src.lib.types import UNSET, JsonObject, Unset, is_set
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 
 from .base import BaseAuditEnum
 from .tables import AuditLog, PluginUsageLog, TraceEventLog

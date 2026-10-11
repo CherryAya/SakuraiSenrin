@@ -52,7 +52,7 @@ from scripts.migrations.wordbank_rules import (
     shape_from_legacy_extra_info,
 )
 from scripts.migrations.wordbank_types import LegacyPgConfig
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 from src.logger import logger
 from src.plugins.wordbank.database.repo_shared import (
     group_status_from_responses,

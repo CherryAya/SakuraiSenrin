@@ -29,7 +29,7 @@ from src.lib.message_plan import (
     build_text_plan_entry,
     render_message_plan_entry,
 )
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 
 from .command_layout import (
     CommandLayout,

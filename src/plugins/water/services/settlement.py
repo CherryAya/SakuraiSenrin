@@ -8,7 +8,7 @@ from loguru import logger
 
 from src.lib.trace_log import log_trace_event, new_trace_id
 from src.lib.types import JsonValue, as_int, as_str
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 from src.plugins.water.database import water_repo
 from src.plugins.water.database.repo_models import DailyAggregateItem
 from src.plugins.water.services.worker_jobs import WaterWorkerManifest

@@ -16,7 +16,7 @@ from src.lib.consts import GLOBAL_GROUP_FLAG, PERMANENT_BAN_FLAG
 from src.lib.i18n.catalog import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.message_plan import DeliveryPlan
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 from src.plugins.self_unban.database import self_unban_repo
 from src.repositories import blacklist_repo, group_repo, member_repo
 from src.services.info import resolve_group_name

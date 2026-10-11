@@ -23,7 +23,7 @@ if str(ROOT) not in sys.path:
 
 from src.database.core.tables import User
 from src.database.instances import core_db
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 
 DEFAULT_OUTPUT_DIR = ROOT / "output" / "wordbank-trigger-analysis"
 DEFAULT_PREFIX = "wordbank-trigger-analysis"

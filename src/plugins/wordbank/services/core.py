@@ -12,7 +12,7 @@ from src.database.consts import WritePolicy
 from src.lib.i18n.catalog import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.types import JsonObject, as_int
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 from src.logger import logger
 from src.plugins.wordbank.database.instances import wordbank_message_ref_db
 from src.plugins.wordbank.database.repo import WordbankRepository

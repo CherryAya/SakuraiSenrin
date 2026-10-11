@@ -24,7 +24,7 @@ from src.lib.trace_log import (
     new_trace_id,
     shutdown_logging,
 )
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 from src.logger import logger
 from src.services.db import init_db
 

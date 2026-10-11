@@ -7,7 +7,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.lib.db.schema import SchemaPatch
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 from src.plugins.wordbank.message_model import (
     fingerprint_shape,
     shape_to_payload,

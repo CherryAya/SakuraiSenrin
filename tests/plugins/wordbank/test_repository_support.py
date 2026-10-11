@@ -9,7 +9,7 @@ from sqlalchemy import text
 
 from src.database.consts import WritePolicy
 from src.lib.db.connectors import ColdPolicy
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 from src.plugins.wordbank.database.instances import (
     wordbank_log_db,
     wordbank_main_db,

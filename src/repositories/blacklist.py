@@ -18,7 +18,7 @@ from src.lib.cache.field import BlacklistCacheItem
 from src.lib.cache.impl import BlacklistCache
 from src.lib.consts import GLOBAL_GROUP_FLAG, PERMANENT_BAN_FLAG
 from src.lib.db.atomic import system_atomic_session
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 
 _AUDIT_CTX_TYPE_DICT = {
     GLOBAL_GROUP_FLAG: AuditContext.GLOBAL,

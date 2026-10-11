@@ -32,10 +32,10 @@ if nonebot.get_plugin("study") is None:
     nonebot.load_plugin("src.plugins.study")
 
 from src.database.consts import WritePolicy
-from src.lib.i18n.runtime import tr
+from src.lib.i18n.catalog import tr
 from src.lib.messages import text_message
 from src.lib.types import JsonObject
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 from src.plugins import study as study_plugin
 from src.plugins import wordbank as wordbank_plugin
 from src.plugins.wordbank import lifecycle as lifecycle_module

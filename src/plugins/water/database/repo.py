@@ -13,7 +13,7 @@ from src.database.consts import WritePolicy
 from src.lib.db.connectors import ColdPolicy
 from src.lib.db.manager import db_manager
 from src.lib.trace_log import log_trace_event
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 
 from .instances import water_core_db, water_message, water_summary
 from .ops import (

@@ -20,7 +20,7 @@ from pybktree import BKTree
 
 from src.lib.object_storage.types import StorageObject
 from src.lib.types import JsonValue
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 from src.logger import logger
 from src.plugins.wordbank.database.types import WordbankImageRecord
 from src.plugins.wordbank.debug import elapsed_ms, log_perf, perf_start

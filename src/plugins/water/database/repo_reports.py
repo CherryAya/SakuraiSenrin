@@ -18,7 +18,7 @@ import arrow
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.lib.db.connectors import ColdPolicy
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 from src.logger import logger
 from src.plugins.water.services.rank_types import WaterRankScope, WaterRankSubject
 

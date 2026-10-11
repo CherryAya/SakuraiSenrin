@@ -8,7 +8,7 @@ from typing import Literal
 import arrow
 
 from src.lib.i18n.keys import MessageKey
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 from src.plugins.water.database import water_repo
 from src.plugins.water.database.repo import WaterActivitySeasonRecord
 

@@ -14,7 +14,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.consts import WritePolicy
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 
 from .instances import wordbank_log_db, wordbank_main_db, wordbank_message_ref_db
 from .tables import WordbankImage, WordbankLog

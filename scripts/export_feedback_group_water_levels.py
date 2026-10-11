@@ -22,7 +22,7 @@ if str(ROOT) not in sys.path:
 from src.database.core.tables import Member, User
 from src.database.instances import core_db
 from src.lib.plugin_docs.meta import resolve_support_groups
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 
 if TYPE_CHECKING:
     from src.plugins.water.database.ops import WaterSummaryOps

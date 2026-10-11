@@ -14,7 +14,7 @@ from src.lib.demo_theme import SENRIN_V3_WORDBANK_CARD_THEME
 from src.lib.i18n.catalog import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.message_plan import MessagePlanEntry, build_image_plan_entry
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 from src.plugins.wordbank.database.types import WordbankSearchItem
 from src.plugins.wordbank.text_layout import line_height, load_font, text_width
 from src.plugins.wordbank.treemap.render_utils import TreemapFont

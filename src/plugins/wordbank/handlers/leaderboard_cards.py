@@ -16,7 +16,7 @@ from src.lib.message_plan import (
     ImageBytesBlock,
     MessagePlanEntry,
 )
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 from src.plugins.wordbank.services.core import (
     WordbankLeaderboardCardData,
     WordbankLeaderboardCardItem,

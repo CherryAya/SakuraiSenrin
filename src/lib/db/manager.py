@@ -9,6 +9,7 @@ Description: db 管理器
 import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import nonebot
 from sqlalchemy import event, text
@@ -35,6 +36,18 @@ class DatabaseManager:
         self._engines: dict[str, AsyncEngine] = {}
         self._session_factories: dict[str, async_sessionmaker[AsyncSession]] = {}
         self._lock = asyncio.Lock()
+
+    @staticmethod
+    def _engine_key(full_path: str) -> str:
+        """引擎缓存键：把库文件路径归一化成绝对形式。
+
+        调用方可能用相对路径 open（GLOBAL_DB_ROOT 是相对路径），却用 resolve 后
+        的绝对路径 dispose（归档路径传 _safe_resolve 的结果）。若按原始字符串做
+        键，同一个文件会被注册成两个条目，dispose 静默空转、连接池句柄永不释放；
+        Windows 上表现为分片 rename 永远 WinError 32——这正是生产归档长期失败的
+        根因（测试全用绝对 tmp_path，恰好掩盖了键不匹配）。
+        """
+        return f"sqlite+aiosqlite:///{Path(full_path).resolve()}"
 
     def _init_sqlite_pragma(
         self,
@@ -85,7 +98,7 @@ class DatabaseManager:
             logger.success(f"数据库初始化成功: {url}")
 
     async def dispose(self, full_path: str) -> None:
-        url = f"sqlite+aiosqlite:///{full_path}"
+        url = self._engine_key(full_path)
         async with self._lock:
             if url in self._engines:
                 engine = self._engines.pop(url)
@@ -108,7 +121,7 @@ class DatabaseManager:
         full_path: str,
         commit: bool = True,
     ) -> AsyncGenerator[AsyncSession, None]:
-        url = f"sqlite+aiosqlite:///{full_path}"
+        url = self._engine_key(full_path)
         if url not in self._session_factories:
             await self._ensure_engine(url)
         factory = self._session_factories[url]

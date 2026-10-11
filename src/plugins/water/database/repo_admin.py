@@ -19,8 +19,8 @@ from sqlalchemy.engine.row import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.lib.types import JsonObject
-from src.lib.utils.common import split_list
 
+from .chunking import split_chunks
 from .instances import water_core_db, water_message, water_summary
 from .ops import (
     WaterAchievementOps,
@@ -388,36 +388,36 @@ class WaterRepositoryAdminMixin:
                     }
                 )
 
-            for chunk in split_list(matrix_payloads, chunk_size):
+            for chunk in split_chunks(matrix_payloads, chunk_size):
                 await level_ops.upsert_matrix_levels(chunk)
                 if chunk_pause_seconds > 0:
                     await asyncio.sleep(chunk_pause_seconds)
 
-            for chunk in split_list(group_user_payloads, chunk_size):
+            for chunk in split_chunks(group_user_payloads, chunk_size):
                 await group_stats_ops.upsert_group_user_totals(chunk)
                 if chunk_pause_seconds > 0:
                     await asyncio.sleep(chunk_pause_seconds)
 
-            for chunk in split_list(group_total_payloads, chunk_size):
+            for chunk in split_chunks(group_total_payloads, chunk_size):
                 await group_stats_ops.upsert_group_totals(chunk)
                 if chunk_pause_seconds > 0:
                     await asyncio.sleep(chunk_pause_seconds)
 
-            for chunk in split_list(global_payloads, chunk_size):
+            for chunk in split_chunks(global_payloads, chunk_size):
                 await level_ops.upsert_global_levels(chunk)
                 if chunk_pause_seconds > 0:
                     await asyncio.sleep(chunk_pause_seconds)
 
-            for chunk in split_list(matrix_total_payloads, chunk_size):
+            for chunk in split_chunks(matrix_total_payloads, chunk_size):
                 await level_ops.upsert_matrix_totals(chunk)
                 if chunk_pause_seconds > 0:
                     await asyncio.sleep(chunk_pause_seconds)
 
             if penalty_logs:
-                for chunk in split_list(penalty_logs, chunk_size):
+                for chunk in split_chunks(penalty_logs, chunk_size):
                     await penalty_ops.insert_penalty_logs(chunk)
 
-        for chunk in split_list(summary_payloads, chunk_size):
+        for chunk in split_chunks(summary_payloads, chunk_size):
             repo_self = cast("WaterRepository", self)
             await repo_self.save_summary_batch(chunk)
             if chunk_pause_seconds > 0:

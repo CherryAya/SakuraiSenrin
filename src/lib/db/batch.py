@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, ClassVar, Protocol
 from loguru import logger
 
 from src.lib.trace_log import log_trace_event, new_trace_id
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 
 if TYPE_CHECKING:
     from .connectors import SegmentStore

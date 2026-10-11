@@ -31,7 +31,7 @@ _ensure_pkg(
 
 from src.lib.consts import GLOBAL_DB_ROOT
 from src.lib.types import JsonValue
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 from src.logger import logger
 from src.plugins.wordbank.services.rules import MAX_CALL_COUNT_WINDOW_SECONDS
 

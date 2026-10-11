@@ -13,7 +13,7 @@ from src.lib.i18n.catalog import tr
 from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.types import LocaleCode
 from src.lib.message_plan import DeliveryPlan
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 from src.services.sync import MemberSyncReport, sync_members_from_api
 
 SYNC_STATUS_LABEL_KEYS: dict[str, MessageKey] = {

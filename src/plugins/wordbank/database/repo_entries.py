@@ -16,7 +16,7 @@ from sqlalchemy import case, delete, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.lib.types import JsonArray, JsonValue
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 from src.plugins.wordbank.message_model import (
     MessageShape,
     fingerprint_shape,

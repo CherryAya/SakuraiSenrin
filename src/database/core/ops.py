@@ -17,7 +17,7 @@ from sqlalchemy.orm import aliased, selectinload
 
 from src.lib.db.ops import BaseOps, affected_rows
 from src.lib.types import JsonObject
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 
 from .consts import GroupStatus, InvitationStatus, Permission
 from .tables import (

@@ -39,7 +39,7 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.pool import ConnectionPoolEntry
 
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 from src.logger import logger
 
 # ATTACH 出来的库在 ORM 里用 schema 前缀寻址。取名避开 SQLite 保留字。

@@ -33,8 +33,8 @@ from src.lib.message_plan import (
     normalize_message_plan_entry,
 )
 from src.lib.types import as_float, as_int
-from src.lib.utils.common import get_current_time
 from src.lib.utils.img import QQAvatar
+from src.lib.utils.time_utils import get_current_time
 from src.logger import logger
 from src.plugins.water.database import water_repo
 from src.plugins.water.database.repo_models import (

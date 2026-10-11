@@ -32,7 +32,7 @@ from src.lib.db.backup import (
 )
 from src.lib.db.connectors import BaseDB
 from src.lib.types import JsonObject, JsonValue, as_object, as_str, as_str_tuple
-from src.lib.utils.common import get_current_time
+from src.lib.utils.time_utils import get_current_time
 from src.logger import logger
 
 
