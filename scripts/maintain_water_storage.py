@@ -136,59 +136,14 @@ async def main() -> None:
 
 
 async def backfill_archived_summaries(*, batch_size: int) -> dict[str, Any]:
+    """把窗口外日汇总复制进归档分片（复用仓储层实现，保持与每日 job 同语义）。"""
     _load_water_components()
-    hot_start_date = water_repo._hot_summary_start_date()
-    moved_rows = 0
-    shard_stats: dict[str, int] = {}
-    async with water_core_db.session(commit=False) as session:
-        total_rows = int(
-            await session.scalar(
-                select(func.count())
-                .select_from(WaterDailySummary)
-                .where(WaterDailySummary.record_date < hot_start_date)
-            )
-            or 0
-        )
-        if total_rows <= 0:
-            return {
-                "hot_start_date": hot_start_date,
-                "source_rows": 0,
-                "moved_rows": 0,
-                "shards": {},
-            }
-
-        rows = (
-            await session.execute(
-                select(WaterDailySummary)
-                .where(WaterDailySummary.record_date < hot_start_date)
-                .order_by(WaterDailySummary.record_date.asc())
-            )
-        ).scalars()
-        batch: list[WaterSummaryPayload] = []
-        for row in rows:
-            batch.append(
-                {
-                    "group_id": str(row.group_id),
-                    "user_id": str(row.user_id),
-                    "record_date": int(row.record_date),
-                    "msg_count": int(row.msg_count),
-                    "active_hours": int(row.active_hours),
-                    "hourly_counts": list(row.hourly_counts or [0] * 24)[:24],
-                    "created_at": int(row.created_at),
-                    "updated_at": int(row.updated_at),
-                }
-            )
-            if len(batch) >= batch_size:
-                moved_rows += await _flush_summary_payloads(batch, shard_stats)
-                batch = []
-        if batch:
-            moved_rows += await _flush_summary_payloads(batch, shard_stats)
-
+    stats = await water_repo.backfill_expiring_summaries(batch_size=batch_size)
     return {
-        "hot_start_date": hot_start_date,
-        "source_rows": total_rows,
-        "moved_rows": moved_rows,
-        "shards": shard_stats,
+        "hot_start_date": water_repo._hot_summary_start_date(),
+        "source_rows": stats["copied"],
+        "moved_rows": stats["copied"],
+        "shards": stats["shards"],
     }
 
 

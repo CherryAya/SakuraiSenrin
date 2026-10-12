@@ -14,18 +14,20 @@ from types import ModuleType
 from typing import TYPE_CHECKING, cast
 
 import arrow
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.engine.row import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.lib.db.connectors import SegmentArchiveReport
 from src.lib.types import JsonObject
+from src.logger import logger
 
 from .chunking import split_chunks
 from .instances import water_core_db, water_message, water_summary
 from .ops import (
     WaterAchievementOps,
     WaterActivitySeasonOps,
+    WaterArchivedSummaryOps,
 )
 from .tables import (
     WaterDailySummary,
@@ -37,6 +39,7 @@ from .types import (
     WaterGroupUserTotalPayload,
     WaterMatrixExpPayload,
     WaterPenaltyPayload,
+    WaterSummaryBackfillResult,
     WaterSummaryPayload,
     WaterSummaryRecord,
     WaterUserExpPayload,
@@ -705,6 +708,77 @@ class WaterRepositoryAdminMixin:
                 )
             )
         return int(getattr(result, "rowcount", 0) or 0)
+
+    async def backfill_expiring_summaries(
+        self,
+        *,
+        batch_size: int = 500,
+        today_ts: int | None = None,
+    ) -> WaterSummaryBackfillResult:
+        """把即将滑出热窗的日汇总复制进归档分片，返回统计。
+
+        热窗是滑动窗口：超过 90 天的行由每日 prune 从 core.db 删除。此前
+        日常路径只写热窗内的行（结算目标恒为「昨天」），而唯一的「热行复制进
+        分片」实现是人工脚本 scripts/maintain_water_storage.py——没有接入任何
+        cron。结果：每行在写入约 90 天后被 prune 永久删除，长周期查询出现空洞。
+
+        这里把回填并入每日归档 job，在 prune 删除【之前】把全部窗口外行复制进
+        按月分片（upsert 幂等，重复执行安全）。不设下界：prune 每天都会清掉
+        窗口外行，因此 core.db 中的窗口外行数天然被热窗大小（约 90 天）约束，
+        全量回填既是数据保全最稳的语义，也不会无界增长。
+        """
+        repo_self = cast("WaterRepository", self)
+        hot_start_date = repo_self._hot_summary_start_date(today_ts)
+        copied = 0
+        shard_stats: dict[str, int] = {}
+        async with water_core_db.session(commit=False) as session:
+            rows = (
+                (
+                    await session.execute(
+                        select(WaterDailySummary)
+                        .where(WaterDailySummary.record_date < hot_start_date)
+                        .order_by(WaterDailySummary.record_date.asc())
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            payloads: list[WaterSummaryPayload] = [
+                {
+                    "group_id": str(row.group_id),
+                    "user_id": str(row.user_id),
+                    "record_date": int(row.record_date),
+                    "msg_count": int(row.msg_count),
+                    "active_hours": int(row.active_hours),
+                    "hourly_counts": list(row.hourly_counts or [0] * 24)[:24],
+                    "created_at": int(row.created_at),
+                    "updated_at": int(row.updated_at),
+                }
+                for row in rows
+            ]
+
+        for chunk in split_chunks(payloads, batch_size):
+            await water_summary.write_batch(
+                chunk,
+                method=WaterArchivedSummaryOps.bulk_upsert_summary,
+                emit_trace=False,
+            )
+            for payload in chunk:
+                record_date = int(payload["record_date"])
+                shard_key = (
+                    arrow.get(str(record_date), "YYYYMMDD")
+                    .to("Asia/Shanghai")
+                    .floor("month")
+                    .format("YYYY_MM")
+                )
+                shard_stats[shard_key] = shard_stats.get(shard_key, 0) + 1
+                copied += 1
+        if copied:
+            logger.info(
+                f"[Water] backfilled {copied} expiring summary row(s) into "
+                f"shards: {shard_stats}"
+            )
+        return {"copied": copied, "shards": shard_stats}
 
     async def get_matrix_rank(self, matrix_id: str) -> int | None:
         async with water_core_db.session(commit=False) as session:

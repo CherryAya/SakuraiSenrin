@@ -147,3 +147,10 @@ class WaterActivitySeasonPayload(TypedDict):
     created_by: str
     created_at: int
     updated_at: int
+
+
+class WaterSummaryBackfillResult(TypedDict):
+    """窗口外日汇总回填归档分片的结果。"""
+
+    copied: int
+    shards: dict[str, int]

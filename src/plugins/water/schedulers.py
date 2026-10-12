@@ -165,11 +165,15 @@ async def _water_summary_archive_job() -> None:
         ) as task:
             ensure_restore_not_in_progress(source="water_summary_archive")
             await task.advance("archiving")
+            # 先回填即将滑出热窗的行再 prune：否则 prune 会永久删除
+            # 那些从未复制进分片的行（日常结算只写「昨天」，恒在热窗内）。
+            backfill = await water_repo.backfill_expiring_summaries()
             report = await water_repo.archive_summary_shards()
             pruned = await water_repo.prune_hot_summaries()
             _raise_on_archive_failures("summary_archive", report)
         logger.success(
-            f"[Water] cron summary archive done: pruned={pruned} {report.summary()}"
+            f"[Water] cron summary archive done: backfilled={backfill['copied']} "
+            f"pruned={pruned} {report.summary()}"
         )
     except Exception as e:
         logger.exception(f"[Water] cron summary archive failed: {e}")
