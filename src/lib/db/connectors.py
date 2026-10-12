@@ -131,6 +131,16 @@ class ArchiveStagingConflictError(RuntimeError):
     """
 
 
+class ArchiveIntegrityError(RuntimeError):
+    """归档文件损坏（截断 / 校验和不匹配）：拒绝把它当作可用库存。
+
+    copy_stream 对截断的 zstd 帧**静默返回已有字节、不报错**（实测），因此
+    损坏归档会被解压成半截数据库：查询返回空、写入"成功"，线上无声无息地
+    把整月数据当空月处理。解压路径改用 decompressobj 并强制校验 eof 与
+    校验和，损坏时抛本异常并把坏归档 rename 隔离（保留证据，不静默丢弃）。
+    """
+
+
 @dataclass(slots=True)
 class SegmentManifestEntry:
     segment_id: str
@@ -350,6 +360,15 @@ class _ReentrantShardLock:
             self._owner = None
             self._lock.release()
 
+    def is_busy(self) -> bool:
+        """当前是否被任一 task 持有。
+
+        供「跨分片、尽力而为」的操作（WARM 逐出）做跳过判断：绝不在持有本
+        分片锁时阻塞等待另一把分片锁，否则两个任务各自持有 A/B 锁、又互相
+        等对方的锁时会死锁。跳过只是推迟淘汰，不影响正确性。
+        """
+        return self._depth > 0
+
 
 @dataclass
 class SegmentStore(BaseDB):
@@ -506,7 +525,14 @@ class SegmentStore(BaseDB):
         return self._manifest
 
     async def flush_manifest(self) -> None:
-        """强制把 manifest 落盘。"""
+        """强制把 manifest 落盘。
+
+        落盘失败（磁盘满、临时目录不可写等）**不向上抛**：manifest 是旁路
+        加速状态，真实数据在分片文件本身；此前它会沿 write_session ->
+        create_shard_placeholder 把单次落盘失败放大成「整批写入失败」，
+        而失败原因与业务数据无关。失败时记日志/trace 并保持 dirty，等下次
+        定时落盘重试。
+        """
         task = self._manifest_flush_task
         if task is not None and not task.done():
             if self._manifest_loop is asyncio.get_running_loop():
@@ -516,7 +542,20 @@ class SegmentStore(BaseDB):
             self._manifest_flush_task = None
         self._manifest_dirty = False
         async with self._manifest_lock:
-            await asyncio.to_thread(self._write_manifest_atomic)
+            try:
+                await asyncio.to_thread(self._write_manifest_atomic)
+            except Exception as exc:
+                self._manifest_dirty = True
+                logger.warning(f"manifest 落盘失败（不影响数据写入）: {exc}")
+                log_trace_event(
+                    event_name="manifest_flush_failed",
+                    source_kind="segment_manifest",
+                    component=f"{self.namespace}.{self.prefix}",
+                    status="failed",
+                    summary="Manifest flush failed; kept dirty for retry.",
+                    level="WARNING",
+                    payload_json={"error": repr(exc)},
+                )
 
     def _write_manifest_atomic(self) -> None:
         manifest = self._load_manifest()
@@ -630,8 +669,12 @@ class SegmentStore(BaseDB):
         # 先写 tmp 再原子改名：压缩中途被杀只会留下 .zst.tmp，不会产出
         # 「看起来像归档、实际被截断」的 .zst（后者被 hydrate 后是损坏库，
         # 会让该分片写入永久卡死）。
+        #
+        # 开启帧校验和（write_checksum）：解压时据此识别位翻转/静默损坏。
+        # 压缩侧不做成本敏感取舍——校验和仅 4 字节/帧，而缺了它，损坏归档
+        # 会被当成正常库存进去（见 _decompress_file 的检测逻辑）。
         tmp_path = destination.with_suffix(f"{destination.suffix}.tmp")
-        cctx = zstd.ZstdCompressor(level=10)
+        cctx = zstd.ZstdCompressor(level=10, write_checksum=True)
         try:
             with source.open("rb") as src, tmp_path.open("wb") as dst:
                 cctx.copy_stream(src, dst)
@@ -651,11 +694,25 @@ class SegmentStore(BaseDB):
     def _decompress_file(self, source: Path, destination: Path) -> None:
         destination.parent.mkdir(parents=True, exist_ok=True)
         # 同 _compress_file：tmp + 原子改名，解压中途失败不留下半截损坏的 .db。
+        #
+        # 用 decompressobj 而非 copy_stream：后者对截断的 zstd 帧静默返回
+        # 已解出的字节、不抛错（实测），半截库会冒充正常库；前者能通过
+        # eof 标志与校验和识别截断与位翻转。
         tmp_path = destination.with_suffix(f"{destination.suffix}.tmp")
         dctx = zstd.ZstdDecompressor()
+        decompressor = dctx.decompressobj()
         try:
             with source.open("rb") as src, tmp_path.open("wb") as dst:
-                dctx.copy_stream(src, dst)
+                while True:
+                    chunk = src.read(64 * 1024)
+                    if not chunk:
+                        break
+                    dst.write(decompressor.decompress(chunk))
+                dst.write(decompressor.flush())
+            if not decompressor.eof:
+                raise ArchiveIntegrityError(
+                    f"archive is truncated (zstd frame not terminated): {source.name}"
+                )
             os.replace(tmp_path, destination)
         except Exception:
             tmp_path.unlink(missing_ok=True)
@@ -713,7 +770,23 @@ class SegmentStore(BaseDB):
                     f"跳过逐出以免删除唯一副本"
                 )
                 continue
-            async with self._shard_lock(shard_key):
+            # 绝不在持有其它分片锁时等待本锁：map_reduce 持 A 锁时经
+            # _ensure_shard_online 调到这里，若同时有写路径持 B 锁、并同样
+            # 在逐出 A，就构成 AB-BA 死锁。逐出是尽力而为的优化，跳过只会
+            # 让它晚一点发生，不影响正确性。
+            lock = self._shard_lock(shard_key)
+            if lock.is_busy():
+                logger.debug(
+                    f"[{self.namespace}/{self.prefix}] 分片 {shard_key} 正被占用，"
+                    f"跳过本次逐出"
+                )
+                continue
+            async with lock:
+                # 状态复检：上面的 WARM 列表是快照，本循环每个 await 都会让出
+                # 事件循环；期间若有写入把该分片提升回 HOT（在线库含新数据、
+                # 归档还是旧的），仍按快照逐出就会删除唯一持有新写入的副本。
+                if entry.state != SegmentState.WARM:
+                    continue
                 db_path = Path(entry.path)
                 if await asyncio.to_thread(db_path.exists):
                     try:
@@ -861,6 +934,35 @@ class SegmentStore(BaseDB):
         )
         return True
 
+    async def _quarantine_archive(
+        self,
+        shard_key: str,
+        error: BaseException,
+    ) -> Path:
+        """把损坏的归档改名隔离，返回隔离路径。
+
+        绝不删除：损坏文件是事后取证与人工恢复的唯一线索；改名后 hydrate
+        路径不再命中它，该分片会明确表现为「离线 / 损坏」，而不是被当成
+        空月静默服务。
+        """
+        archive_path = self._get_file_paths(shard_key)[1]
+        quarantine = archive_path.with_suffix(
+            f"{archive_path.suffix}.corrupt.{int(get_current_time())}"
+        )
+        try:
+            await asyncio.to_thread(os.replace, archive_path, quarantine)
+        except OSError as exc:
+            logger.error(
+                f"[{self.namespace}/{self.prefix}] 隔离损坏归档失败 "
+                f"{archive_path.name}: {exc}"
+            )
+            return archive_path
+        logger.error(
+            f"[{self.namespace}/{self.prefix}] 归档 {archive_path.name} 已损坏"
+            f"并隔离为 {quarantine.name}（{error}）；该分片需要人工处置",
+        )
+        return quarantine
+
     async def _ensure_shard_online(
         self,
         shard_key: str,
@@ -923,7 +1025,27 @@ class SegmentStore(BaseDB):
             if await asyncio.to_thread(db_path.exists):
                 await self._touch_segment(shard_key, state=SegmentState.WARM)
                 return True
-            await asyncio.to_thread(self._decompress_file, safe_archive, safe_db)
+            try:
+                await asyncio.to_thread(self._decompress_file, safe_archive, safe_db)
+            except ArchiveIntegrityError as exc:
+                # 损坏归档：隔离留证（绝不静默丢弃，也绝不冒充正常库），
+                # 并把该分片显式报错。下次巡检会把 quarantine 暴露在日志/trace。
+                quarantine = await self._quarantine_archive(shard_key, exc)
+                log_trace_event(
+                    event_name="hydrate_shard",
+                    source_kind="segment_online",
+                    component=f"{self.namespace}.{self.prefix}",
+                    status="failed",
+                    summary=f"Hydrating cold shard {shard_key} detected corruption.",
+                    level="ERROR",
+                    trace_id=trace_id,
+                    shard_key=shard_key,
+                    payload_json={
+                        "error": repr(exc),
+                        "quarantined": quarantine.name,
+                    },
+                )
+                raise
             await self._touch_segment(shard_key, state=SegmentState.WARM)
         # 放在分片锁之外：_ensure_budget 会逐个淘汰其它分片，嵌套加锁会带来死锁风险。
         await self._ensure_budget()
@@ -1045,24 +1167,29 @@ class SegmentStore(BaseDB):
         async def _run(key: str) -> T | None:
             policy = cold_policy or self.cold_policy
             async with semaphore:
-                try:
-                    is_online = await self._ensure_shard_online(
-                        key,
-                        cold_policy=policy,
-                        create_if_missing=False,
-                    )
-                except FileNotFoundError:
-                    if policy == ColdPolicy.SKIP:
+                # 全程持分片锁：归档/驱逐会 rename 或删除在线分片、dispose 引擎，
+                # 读路径不持锁时与它们存在 TOCTOU——检查通过到 open 之间文件被
+                # 挪走，SQLite 会把「打开一个不存在的路径」直接建出空库，查询
+                # 静默返回空结果（并被后续归档固化成空归档）。
+                async with self._shard_lock(key):
+                    try:
+                        is_online = await self._ensure_shard_online(
+                            key,
+                            cold_policy=policy,
+                            create_if_missing=False,
+                        )
+                    except FileNotFoundError:
+                        if policy == ColdPolicy.SKIP:
+                            return None
+                        raise
+                    if not is_online:
                         return None
-                    raise
-                if not is_online:
-                    return None
-                await self._initialize_shard_schema(key)
-                db_path, _ = self._get_file_paths(key)
-                if not db_path.exists():
-                    return None
-                async with db_manager.open(str(db_path), commit=False) as sess:
-                    return await query_func(sess)
+                    await self._initialize_shard_schema(key)
+                    db_path, _ = self._get_file_paths(key)
+                    if not db_path.exists():
+                        return None
+                    async with db_manager.open(str(db_path), commit=False) as sess:
+                        return await query_func(sess)
 
         results = await asyncio.gather(*(_run(key) for key in shard_keys))
         return [result for result in results if result is not None]

@@ -1814,3 +1814,245 @@ async def test_ensure_budget_skips_eviction_without_archive(
     async with db.read_session(time_ctx=april) as session:
         values = (await session.execute(select(_ShardModel.value))).scalars().all()
     assert list(values) == ["only-copy"]
+
+
+# ---------------------------------------------------------------------------
+# 分片生命周期残留缺陷回归：读路径锁 / 归档完整性 / manifest 容错
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_map_reduce_holds_shard_lock_against_archiver(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """回归（K1）：扫描读路径必须持分片锁，归档不得在读的中间态搬走文件。
+
+    旧行为：map_reduce 检查「分片在线」后不持锁就 open；若此时归档把文件
+    rename 走，SQLite 会把「打开不存在的路径」直接建出空库，查询静默返回
+    0 行——空库还会被后续归档固化成空归档，整月数据在查询侧永久消失。
+    持锁后归档必须等读事务结束。
+    """
+    from src.lib.db import connectors as connectors_module
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
+    monkeypatch.setattr(
+        connectors_module,
+        "get_current_time",
+        lambda: arrow.get("2026-06-08 12:00:00").int_timestamp,
+    )
+
+    db = EventStore(
+        namespace="framework_readlock",
+        prefix="events",
+        fmt="%Y_%m",
+        active_window_months=1,
+    )
+    await db.init_schema(_ShardBase)
+
+    april = arrow.get("2026-04-08").datetime
+    async with db.write_session(time_ctx=april) as session:
+        session.add(_ShardModel(value="kept"))
+
+    observed: list[int] = []
+    blocked_mid_query: list[bool] = []
+    archiver_task: asyncio.Task[object] | None = None
+
+    async def _query(session: AsyncSession) -> int:
+        # 查询「飞行中」时启动归档：读路径不持锁则归档会立刻把文件搬走，
+        # 本次查询要么读到 0 行、要么直接撞上 no such table。
+        nonlocal archiver_task
+        archiver_task = asyncio.create_task(db.run_archiver_task())
+        # 给归档一个到达分片锁的窗口；有锁时它会停在这里等查询结束。
+        await asyncio.sleep(0.1)
+        blocked_mid_query.append(not archiver_task.done())
+        count = int(
+            (await session.execute(select(func.count(_ShardModel.id)))).scalar() or 0
+        )
+        observed.append(count)
+        return count
+
+    results = await db.map_reduce(
+        arrow.get("2026-04-01").datetime,
+        arrow.get("2026-04-30").datetime,
+        _query,
+    )
+
+    # 查询期间归档被分片锁挡住（不是提前完成），且读到完整数据。
+    assert blocked_mid_query == [True]
+    assert observed == [1]
+    assert results == [1]
+
+    # 查询结束后归档正常继续完成。
+    assert archiver_task is not None
+    await asyncio.wait_for(archiver_task, timeout=10)
+
+
+@pytest.mark.asyncio
+async def test_hydrate_rejects_truncated_archive_and_quarantines_it(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """回归（K3）：截断归档必须显式报错并隔离，绝不冒充正常库。
+
+    旧行为：copy_stream 对截断的 zstd 帧静默返回已解出字节，半截库被当成
+    正常结果——查询返回 0 行、写入还「成功」，整月数据被当空月处理且无人
+    知晓（实测复现）。
+    """
+    from src.lib.db import connectors as connectors_module
+    from src.lib.db.connectors import ArchiveIntegrityError
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
+    monkeypatch.setattr(
+        connectors_module,
+        "get_current_time",
+        lambda: arrow.get("2026-06-08 12:00:00").int_timestamp,
+    )
+
+    db = EventStore(
+        namespace="framework_integrity",
+        prefix="events",
+        fmt="%Y_%m",
+        active_window_months=1,
+    )
+    await db.init_schema(_ShardBase)
+    april = arrow.get("2026-04-08").datetime
+    async with db.write_session(time_ctx=april) as session:
+        for idx in range(100):
+            session.add(_ShardModel(value=f"row-{idx}"))
+
+    report = await db.run_archiver_task()
+    assert report.archived == ["2026_04"]
+
+    archive_path = tmp_path / "framework_integrity" / "events_2026_04.db.zst"
+    blob = archive_path.read_bytes()
+    archive_path.write_bytes(blob[: int(len(blob) * 0.6)])
+
+    with pytest.raises(ArchiveIntegrityError):
+        async with db.read_session(
+            time_ctx=april,
+            cold_policy=ColdPolicy.HYDRATE,
+        ) as _session:
+            pass
+
+    # 坏档被隔离留证，且没有冒充成功的半截在线库。
+    quarantined = list(
+        (tmp_path / "framework_integrity").glob("events_2026_04.db.zst.corrupt.*")
+    )
+    assert len(quarantined) == 1
+    assert not archive_path.exists()
+    assert not (tmp_path / "framework_integrity" / "events_2026_04.db").exists()
+
+
+@pytest.mark.asyncio
+async def test_manifest_flush_failure_does_not_block_writes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """回归（K4）：manifest 落盘失败不得阻断业务写入。
+
+    manifest 是旁路加速状态（真实数据在分片文件里）；旧实现让它沿
+    write_session -> create_shard_placeholder 把一次磁盘/权限问题放大成
+    「整批写入失败」。
+    """
+    from src.lib.db import connectors as connectors_module
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
+    monkeypatch.setattr(
+        connectors_module,
+        "get_current_time",
+        lambda: arrow.get("2026-06-08 12:00:00").int_timestamp,
+    )
+
+    db = EventStore(
+        namespace="framework_manifest_tolerance",
+        prefix="events",
+        fmt="%Y_%m",
+        active_window_months=1,
+    )
+    await db.init_schema(_ShardBase)
+
+    def _always_fail(self: object) -> None:
+        raise OSError("disk full (simulated)")
+
+    monkeypatch.setattr(
+        connectors_module.SegmentStore,
+        "_write_manifest_atomic",
+        _always_fail,
+    )
+
+    # 必须用一个「尚不存在」的月份：只有 create_if_missing 的建分片占位分支
+    # 会真正调用 flush_manifest()。用已存在的月份会绕过该分支，测试将空转。
+    fresh = arrow.get("2027-01-08").datetime
+    async with db.write_session(time_ctx=fresh) as session:
+        session.add(_ShardModel(value="written-without-manifest"))
+
+    async with db.read_session(time_ctx=fresh) as session:
+        values = (await session.execute(select(_ShardModel.value))).scalars().all()
+    assert list(values) == ["written-without-manifest"]
+
+
+@pytest.mark.asyncio
+async def test_ensure_budget_rechecks_warm_state_under_lock(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """回归：逐出前必须在锁内复检状态，防「快照 WARM、实际已 HOT」误删新数据。
+
+    逐出候选列表来自快照，循环里每个 await 都会让出事件循环；期间若有写入把
+    该分片提升回 HOT（在线库含新行、归档还是旧的），仍按快照逐出就会删除唯一
+    持有新写入的副本——整批写入随归档回灌被旧数据覆盖。
+    """
+    from src.lib.db import connectors as connectors_module
+    from src.lib.db.connectors import SegmentState
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
+    monkeypatch.setattr(
+        connectors_module,
+        "get_current_time",
+        lambda: arrow.get("2026-06-08 12:00:00").int_timestamp,
+    )
+
+    db = EventStore(
+        namespace="framework_evict_race",
+        prefix="events",
+        fmt="%Y_%m",
+        active_window_months=1,
+        warm_ttl_seconds=0,
+        warm_budget_mb=0,
+    )
+    await db.init_schema(_ShardBase)
+
+    april = arrow.get("2026-04-08").datetime
+    async with db.write_session(time_ctx=april) as session:
+        session.add(_ShardModel(value="original"))
+    await db.run_archiver_task()
+
+    db_path = tmp_path / "framework_evict_race" / "events_2026_04.db"
+    archive_path = db_path.with_suffix(".db.zst")
+    assert archive_path.is_file()
+
+    # 复刻 hydrate 之后的 WARM 在线库（跳过 hydrate 自身的 budget 调用，
+    # 以便手动控制逐出时机）。
+    await asyncio.to_thread(db._decompress_file, archive_path, db_path)
+    await db._touch_segment("2026_04", state=SegmentState.WARM)
+    assert db_path.is_file()
+
+    # 模拟并发写入在「快照之后、取锁之前」完成：写入会把分片提升为 HOT。
+    real_shard_lock = db._shard_lock
+
+    def _flip_then_lock(shard_key: str) -> object:
+        entry = db._load_manifest().segments.get(shard_key)
+        if entry is not None:
+            entry.state = SegmentState.HOT
+        return real_shard_lock(shard_key)
+
+    monkeypatch.setattr(db, "_shard_lock", _flip_then_lock)
+
+    await db._ensure_budget()
+
+    # 已在锁内复检为 HOT：不得逐出，新数据仍在线。
+    assert db_path.is_file()
+    async with db.read_session(time_ctx=april) as session:
+        values = (await session.execute(select(_ShardModel.value))).scalars().all()
+    assert list(values) == ["original"]
