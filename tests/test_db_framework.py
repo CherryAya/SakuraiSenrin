@@ -2291,3 +2291,54 @@ async def test_manifest_tmp_path_is_unique_per_writer(
     # 两次写入（不同线程）必须使用不同的临时路径。
     assert recorded[0] != recorded[1], f"临时名冲突: {recorded}"
     assert all(path.endswith(".tmp") for path in recorded)
+
+
+@pytest.mark.asyncio
+async def test_restore_reset_clears_shard_caches_for_in_place_overwrite(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """回归：备份恢复（就地覆盖、inode 不变）后必须复位分片库内存态。
+
+    `_initialized_shards` 按 (st_dev, st_ino) 判断「schema 已建」；`copy2` 就地
+    覆盖保留 inode，身份不变即误命中缓存——补丁不会在恢复出的旧内容上重放，
+    manifest 也停留在恢复前。公共层通过备份注册表统一复位所有已注册库。
+    """
+    from src.lib.backup.registry import (
+        register_backup_database,
+        reset_registered_database_runtime_states,
+    )
+    from src.lib.db import connectors as connectors_module
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
+    monkeypatch.setattr(
+        connectors_module,
+        "get_current_time",
+        lambda: arrow.get("2026-09-01 12:00:00+08:00").int_timestamp,
+    )
+
+    db = EventStore(namespace="framework_restore_reset", prefix="events", fmt="%Y_%m")
+    await db.init_schema(_ShardBase)
+    async with db.write_session(time_ctx=arrow.get("2026-09-01").datetime) as session:
+        session.add(_ShardModel(value="before"))
+    await db.flush_manifest()
+
+    # 记录内存态确实已建立（缓存非空）。
+    assert db._initialized_shards
+    assert db._manifest is not None
+
+    # 复刻恢复覆盖：外部备份文件 copy2 就地覆盖分片。
+    db_path = tmp_path / "framework_restore_reset" / "events_2026_09.db"
+    backup_copy = tmp_path / "backup_events_2026_09.db"
+    import shutil
+
+    shutil.copy2(db_path, backup_copy)
+
+    register_backup_database(db)
+    reset_registered_database_runtime_states()
+
+    # 关键断言：schema 标记与 manifest 缓存都已复位，下次访问重新校验/重放补丁。
+    assert db._initialized_shards == {}
+    assert db._manifest is None
+    assert db._manifest_dirty is False
+    _ = backup_copy

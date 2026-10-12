@@ -517,17 +517,10 @@ class AliasStore[OpsT: OpsFactory]:
     def reset_runtime_state(self) -> None:
         """清空内存态（schema 初始化标记、manifest 缓存、flush 任务）。
 
-        分片文件被物理删除后必须调用，否则会沿用指向已失效 inode 的标记。
-
-        这里刻意触碰物理 store 的私有实现细节：这些字段由 SegmentStore 独占
-        维护，alias 层没有、也不应该有对应状态，transparent 透传是唯一入口。
-        结构化的 Protocol 无法绕开 reportPrivateUsage（作用域按声明类判定），
-        故在此显式豁免这四处直接访问。
+        分片文件被物理替换/删除后必须调用，否则会沿用指向已失效内容的标记。
+        实现在物理 store 上（SegmentStore.reset_runtime_state），alias 只转发。
         """
-        self._store._initialized_shards.clear()  # type: ignore[attr-defined]
-        self._store._manifest = None  # type: ignore[attr-defined]
-        self._store._manifest_dirty = False  # type: ignore[attr-defined]
-        self._store._manifest_flush_task = None  # type: ignore[attr-defined]
+        self._store.reset_runtime_state()
 
     def shard_health(self) -> list[dict[str, JsonValue]]:
         return self._store.shard_health()

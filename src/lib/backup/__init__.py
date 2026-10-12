@@ -14,6 +14,7 @@ from .registry import (
     ensure_backup_database_registrations_loaded,
     get_registered_backup_databases,
     register_backup_database,
+    reset_registered_database_runtime_states,
 )
 
 __all__ = [
@@ -28,4 +29,5 @@ __all__ = [
     "get_registered_backup_databases",
     "register_backup_callback",
     "register_backup_database",
+    "reset_registered_database_runtime_states",
 ]

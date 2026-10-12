@@ -273,6 +273,14 @@ class BaseDB(ABC):
     async def init(self, base: type[DeclarativeBase]) -> None:
         await self.init_schema(base)
 
+    def reset_runtime_state(self) -> None:
+        """清空进程内派生状态；备份恢复后由公共层统一调用。
+
+        默认空实现（单文件库没有分片内存态）；分片库覆盖它以清除 schema 初始化
+        标记与 manifest 缓存——恢复是**就地覆盖**文件（copy2 保留 inode），
+        文件身份标记会误命中缓存，导致补丁不重放、manifest 停留在恢复前的状态。
+        """
+
     def iter_backup_sources(self) -> list[BackupSource]:
         return []
 
@@ -407,6 +415,18 @@ class SegmentStore(BaseDB):
     @property
     def manifest_path(self) -> Path:
         return self.base_dir / f"{self.prefix}_manifest.json"
+
+    def reset_runtime_state(self) -> None:
+        """清空分片内存态；备份恢复后由公共层统一调用。
+
+        恢复是就地覆盖文件（copy2 保留 inode），而 `_initialized_shards` 按
+        (st_dev, st_ino) 判断「schema 已建」——身份不变即误命中缓存，补丁不会
+        在恢复后的内容上重放；manifest 缓存同理停留在恢复前。必须整体复位。
+        """
+        self._initialized_shards.clear()
+        self._manifest = None
+        self._manifest_dirty = False
+        self._manifest_flush_task = None
 
     @property
     def hydrate_dir(self) -> Path:

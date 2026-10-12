@@ -39,6 +39,17 @@ def get_registered_backup_databases() -> tuple[BaseDB, ...]:
     return tuple(_registered_databases)
 
 
+def reset_registered_database_runtime_states() -> None:
+    """备份恢复后复位全部已注册库的进程内派生状态。
+
+    恢复是就地覆盖文件（copy2 保留 inode）：分片库的 schema 初始化标记按
+    (st_dev, st_ino) 判断，身份不变即误命中缓存——补丁不会在恢复出的旧内容上
+    重放，manifest 也停留在恢复前。这里统一复位，调用方无需知道有哪些库。
+    """
+    for database in tuple(_registered_databases):
+        database.reset_runtime_state()
+
+
 def ensure_backup_database_registrations_loaded() -> None:
     for module_name, required in _iter_registration_modules():
         _import_registration_module(module_name, required=required)
