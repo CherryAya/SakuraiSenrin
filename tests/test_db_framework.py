@@ -2250,3 +2250,44 @@ async def test_atomic_session_revives_sealed_shard_before_attach(
         conn.close()
     # 关键断言：旧行（t1）与新行（t2）在同一分片里，没有影子库分裂。
     assert rows == ["t1", "t2"]
+
+
+@pytest.mark.asyncio
+async def test_manifest_tmp_path_is_unique_per_writer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """回归：manifest 落盘的临时文件名必须按写者唯一。
+
+    主进程与 cron 子进程（以及线程池里的多个写者）可能同时落盘；固定名
+    ".json.tmp" 会让两边互踩——A 写完 B 截断，A 的 os.replace 再把 B 的半截
+    内容搬到正式路径，manifest 从此损坏（读回抛 JSON 异常，旁路状态失效）。
+    """
+    from src.lib.db import connectors as connectors_module
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
+    monkeypatch.setattr(
+        connectors_module,
+        "get_current_time",
+        lambda: arrow.get("2026-09-01 12:00:00+08:00").int_timestamp,
+    )
+
+    db = EventStore(namespace="framework_manifest_unique", prefix="events", fmt="%Y_%m")
+    await db.init_schema(_ShardBase)
+
+    recorded: list[str] = []
+    real_replace = os.replace
+
+    def _recording_replace(src: object, dst: object) -> None:
+        recorded.append(str(src))
+        real_replace(src, dst)
+
+    monkeypatch.setattr(connectors_module.os, "replace", _recording_replace)
+
+    await db.flush_manifest()
+    await asyncio.to_thread(db._write_manifest_atomic)
+
+    assert len(recorded) == 2
+    # 两次写入（不同线程）必须使用不同的临时路径。
+    assert recorded[0] != recorded[1], f"临时名冲突: {recorded}"
+    assert all(path.endswith(".tmp") for path in recorded)

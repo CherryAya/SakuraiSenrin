@@ -20,6 +20,7 @@ import os
 from pathlib import Path
 import sqlite3
 from typing import cast
+import uuid
 
 import arrow
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
@@ -592,9 +593,17 @@ class SegmentStore(BaseDB):
     def _write_manifest_atomic(self) -> None:
         manifest = self._load_manifest()
         target = self.manifest_path
-        tmp_path = target.with_suffix(".json.tmp")
-        tmp_path.write_text(manifest.to_json(), encoding="utf-8")
-        os.replace(tmp_path, target)
+        payload = manifest.to_json()
+        # 临时名必须唯一：主进程与子进程（cron worker）可能同时落盘，固定的
+        # ".json.tmp" 会让两边互踩——A 写完 B 截断，A 的 os.replace 再把 B 的
+        # 半截内容搬到正式路径，manifest 从此损坏（读回抛异常）。用 uuid 而非
+        # pid+tid：线程池可能复用同一线程，同类写者仍会撞名。
+        tmp_path = target.with_suffix(f".json.{uuid.uuid4().hex}.tmp")
+        try:
+            tmp_path.write_text(payload, encoding="utf-8")
+            os.replace(tmp_path, target)
+        finally:
+            tmp_path.unlink(missing_ok=True)
 
     def _save_manifest(self) -> None:
         """标记 manifest 脏，并安排一次去抖落盘。
