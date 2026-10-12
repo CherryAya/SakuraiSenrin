@@ -2056,3 +2056,62 @@ async def test_ensure_budget_rechecks_warm_state_under_lock(
     async with db.read_session(time_ctx=april) as session:
         values = (await session.execute(select(_ShardModel.value))).scalars().all()
     assert list(values) == ["original"]
+
+
+@pytest.mark.asyncio
+async def test_atomic_write_works_after_production_init_sequence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """回归：走完生产启动顺序后，跨库原子写必须仍然可用。
+
+    生产启动是 `init_db()`（把 core/log/snapshot 打开并常驻连接池），此后
+    封禁/改名/审批等走 `system_atomic_session`。SQLite 不允许在存在其它连接时
+    改变 journal_mode，因此若 init_db 先把这些库开成 WAL，原子路径再切 DELETE
+    必然 `database is locked`——此前所有跨库原子写静默失败。
+
+    既有测试没抓到，是因为各自用独立临时目录且很少在同一目录上先 init_db
+    再原子写。本用例刻意复刻「同一目录、先 init_db、后原子写」的顺序。
+    """
+    from src.lib.db import connectors as connectors_module
+    from src.lib.db import manager as manager_module
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
+    monkeypatch.setattr(
+        connectors_module,
+        "get_current_time",
+        lambda: arrow.get("2026-10-07 12:00:00+08:00").int_timestamp,
+    )
+
+    # 干净的登记状态（其他用例可能已登记过别的根目录）。
+    manager = manager_module.db_manager
+    monkeypatch.setattr(manager, "_rollback_journal_dirs", [])
+    # 全新根目录对应全新引擎；确保池里没有旧根目录的引擎。
+    await manager.dispose_all()
+
+    from src.services.db import init_db
+
+    await init_db()
+
+    # init_db 之后三个库就必须已经是 DELETE（不是等到原子时才切）。
+    for name in ("core_db/core.db",):
+        conn = sqlite3.connect(tmp_path / name)
+        try:
+            mode = str(conn.execute("PRAGMA journal_mode").fetchone()[0]).lower()
+        finally:
+            conn.close()
+        assert mode == "delete", f"{name} 应为 delete，实际 {mode}"
+
+    # 关键断言：生产顺序下的原子写必须成功（此前这里是 database is locked）。
+    from src.database.core.consts import Permission
+    from src.database.core.ops import UserOps
+    from src.lib.db.atomic import system_atomic_session
+    from src.services.db import bind_cross_store_schemas
+
+    bind_cross_store_schemas()
+    async with system_atomic_session() as session:
+        await UserOps(session).add_user(
+            user_id="u-init-seq",
+            user_name="InitSeq",
+            permission=Permission.NORMAL,
+        )

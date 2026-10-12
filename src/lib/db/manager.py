@@ -7,7 +7,7 @@ Description: db 管理器
 """
 
 import asyncio
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -36,6 +36,36 @@ class DatabaseManager:
         self._engines: dict[str, AsyncEngine] = {}
         self._session_factories: dict[str, async_sessionmaker[AsyncSession]] = {}
         self._lock = asyncio.Lock()
+        # 与跨库原子事务（atomic.py）的协调，见 register_rollback_journal_dir。
+        self._rollback_journal_dirs: list[Path] = []
+
+    def register_rollback_journal_dir(self, directory: Path) -> None:
+        """登记「必须保持 rollback journal」的库目录（跨库事务参与者）。
+
+        参与跨库原子事务的库必须常驻 rollback journal（DELETE）：SQLite 只在
+        rollback journal 下用 super-journal 提供跨 attached database 的原子
+        提交，WAL 模式下跨文件 commit 在崩溃时会撕裂。而 journal_mode 是文件
+        属性，**存在其它连接时不允许切换**——所以「先用 WAL 打开、等 ATTACH
+        时再切 DELETE」必然失败：本管理器的连接池常驻句柄，原子路径的
+        `PRAGMA journal_mode=DELETE` 每次都得到 `database is locked`，全部跨库
+        原子写（封禁/改名/审批……）静默失败。
+
+        因此这些库从第一次打开起就必须按本登记选择 DELETE。必须在任何连接
+        建立之前调用（生产唯一入口是 services.db.init_db）；重复登记幂等。
+
+        按目录（而非单文件）登记：log/snapshot 是按月分片的，每月新分片都会
+        经由本管理器打开。
+        """
+        resolved = Path(directory).resolve()
+        if resolved not in self._rollback_journal_dirs:
+            self._rollback_journal_dirs.append(resolved)
+
+    def _journal_mode_for(self, full_path: str) -> str:
+        resolved = Path(full_path).resolve()
+        for directory in self._rollback_journal_dirs:
+            if resolved.is_relative_to(directory):
+                return "DELETE"
+        return "WAL"
 
     @staticmethod
     def _engine_key(full_path: str) -> str:
@@ -49,19 +79,30 @@ class DatabaseManager:
         """
         return f"sqlite+aiosqlite:///{Path(full_path).resolve()}"
 
-    def _init_sqlite_pragma(
+    def _make_pragma_listener(
         self,
-        dbapi_connection: DBAPIConnection,
-        connection_record: ConnectionPoolEntry,
-    ) -> None:
-        _ = connection_record
-        cursor = dbapi_connection.cursor()
-        cursor.execute("PRAGMA journal_mode=WAL")
-        cursor.execute("PRAGMA synchronous=NORMAL")
-        cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.execute("PRAGMA busy_timeout=5000")
-        cursor.execute(f"PRAGMA mmap_size={256 * 1024 * 1024}")
-        cursor.close()
+        full_path: str,
+    ) -> Callable[[DBAPIConnection, ConnectionPoolEntry], None]:
+        """生成本引擎的连接初始化钩子（journal 模式按库决定）。
+
+        钩子按引擎闭包捕获库路径：连接池按库复用连接，PRAGMA 必须在每条连接
+        建立时设置，且只对当前库生效。
+        """
+
+        def _listener(
+            dbapi_connection: DBAPIConnection,
+            connection_record: ConnectionPoolEntry,
+        ) -> None:
+            _ = connection_record
+            cursor = dbapi_connection.cursor()
+            cursor.execute(f"PRAGMA journal_mode={self._journal_mode_for(full_path)}")
+            cursor.execute("PRAGMA synchronous=NORMAL")
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.execute("PRAGMA busy_timeout=5000")
+            cursor.execute(f"PRAGMA mmap_size={256 * 1024 * 1024}")
+            cursor.close()
+
+        return _listener
 
     @staticmethod
     def _resolve_sql_echo() -> bool:
@@ -70,7 +111,8 @@ class DatabaseManager:
         except ValueError:
             return False
 
-    async def _ensure_engine(self, url: str) -> None:
+    async def _ensure_engine(self, full_path: str) -> None:
+        url = self._engine_key(full_path)
         if url in self._session_factories:
             return
 
@@ -85,7 +127,11 @@ class DatabaseManager:
             engine = engine.execution_options(
                 schema_translate_map=_standalone_schema_map(),
             )
-            event.listen(engine.sync_engine, "connect", self._init_sqlite_pragma)
+            event.listen(
+                engine.sync_engine,
+                "connect",
+                self._make_pragma_listener(full_path),
+            )
 
             async with engine.begin() as conn:
                 await conn.execute(text("SELECT 1"))
@@ -123,7 +169,7 @@ class DatabaseManager:
     ) -> AsyncGenerator[AsyncSession, None]:
         url = self._engine_key(full_path)
         if url not in self._session_factories:
-            await self._ensure_engine(url)
+            await self._ensure_engine(full_path)
         factory = self._session_factories[url]
         async with factory() as sess:
             try:
