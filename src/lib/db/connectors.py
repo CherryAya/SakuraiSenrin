@@ -494,6 +494,38 @@ class SegmentStore(BaseDB):
         )
         return self._get_file_paths(shard_key)[0]
 
+    @asynccontextmanager
+    async def hold_online_for_attach(
+        self,
+        moment: MomentLike,
+    ) -> AsyncGenerator[Path, None]:
+        """在持分片锁的前提下确保分片在线，并让锁覆盖整个 ATTACH 会话。
+
+        ATTACH 直接打开文件路径：分片被 seal（只剩 .zst）时 SQLite 会**凭空
+        建出空库**并在其中完成本次事务——审计/快照从此写进影子库，与归档里
+        的旧行分裂；换月归档时影子空壳还会覆盖该月 .zst（整月数据永久丢失）。
+        因此原子路径必须先经分片层把目标唤醒/建库，再把它交给 ATTACH。
+
+        会话期间继续持锁（与 read/write_session 同款保证）：否则归档任务可
+        把文件 rename 走，ATTACH 的连接会指向已消失的 inode（Windows）或与
+        重启路径竞态。
+        """
+        local = self._to_local(
+            moment if isinstance(moment, arrow.Arrow) else arrow.get(moment)
+        )
+        shard_key = self._get_shard_key(
+            local.replace(day=1, hour=0, minute=0, second=0, microsecond=0).datetime,
+        )
+        async with self._shard_lock(shard_key):
+            await self._ensure_shard_online(
+                shard_key,
+                cold_policy=ColdPolicy.HYDRATE,
+                create_if_missing=True,
+            )
+            await self._initialize_shard_schema(shard_key)
+            db_path, _ = self._get_file_paths(shard_key)
+            yield db_path
+
     def _manifest_entry(
         self,
         shard_key: str,

@@ -1372,7 +1372,18 @@ async def test_atomic_session_uses_rollback_journal_for_cross_file_atomicity(
     bind_cross_store_schemas()
 
     from src.database.core.ops import UserOps
+    from src.database.instances import core_db, log_db, snapshot_db
     from src.lib.db.atomic import system_atomic_session
+
+    # 真实启动会先登记跨库事务参与者必须用 rollback journal（见
+    # services.db.register_cross_store_journal_modes）。分片一旦被管理器以
+    # WAL 打开过就再也切不回 DELETE，因此这一步不能省。
+    from src.lib.db.manager import db_manager
+
+    monkeypatch.setattr(db_manager, "_rollback_journal_dirs", [])
+    db_manager.register_rollback_journal_dir(core_db.base_dir)
+    db_manager.register_rollback_journal_dir(log_db.base_dir)
+    db_manager.register_rollback_journal_dir(snapshot_db.base_dir)
 
     async with system_atomic_session() as session:
         await UserOps(session).add_user(
@@ -2159,3 +2170,83 @@ async def test_watchdog_timeout_does_not_retry_callback() -> None:
 
     stuck.set()
     await writer.close()
+
+
+@pytest.mark.asyncio
+async def test_atomic_session_revives_sealed_shard_before_attach(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """回归：当月分片被 seal 后，跨库原子写必须先唤醒它再 ATTACH。
+
+    旧行为：`system_atomic_session` 直接拿 `shard_file_for()` 的路径 ATTACH。
+    分片被体积闸门 force seal（只剩 .zst）时，SQLite 会**凭空建出空库**并在
+    其中完成本次事务——审计/快照从此写进影子库，与归档里的旧行分裂；换月
+    归档时影子空壳还会覆盖该月 .zst，旧数据永久丢失。
+    """
+    from src.lib.db import connectors as connectors_module
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
+    monkeypatch.setattr(
+        connectors_module,
+        "get_current_time",
+        lambda: arrow.get("2026-10-15 12:00:00+08:00").int_timestamp,
+    )
+
+    from src.database.core.consts import Permission
+    from src.database.core.ops import UserOps
+
+    # 生产启动会登记参与者库用 rollback journal（见 services.db）。
+    from src.database.instances import core_db, log_db, snapshot_db
+    from src.database.log.consts import AuditAction, AuditCategory, AuditContext
+    from src.database.log.ops import AuditLogOps
+    from src.database.log.tables import LogBase
+    from src.lib.db.atomic import system_atomic_session
+    from src.lib.db.manager import db_manager
+    from src.services.db import bind_cross_store_schemas
+
+    monkeypatch.setattr(db_manager, "_rollback_journal_dirs", [])
+    for store in (core_db, log_db, snapshot_db):
+        db_manager.register_rollback_journal_dir(store.base_dir)
+    bind_cross_store_schemas()
+    await log_db.store.init(LogBase)
+
+    # 1) 正常写入一条审计日志。
+    async with system_atomic_session() as session:
+        await UserOps(session).add_user(
+            user_id="u1", user_name="U1", permission=Permission.NORMAL
+        )
+        await AuditLogOps(session).create_audit_log(
+            target_id="t1",
+            context_type=AuditContext.USER,
+            category=AuditCategory.PERMISSION,
+            action=AuditAction.GRANT,
+        )
+
+    # 2) 复刻体积闸门 force seal 当月 log 分片。
+    log_shard = log_db.store._get_file_paths("202610")[0]
+    await db_manager.dispose(str(log_shard))
+    outcome, _ = await log_db.store._archive_shard("202610", force=True)
+    from src.lib.db.connectors import SegmentArchiveOutcome
+
+    assert outcome == SegmentArchiveOutcome.ARCHIVED
+    assert not log_shard.exists()
+
+    # 3) 再走一次原子写：必须把归档唤醒回来，而不是建空影子库。
+    async with system_atomic_session() as session:
+        await AuditLogOps(session).create_audit_log(
+            target_id="t2",
+            context_type=AuditContext.USER,
+            category=AuditCategory.PERMISSION,
+            action=AuditAction.GRANT,
+        )
+
+    conn = sqlite3.connect(log_shard)
+    try:
+        rows = sorted(
+            row[0] for row in conn.execute("SELECT target_id FROM sys_audit_log")
+        )
+    finally:
+        conn.close()
+    # 关键断言：旧行（t1）与新行（t2）在同一分片里，没有影子库分裂。
+    assert rows == ["t1", "t2"]

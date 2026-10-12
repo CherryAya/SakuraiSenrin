@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncGenerator, Sequence
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 
 from sqlalchemy import event
@@ -245,6 +245,10 @@ async def system_atomic_session(
 
     分片目标按 ``moment`` 的业务时区在运行期解析，因此月末跨零点写入也不会
     写到错误的分片。
+
+    ATTACH 目标必须经分片层「持锁保活」（hold_online_for_attach）后再交出：
+    裸路径 ATTACH 在分片被 seal（只剩 .zst）时会凭空建出空库，审计/快照从此
+    写进影子库并与归档分裂；持锁还保证会话期间归档不会把文件挪走。
     """
     from src.database.core.tables import CoreBase
     from src.database.instances import core_db, log_db, snapshot_db
@@ -255,19 +259,26 @@ async def system_atomic_session(
     bind_cross_store_schemas()
 
     moment = get_current_time() if moment is None else moment
-    log_path = log_db.shard_file_for(moment)
-    attached = [log_path]
-    bases: list[type[DeclarativeBase]] = [LogBase]
-    if with_snapshot:
-        attached.append(snapshot_db.shard_file_for(moment))
-        bases.append(SnapshotBase)
+    async with AsyncExitStack() as stack:
+        log_path = await stack.enter_async_context(
+            log_db.store.hold_online_for_attach(moment)
+        )
+        attached = [log_path]
+        bases: list[type[DeclarativeBase]] = [LogBase]
+        if with_snapshot:
+            attached.append(
+                await stack.enter_async_context(
+                    snapshot_db.store.hold_online_for_attach(moment)
+                )
+            )
+            bases.append(SnapshotBase)
 
-    async with atomic_session(
-        primary_path=core_db.db_path,
-        attached_paths=attached,
-        schema_bases=[CoreBase, *bases],
-    ) as session:
-        yield session
+        async with atomic_session(
+            primary_path=core_db.db_path,
+            attached_paths=attached,
+            schema_bases=[CoreBase, *bases],
+        ) as session:
+            yield session
 
 
 __all__ = [
