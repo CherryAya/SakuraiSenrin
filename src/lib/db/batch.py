@@ -23,6 +23,13 @@ if TYPE_CHECKING:
 
 from .alias import AliasStore, OpsFactory
 
+# flush 回调的单次执行上限（秒）。回调链路上任一 await 永不返回（锁泄漏、
+# 阻塞 IO 卡死、外部依赖无超时）都会让 worker 永久楔死：此后队列无界积压、
+# 查询路径的 flush_now/drain 一并挂起、关机 drain 也卡住——只有重启能恢复。
+# 有看门狗后，超时被取消并走「失败重试 -> 死信」的既有降级路径：内存有界、
+# 状态可见、无需重启。
+DEFAULT_FLUSH_TIMEOUT_SECONDS = 30.0
+
 
 @dataclass(slots=True, frozen=True)
 class DeadLetterRecord[T]:
@@ -49,6 +56,11 @@ class BatchWriterHealth:
     total_failed_items: int = 0
     # 因内存队列上界被丢弃的条数（已落库的记录不受影响）
     dropped_dead_letters: int = 0
+    # flush 回调超时（看门狗触发）的次数。持续增长说明回调链路卡死，
+    # 需要排查被调方为何不返回。
+    flush_timeouts: int = 0
+    # 当前待落盘条目数（队列 + 内存缓冲），供运维观察积压趋势
+    pending_items: int = 0
 
     @property
     def is_degraded(self) -> bool:
@@ -73,6 +85,9 @@ class BufferedWriterConfig[T]:
     max_retries: int = 3
     retry_backoff: float = 0.2
     dedupe_key: Callable[[T], str] | None = None
+    # 单次 flush 回调的执行上限（秒）。None 表示不设看门狗（仅用于测试或
+    # 明确接受永久楔死风险的场景）；生产 writer 一律保留默认值。
+    flush_timeout: float | None = DEFAULT_FLUSH_TIMEOUT_SECONDS
 
 
 class BatchWriter[T]:
@@ -99,6 +114,7 @@ class BatchWriter[T]:
         dedupe_key: Callable[[T], str] | None = None,
         trace_persist: bool = True,
         max_dead_letters: int = 500,
+        flush_timeout: float | None = DEFAULT_FLUSH_TIMEOUT_SECONDS,
     ) -> None:
         self.queue: asyncio.Queue[T] = asyncio.Queue()
         self.flush_callback = flush_callback
@@ -108,6 +124,7 @@ class BatchWriter[T]:
             max_retries=max_retries,
             retry_backoff=retry_backoff,
             dedupe_key=dedupe_key,
+            flush_timeout=flush_timeout,
         )
         self._task: asyncio.Task[None] | None = None
         self._worker_name: str | None = None
@@ -119,6 +136,7 @@ class BatchWriter[T]:
             or getattr(self.flush_callback, "__name__", "Unknown"),
         )
         self._buffer: list[T] = []
+        self._inflight_items = 0
         self._idle_event = asyncio.Event()
         self._idle_event.set()
         self._flush_lock = asyncio.Lock()
@@ -138,7 +156,11 @@ class BatchWriter[T]:
     @property
     def health(self) -> BatchWriterHealth:
         """返回运行态快照（含死信统计），供运维脚本与启动自检读取。"""
-        return replace(self._health)
+        snapshot = replace(self._health)
+        snapshot.pending_items = (
+            self.queue.qsize() + len(self._buffer) + self._inflight_items
+        )
+        return snapshot
 
     def pop_dead_letters(self) -> tuple[DeadLetterRecord[T], ...]:
         """取出并清空死信，供调用方上报或补偿。"""
@@ -272,6 +294,46 @@ class BatchWriter[T]:
             last_flush = loop.time()
             self._mark_idle_if_needed()
 
+    async def _invoke_flush_callback(self, batch: list[T]) -> None:
+        """调用 flush 回调，带可选看门狗超时。
+
+        回调链路上任一 await 永不返回都会让 worker 永久楔死（`_flush_lock`
+        被永久持有、`_ensure_worker_running` 见任务未结束而不重建），此后队列
+        无界积压、查询侧 flush_now/drain 一并挂起，只有重启才能恢复。超时后
+        wait_for 会取消回调协程并抛 TimeoutError，走既有「重试 -> 死信」降级
+        路径：内存有界、状态可见、worker 继续服务。
+
+        已知边界：若回调内部是同步阻塞（占满事件循环），wait_for 的定时器
+        也发不出去——那种情况需要调用方自己把阻塞操作挪进线程池。
+        """
+        timeout = self.config.flush_timeout
+        if timeout is None:
+            await self.flush_callback(batch)
+            return
+        try:
+            await asyncio.wait_for(self.flush_callback(batch), timeout=timeout)
+        except TimeoutError:
+            self._health.flush_timeouts += 1
+            logger.error(
+                f"BatchWriter {self.worker_name} flush 回调超过 {timeout:g}s "
+                f"未返回，看门狗已取消本次调用（将进入重试/死信路径）"
+            )
+            log_trace_event(
+                event_name="flush_timeout",
+                source_kind="batch_writer",
+                component=self.worker_name,
+                status="timeout",
+                summary=(
+                    f"BatchWriter {self.worker_name} flush watchdog cancelled "
+                    f"a stuck callback."
+                ),
+                level="ERROR",
+                batch_size=len(batch),
+                payload_json={"flush_timeout_seconds": timeout},
+                persist=self._trace_persist,
+            )
+            raise
+
     async def _flush_buffer(self) -> FlushResult[T]:
         async with self._flush_lock:
             if not self._buffer:
@@ -279,25 +341,32 @@ class BatchWriter[T]:
 
             batch = self._normalize_batch(self._buffer)
             self._buffer = []
-            self._is_flushing = True
             last_error: Exception | None = None
             trace_id = new_trace_id(self.worker_name)
 
-            log_trace_event(
-                event_name="flush_started",
-                source_kind="batch_writer",
-                component=self.worker_name,
-                status="started",
-                summary=f"BatchWriter {self.worker_name} flush started.",
-                trace_id=trace_id,
-                batch_size=len(batch),
-                persist=self._trace_persist,
-            )
+            # 在飞批次计数：pending_items 必须覆盖「已出缓冲、尚未入账」的这段，
+            # 否则回调卡住时（最需要观察积压的时刻）计数反而归零。
+            self._inflight_items = len(batch)
 
+            # _is_flushing 的置位与复位必须同在 try 内：此前置位在 try 之前，
+            # 且中间还夹着 log_trace_event——一旦该调用抛错，finally 不执行，
+            # _is_flushing 永久为 True，后续 flush_now 全部楔死。
             try:
+                self._is_flushing = True
+                log_trace_event(
+                    event_name="flush_started",
+                    source_kind="batch_writer",
+                    component=self.worker_name,
+                    status="started",
+                    summary=f"BatchWriter {self.worker_name} flush started.",
+                    trace_id=trace_id,
+                    batch_size=len(batch),
+                    persist=self._trace_persist,
+                )
+
                 for attempts in range(1, self.config.max_retries + 1):
                     try:
-                        await self.flush_callback(list(batch))
+                        await self._invoke_flush_callback(list(batch))
                         self._health.consecutive_failures = 0
                         self._health.last_flush_at = get_current_time()
                         self._health.last_flush_items = len(batch)
@@ -395,6 +464,7 @@ class BatchWriter[T]:
                 )
             finally:
                 self._is_flushing = False
+                self._inflight_items = 0
                 self._mark_idle_if_needed()
 
 

@@ -968,6 +968,160 @@ async def test_batch_writer_dead_letter_queue_is_bounded() -> None:
 
 
 @pytest.mark.asyncio
+async def test_batch_writer_watchdog_unwedges_stuck_flush_callback() -> None:
+    """回归（M4）：flush 回调永不返回时，看门狗必须让 writer 继续服务。
+
+    旧行为：worker 永久卡在回调上（`_flush_lock` 永久持有、worker 未结束
+    不会被重建），队列无界积压、flush_now/drain 一并挂起，只有重启能恢复。
+    现在超时被取消 -> 重试 -> 死信，内存有界、后续写入正常。
+
+    所有等待都套 asyncio.wait_for 上限：看门狗失效时本用例必须以断言失败
+    收场，而不是把测试进程挂死（挂死本身就是旧行为，无法作为回归信号）。
+    """
+    stuck = asyncio.Event()
+
+    async def _stuck(batch: list[int]) -> None:
+        _ = batch
+        # 一直卡住，直到测试放行——覆盖全部重试尝试。
+        await stuck.wait()
+
+    writer = BatchWriter[int](
+        flush_callback=_stuck,
+        batch_size=10,
+        flush_interval=0.05,
+        max_retries=2,
+        retry_backoff=0.0,
+        flush_timeout=0.1,
+    )
+
+    await writer.add(1)
+    # 两次尝试都被看门狗取消 -> 进入死信；drain 重抛最后一次 TimeoutError。
+    # wait_for 5s 是测试自身的兜底：看门狗失效时 drain 永不返回。
+    with pytest.raises(TimeoutError):
+        await asyncio.wait_for(writer.drain(), timeout=5)
+
+    health = writer.health
+    assert health.flush_timeouts == 2
+    assert health.dead_letter_batches == 1
+    assert writer.dead_letters[0].batch == (1,)
+
+    # writer 未被楔死：放行后后续写入正常落盘。
+    stuck.set()
+    await writer.add(2)
+    await asyncio.wait_for(writer.drain(), timeout=5)
+    assert writer.health.total_flushed_items == 1
+
+    await writer.close()
+
+
+@pytest.mark.asyncio
+async def test_batch_writer_flush_timeout_none_disables_watchdog() -> None:
+    """flush_timeout=None 显式关闭看门狗（仅测试/明确接受的场景使用）。"""
+
+    async def _ok(batch: list[int]) -> None:
+        _ = batch
+
+    writer = BatchWriter[int](
+        flush_callback=_ok,
+        batch_size=10,
+        flush_interval=0.05,
+        flush_timeout=None,
+    )
+    assert writer.config.flush_timeout is None
+
+    await writer.add(1)
+    await writer.drain()
+    assert writer.health.total_flushed_items == 1
+    assert writer.health.flush_timeouts == 0
+    await writer.close()
+
+
+@pytest.mark.asyncio
+async def test_batch_writer_health_exposes_pending_depth() -> None:
+    """health.pending_items 必须覆盖队列、缓冲与在飞批次三个阶段。
+
+    在飞计数是刻意补上的：回调卡住时（最需要观察积压的时刻）批次已离开
+    缓冲、尚未入账，只算 queue+buffer 会显示为 0，运维会误判为「没有积压」。
+    """
+    block = asyncio.Event()
+    started = asyncio.Event()
+
+    async def _slow(batch: list[int]) -> None:
+        _ = batch
+        started.set()
+        await block.wait()
+
+    writer = BatchWriter[int](
+        flush_callback=_slow,
+        batch_size=1000,
+        flush_interval=0.05,
+        flush_timeout=None,
+    )
+    try:
+        await writer.add_all([1, 2, 3])
+        # 等 worker 把批次取进回调——此后批次处于「在飞」状态。
+        await asyncio.wait_for(started.wait(), timeout=5)
+        assert writer.health.pending_items == 3
+
+        block.set()
+        await asyncio.wait_for(writer.drain(), timeout=5)
+        assert writer.health.pending_items == 0
+    finally:
+        # 无论断言在哪里失败都要放行回调并关停 worker，
+        # 否则残留的卡死 worker 会把测试进程拖到永久挂起。
+        block.set()
+        await writer.close()
+
+
+@pytest.mark.asyncio
+async def test_batch_writer_is_flushing_resets_when_trace_logging_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """回归：`_is_flushing` 置位必须在 try 内，异常不得让它永久为 True。
+
+    旧实现把置位放在 try 之前，中间还夹着 log_trace_event；一旦该调用抛错，
+    finally 不执行，后续所有 flush_now 永久楔死（实测复现）。
+    """
+
+    async def _ok(batch: list[int]) -> None:
+        _ = batch
+
+    writer = BatchWriter[int](
+        flush_callback=_ok,
+        batch_size=1,
+        flush_interval=0.05,
+        flush_timeout=None,
+    )
+
+    from src.lib.db import batch as batch_module
+
+    real_log = batch_module.log_trace_event
+    fired = {"count": 0}
+
+    def _flaky_log(*args: object, **kwargs: object) -> str:
+        # 只让 flush_started 这一次抛错：它正是在旧实现里位于「置位之后、
+        # try 之前」的那次调用。
+        if kwargs.get("event_name") == "flush_started" and fired["count"] == 0:
+            fired["count"] += 1
+            raise RuntimeError("trace sink exploded")
+        return real_log(*args, **kwargs)
+
+    monkeypatch.setattr(batch_module, "log_trace_event", _flaky_log)
+
+    await writer.add(1)
+    # wait_for 兜底：旧行为下楔死表现为挂起，这里必须以失败收场。
+    with pytest.raises(RuntimeError, match="trace sink exploded"):
+        await asyncio.wait_for(writer.flush_now(), timeout=5)
+
+    # 关键断言：标志位已复位，writer 未楔死。
+    assert writer._is_flushing is False
+    await writer.add(2)
+    await asyncio.wait_for(writer.drain(), timeout=5)
+    assert writer.health.total_flushed_items >= 1
+    await writer.close()
+
+
+@pytest.mark.asyncio
 async def test_dead_letter_persists_and_replays(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
