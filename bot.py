@@ -22,10 +22,12 @@ configure_logging(log_role="app")
 install_message_delivery_hooks()
 
 from src.services.backup_scheduler import install_backup_scheduler
+from src.services.shard_archiver import install_shard_archiver_scheduler
 
 driver = nonebot.get_driver()
 driver.register_adapter(OneBotV11Adapter)
 install_backup_scheduler()
+install_shard_archiver_scheduler()
 
 
 @driver.on_startup
