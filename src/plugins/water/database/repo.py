@@ -106,8 +106,17 @@ class WaterRepository(
 
     @staticmethod
     def _hot_summary_start_date(today_ts: int | None = None) -> int:
-        anchor = arrow.get(today_ts or get_current_time()).floor("day")
-        return int(anchor.shift(days=-(SUMMARY_HOT_WINDOW_DAYS - 1)).format("YYYYMMDD"))
+        # 锚点必须取业务时区（CST）的日界：`arrow.get(int)` 默认按 UTC 解释，
+        # floor("day") 于是在 UTC 取日界。CST 00:00-08:00 期间两者相差一天——
+        # 归档 job（00:35 CST）按 UTC 边界算，读路径 08:00 后又按新边界算，
+        # 热/冷两段的切分点每天漂移一天：边界那天在 08:00 至次日 job 之间
+        # 既不在 core 也没被回填进分片，查询静默漏掉它（约 16.5 小时/天）。
+        anchor = arrow.get(today_ts or get_current_time()).to("Asia/Shanghai")
+        return int(
+            anchor.floor("day")
+            .shift(days=-(SUMMARY_HOT_WINDOW_DAYS - 1))
+            .format("YYYYMMDD")
+        )
 
     @classmethod
     def _is_hot_summary_date(

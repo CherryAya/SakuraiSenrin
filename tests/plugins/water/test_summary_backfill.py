@@ -243,3 +243,56 @@ async def test_summary_shard_receives_backfilled_rows_after_archiver_runs() -> N
             select(func.count()).select_from(WaterArchivedDailySummary)
         )
     assert int(count or 0) == 1
+
+
+def test_hot_window_anchor_is_cst_not_utc() -> None:
+    """回归：热窗边界必须按业务时区（CST）取日界，且在一个 CST 日内不漂移。
+
+    旧实现 `arrow.get(int).floor("day")` 按 UTC 取日界；CST 00:00-08:00 期间
+    UTC 仍在前一天，于是归档 job（00:35 CST）与读路径（08:00 后）对同一业务日
+    使用不同的热窗边界：边界那天在 core 未被 prune、也未被回填进分片，读路径
+    却去分片找它——查询静默漏掉该天约 16.5 小时/天。
+    """
+    from src.plugins.water.database.repo import WaterRepository
+
+    early = arrow.get("2026-07-01 00:35:00+08:00").int_timestamp
+    late = arrow.get("2026-07-01 09:00:00+08:00").int_timestamp
+
+    # 旧实现在 early 给出 20260402（UTC 日界），与新边界相差一天。
+    assert WaterRepository._hot_summary_start_date(early) == 20260403
+    # 同一 CST 日内边界恒定：job 与读路径必须切在同一处。
+    assert WaterRepository._hot_summary_start_date(
+        early
+    ) == WaterRepository._hot_summary_start_date(late)
+
+
+@pytest.mark.asyncio
+async def test_bulk_upsert_summary_chunks_large_batches() -> None:
+    """回归：单次 upsert 超过 SQLite 绑定参数上限时必须自动分块。
+
+    维护脚本默认 `--summary-batch-size 5000`，而 WaterSummaryPayload 有 8 个
+    字段、本机上限 32766 个变量——实测 4096 行即 "too many SQL variables"。
+    ops 层自带分块后，调用方传多大都不会踩上限。
+    """
+    from src.plugins.water.database.instances import water_core_db
+    from src.plugins.water.database.ops import WaterSummaryOps
+
+    payloads = [
+        {
+            "group_id": f"g{idx}",
+            "user_id": f"u{idx}",
+            "record_date": 20260701,
+            "msg_count": 1,
+            "active_hours": 1,
+            "hourly_counts": [0] * 24,
+            "created_at": 1,
+            "updated_at": 1,
+        }
+        for idx in range(9000)
+    ]
+
+    async with water_core_db.session(commit=True) as session:
+        written = await WaterSummaryOps(session).bulk_upsert_summary(payloads)
+
+    # 两次分块（4000 + 4000 + 1000）后全部落库，不报 too many SQL variables。
+    assert written == 9000
