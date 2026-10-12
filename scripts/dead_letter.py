@@ -53,6 +53,7 @@ def _stub_plugin_packages() -> None:
 def _build_handlers() -> dict[str, object]:
     """按 worker_name 收集原 flush 回调，供重放使用。"""
     from src.lib.db.batch import BatchWriter
+    from src.lib.trace_log import get_trace_writer
     from src.plugins.water.database import writers as water_writers
     from src.plugins.wordbank.database import writers as wordbank_writers
     from src.services import writers as core_writers
@@ -62,6 +63,10 @@ def _build_handlers() -> dict[str, object]:
         for value in vars(module).values():
             if isinstance(value, BatchWriter):
                 handlers[value.worker_name] = value.flush_callback
+    # trace writer 是懒建的模块私有实例，上面按模块扫描收不到它；不显式补进来
+    # 会导致 trace 死信永远"无 handler 跳过"、无法重放。
+    trace_writer = get_trace_writer()
+    handlers[trace_writer.worker_name] = trace_writer.flush_callback
     return handlers
 
 

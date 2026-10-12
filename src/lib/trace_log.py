@@ -59,6 +59,17 @@ def _get_trace_writer() -> "BatchWriter[TraceEventLogPayload]":
     return _trace_writer
 
 
+def get_trace_writer() -> "BatchWriter[TraceEventLogPayload]":
+    """返回 trace writer（不存在则创建）。
+
+    供死信重放脚本枚举全部 writer：trace writer 是懒建且此前只存在于模块私有
+    变量里，``vars(module)`` 扫描收不到它，导致 trace 死信永远匹配不到 handler
+    （重放时显示"无重放 handler，暂跳过"）。创建 writer 只构造缓冲器，不会启动
+    后台 worker（那要等首次 add）。
+    """
+    return _get_trace_writer()
+
+
 def _track_trace_task(task: asyncio.Task[None]) -> None:
     _trace_tasks.add(task)
 
@@ -228,6 +239,7 @@ __all__ = [
     "TRACE_PAYLOAD_EXTRA_KEY",
     "configure_logging",
     "flush_trace_logging",
+    "get_trace_writer",
     "log_trace_event",
     "mark_trace_logging_ready",
     "new_trace_id",
