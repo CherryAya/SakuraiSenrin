@@ -25,6 +25,7 @@ def _ensure_pkg(name: str, path: Path) -> None:
 _ensure_pkg("src.plugins.wordbank", ROOT / "src" / "plugins" / "wordbank")
 _ensure_pkg("src.plugins.water", ROOT / "src" / "plugins" / "water")
 
+from src.lib.db.connectors import SegmentArchiveReport
 from src.logger import logger
 from src.plugins.water.database.instances import water_message, water_summary
 from src.plugins.wordbank.database.instances import (
@@ -41,6 +42,8 @@ class _ArchivableStore(Protocol):
 
     @property
     def prefix(self) -> str: ...
+
+    async def run_archiver_task(self) -> "SegmentArchiveReport": ...
 
 
 def parse_args() -> argparse.Namespace:
@@ -68,25 +71,34 @@ async def archive_targets(
     *,
     target: str,
     include_water_summary: bool = False,
-) -> tuple[list[str], list[tuple[str, _ArchivableStore]]]:
+) -> tuple[list[str], list[tuple[str, _ArchivableStore]], list[str]]:
+    """归档指定目标，返回 (完成清单, 供清理用的库, 失败详情)。
+
+    归档巡检返回结构化报告：失败分片必须如实带出（job 层此前只看"调用返回"
+    就报 completed，与主进程归档 job 的契约不一致）。
+    """
     completed: list[str] = []
     stores: list[tuple[str, _ArchivableStore]] = []
+    failures: list[str] = []
+
+    async def _run(label: str, store: _ArchivableStore) -> None:
+        report = await store.run_archiver_task()
+        for failure in report.failures:
+            failures.append(
+                f"{label}/{failure.shard_key}({failure.outcome.value}): "
+                f"{failure.reason}"
+            )
+        completed.append(label)
+        stores.append((label, store))
+
     if target in {"wordbank", "all"}:
-        await wordbank_log_db.run_archiver_task()
-        completed.append("wordbank_logs")
-        stores.append(("wordbank_logs", wordbank_log_db))
-        await wordbank_message_ref_db.run_archiver_task()
-        completed.append("wordbank_message_ref")
-        stores.append(("wordbank_message_ref", wordbank_message_ref_db))
+        await _run("wordbank_logs", wordbank_log_db)
+        await _run("wordbank_message_ref", wordbank_message_ref_db)
     if target in {"water", "all"}:
-        await water_message.run_archiver_task()
-        completed.append("water_message")
-        stores.append(("water_message", water_message))
+        await _run("water_message", water_message)
         if include_water_summary:
-            await water_summary.run_archiver_task()
-            completed.append("water_summary")
-            stores.append(("water_summary", water_summary))
-    return completed, stores
+            await _run("water_summary", water_summary)
+    return completed, stores, failures
 
 
 def cleanup_stale_sidecars(
@@ -115,13 +127,23 @@ async def main() -> None:
         f"include_water_summary={args.include_water_summary} "
         f"cleanup_stale_sidecars={args.cleanup_stale_sidecars}"
     )
-    completed, stores = await archive_targets(
+    completed, stores, failures = await archive_targets(
         target=args.target,
         include_water_summary=args.include_water_summary,
     )
     cleaned: dict[str, int] = {}
     if args.cleanup_stale_sidecars:
         cleaned = await asyncio.to_thread(cleanup_stale_sidecars, stores)
+    if failures:
+        # 失败必须可见：不得再以 completed 成功日志掩盖（运维会据此判断归档
+        # 是否生效）。非零退出码供监控探针直接判别。
+        logger.error(
+            "[archive-event-shards] FAILED "
+            + f"archived={','.join(completed or ['none'])} "
+            + f"failures={len(failures)}: {'; '.join(failures)}"
+            + (f" cleaned={cleaned}" if cleaned else "")
+        )
+        raise SystemExit(1)
     logger.success(
         "[archive-event-shards] completed "
         + ",".join(completed or ["none"])
