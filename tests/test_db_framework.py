@@ -973,7 +973,10 @@ async def test_batch_writer_watchdog_unwedges_stuck_flush_callback() -> None:
 
     旧行为：worker 永久卡在回调上（`_flush_lock` 永久持有、worker 未结束
     不会被重建），队列无界积压、flush_now/drain 一并挂起，只有重启能恢复。
-    现在超时被取消 -> 重试 -> 死信，内存有界、后续写入正常。
+    现在超时被取消 -> 直接死信（不重试），内存有界、后续写入正常。
+
+    超时【不重试】是刻意的：回调内部按分片逐个独立提交，取消时无法得知已
+    提交到哪一步，重试会对已提交分片双写（累加型 upsert 会静默多计）。
 
     所有等待都套 asyncio.wait_for 上限：看门狗失效时本用例必须以断言失败
     收场，而不是把测试进程挂死（挂死本身就是旧行为，无法作为回归信号）。
@@ -982,7 +985,6 @@ async def test_batch_writer_watchdog_unwedges_stuck_flush_callback() -> None:
 
     async def _stuck(batch: list[int]) -> None:
         _ = batch
-        # 一直卡住，直到测试放行——覆盖全部重试尝试。
         await stuck.wait()
 
     writer = BatchWriter[int](
@@ -995,13 +997,14 @@ async def test_batch_writer_watchdog_unwedges_stuck_flush_callback() -> None:
     )
 
     await writer.add(1)
-    # 两次尝试都被看门狗取消 -> 进入死信；drain 重抛最后一次 TimeoutError。
+    # 首次尝试即被看门狗取消 -> 整批进入死信；drain 重抛该 TimeoutError。
     # wait_for 5s 是测试自身的兜底：看门狗失效时 drain 永不返回。
     with pytest.raises(TimeoutError):
         await asyncio.wait_for(writer.drain(), timeout=5)
 
     health = writer.health
-    assert health.flush_timeouts == 2
+    # 只看门狗触发一次：超时后不再重试（防双写），因此不随 max_retries 放大。
+    assert health.flush_timeouts == 1
     assert health.dead_letter_batches == 1
     assert writer.dead_letters[0].batch == (1,)
 
@@ -2115,3 +2118,44 @@ async def test_atomic_write_works_after_production_init_sequence(
             user_name="InitSeq",
             permission=Permission.NORMAL,
         )
+
+
+@pytest.mark.asyncio
+async def test_watchdog_timeout_does_not_retry_callback() -> None:
+    """回归：看门狗超时后回调不得被重试——重试会对已提交分片双写。
+
+    回调（write_batch）按分片逐个独立提交；取消发生时无法得知已提交到哪一步，
+    重试整批会把已提交部分再写一遍。water 的计数是累加型 upsert
+    （msg_count = msg_count + excluded.msg_count），会静默多计；快照类是普通
+    insert，会产生重复行。因此超时后必须直接进死信，且回调只被调用一次。
+    """
+    calls: list[list[int]] = []
+    stuck = asyncio.Event()
+
+    async def _stuck(batch: list[int]) -> None:
+        calls.append(list(batch))
+        await stuck.wait()
+
+    writer = BatchWriter[int](
+        flush_callback=_stuck,
+        batch_size=10,
+        flush_interval=0.05,
+        max_retries=3,  # 故意给多次重试预算
+        retry_backoff=0.0,
+        flush_timeout=0.1,
+    )
+
+    await writer.add(1)
+    with pytest.raises(TimeoutError):
+        await asyncio.wait_for(writer.drain(), timeout=5)
+
+    # 关键断言：回调只被调用一次，未走重试。
+    assert len(calls) == 1
+    assert writer.health.flush_timeouts == 1
+    assert writer.dead_letters[0].attempts == 1
+
+    # 死信保留整批，供关机落库与人工重放。
+    assert writer.dead_letters[0].batch == (1,)
+
+    stuck.set()
+    await writer.close()

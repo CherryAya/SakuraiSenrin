@@ -342,6 +342,9 @@ class BatchWriter[T]:
             batch = self._normalize_batch(self._buffer)
             self._buffer = []
             last_error: Exception | None = None
+            # 真实尝试次数：看门狗超时会提前 break，死信记录若照抄 max_retries
+            # 会误导排查（实际只试了一次）。
+            attempts_made = 0
             trace_id = new_trace_id(self.worker_name)
 
             # 在飞批次计数：pending_items 必须覆盖「已出缓冲、尚未入账」的这段，
@@ -387,6 +390,21 @@ class BatchWriter[T]:
                             attempts=attempts,
                             batch=tuple(batch),
                         )
+                    except TimeoutError as e:
+                        # 看门狗超时：回调被卡过 timeout，**不重试**直接进死信。
+                        # 回调内部多为「按分片逐个独立提交」（write_batch），取消
+                        # 发生时无法得知已提交到哪一步：可能第一个分片已落库、第二
+                        # 个卡住。重试会把已提交部分再写一遍——water 的计数是累加
+                        # 型 upsert（msg_count + excluded），会静默双计。
+                        # 死信保留整批（关机落库、可人工重放），比冒双计风险更稳。
+                        last_error = e
+                        attempts_made = attempts
+                        logger.error(
+                            f"BatchWriter {self.worker_name} flush 超时"
+                            f"（attempt {attempts}）：不重试以避免对已提交分片双写，"
+                            f"整批转入死信"
+                        )
+                        break
                     except Exception as e:
                         last_error = e
                         logger.error(
@@ -411,14 +429,18 @@ class BatchWriter[T]:
                         )
                         if attempts < self.config.max_retries:
                             await asyncio.sleep(self.config.retry_backoff * attempts)
+                        attempts_made = attempts
 
                 assert last_error is not None
+                # 超时路径提前 break，attempts_made 可能小于 max_retries；
+                # 普通异常路径循环走完，两种情况下都取真实次数。
+                recorded_attempts = max(attempts_made, 1)
                 dead_letter = DeadLetterRecord(
                     worker_name=self.worker_name,
                     batch=tuple(batch),
                     error=repr(last_error),
                     failed_at=get_current_time(),
-                    attempts=self.config.max_retries,
+                    attempts=recorded_attempts,
                 )
                 self._dead_letters.append(dead_letter)
                 # 有上界：持续失败时不能让内存无限增长（旧实现是裸 list.append）
@@ -439,7 +461,7 @@ class BatchWriter[T]:
                 self._health.consecutive_failures += 1
                 logger.error(
                     f"BatchWriter {self.worker_name} moved batch to dead letter "
-                    f"after {self.config.max_retries} attempts: {last_error}"
+                    f"after {recorded_attempts} attempts: {last_error}"
                 )
                 log_trace_event(
                     event_name="flush_dead_letter",
@@ -452,14 +474,14 @@ class BatchWriter[T]:
                     level="ERROR",
                     trace_id=trace_id,
                     batch_size=len(batch),
-                    attempt=self.config.max_retries,
+                    attempt=recorded_attempts,
                     payload_json={"error": repr(last_error)},
                     persist=self._trace_persist,
                 )
                 self._last_error = last_error
                 return FlushResult(
                     flushed=0,
-                    attempts=self.config.max_retries,
+                    attempts=recorded_attempts,
                     batch=tuple(batch),
                 )
             finally:
