@@ -1,7 +1,9 @@
 """water 定时任务：结算、归档、日报推送。
 
-四个 job 共用同一套「长任务包裹 + 恢复期互斥 + 子进程执行 + 清单校验」流程，
-差异只在子进程任务名与结果消费方式。
+结算与日报是重活且需要超时兜底，走「长任务包裹 + 恢复期互斥 + 子进程执行 +
+清单校验」流程；归档改为在同进程内直调归档巡检——分片引擎由本进程持有，
+归档必须由句柄持有者执行，跨进程的 dispose 永远释放不掉本进程的连接池句柄，
+Windows 上会让归档被 WinError 32 永久挡住（详见 connectors 的键归一化注释）。
 """
 
 from __future__ import annotations
@@ -13,15 +15,16 @@ from typing import cast
 from nonebot import get_bots, require
 from nonebot.adapters.onebot.v11.bot import Bot
 
+from src.lib.db.connectors import SegmentArchiveReport
 from src.lib.long_task import (
     LoggerProgressSink,
     LongTaskRunner,
     LongTaskSpec,
 )
-from src.lib.types import as_int
 from src.logger import logger
 from src.services.startup_sync import ensure_restore_not_in_progress
 
+from .database import water_repo
 from .services.cron_orchestrator import (
     WaterSubprocessResult,
     WaterWorkerJobName,
@@ -62,6 +65,21 @@ async def _worker_job(
                 f"water {job_key} manifest missing, exit={result.exit_code}"
             )
         yield long_task, manifest, result
+
+
+def _raise_on_archive_failures(job_key: str, report: SegmentArchiveReport) -> None:
+    """归档失败/冲突时抛错，让 job 的 except 分支如实记 ERROR。
+
+    此前归档在子进程里失败也会写出 status="success" 的清单，job 层照样打
+    「cron archive done」——磁盘只涨不缩而日志一片太平。现在把失败变成异常。
+    """
+    if report.ok:
+        return
+    details = "; ".join(
+        f"{failure.shard_key}({failure.outcome.value}): {failure.reason}"
+        for failure in report.failures
+    )
+    raise RuntimeError(f"water {job_key} archive failures: {details}")
 
 
 @scheduler.scheduled_job(
@@ -109,17 +127,19 @@ async def _water_daily_settlement_job() -> None:
 )
 async def _water_message_archive_job() -> None:
     try:
-        async with _worker_job("message_archive", "message_archive") as (
-            task,
-            manifest,
-            worker,
-        ):
+        async with LongTaskRunner(
+            LongTaskSpec(
+                task_name="water.message_archive",
+                source_kind="water_message_archive",
+                threshold_ms=0,
+            ),
+            sink=LoggerProgressSink(),
+        ) as task:
+            ensure_restore_not_in_progress(source="water_message_archive")
             await task.advance("archiving")
-        logger.success(
-            "[Water] cron archive done: "
-            f"status={manifest.status} "
-            f"elapsed_ms={worker.elapsed_ms:.2f}"
-        )
+            report = await water_repo.archive_message_shards()
+            _raise_on_archive_failures("message_archive", report)
+        logger.success(f"[Water] cron archive done: {report.summary()}")
     except Exception as e:
         logger.exception(f"[Water] cron archive failed: {e}")
 
@@ -135,16 +155,21 @@ async def _water_message_archive_job() -> None:
 )
 async def _water_summary_archive_job() -> None:
     try:
-        async with _worker_job("summary_archive", "summary_archive") as (
-            task,
-            manifest,
-            worker,
-        ):
+        async with LongTaskRunner(
+            LongTaskSpec(
+                task_name="water.summary_archive",
+                source_kind="water_summary_archive",
+                threshold_ms=0,
+            ),
+            sink=LoggerProgressSink(),
+        ) as task:
+            ensure_restore_not_in_progress(source="water_summary_archive")
             await task.advance("archiving")
-        pruned = as_int(manifest.metrics.get("pruned", 0), 0)
+            report = await water_repo.archive_summary_shards()
+            pruned = await water_repo.prune_hot_summaries()
+            _raise_on_archive_failures("summary_archive", report)
         logger.success(
-            f"[Water] cron summary archive done: pruned={pruned} "
-            f"elapsed_ms={worker.elapsed_ms:.2f}"
+            f"[Water] cron summary archive done: pruned={pruned} {report.summary()}"
         )
     except Exception as e:
         logger.exception(f"[Water] cron summary archive failed: {e}")

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime
 import json
+import os
 from pathlib import Path
 import sqlite3
 from typing import Any, cast
@@ -1316,3 +1317,346 @@ def test_affected_rows_rejects_non_integer_rowcount(bad_rowcount: object) -> Non
 
     with pytest.raises(TypeError, match="int"):
         affected_rows(result)
+
+
+# ---------------------------------------------------------------------------
+# 归档健壮性回归：引擎键归一化 / staging 残留 / 原子落地 / 诚实上报
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_database_manager_dispose_matches_relative_open_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """回归：相对路径 open 的引擎，用 resolve 后的绝对路径 dispose 必须命中。
+
+    生产 GLOBAL_DB_ROOT 是相对路径（"./data/db"），归档却用 _safe_resolve 的
+    绝对路径调 dispose；缓存键按原始字符串时二者不匹配，dispose 静默空转、
+    连接池句柄永不释放，Windows 上分片 rename 永远 WinError 32。测试过去全用
+    绝对 tmp_path，键恰好一致，掩盖了该缺陷。
+    """
+    monkeypatch.chdir(tmp_path)
+    db_manager_local = type(db_manager)()
+    relative_path = Path("probe") / "store" / "shard.db"
+    relative_path.parent.mkdir(parents=True)
+
+    async with db_manager_local.open(str(relative_path), commit=True) as session:
+        await session.execute(text("CREATE TABLE probe (id INTEGER PRIMARY KEY)"))
+
+    # 用绝对路径 dispose——等价于归档路径 _safe_resolve 后的形态。
+    await db_manager_local.dispose(str(relative_path.resolve()))
+
+    # 句柄已释放：Windows 上此时 rename 才可能成功。
+    renamed = relative_path.with_suffix(".renamed")
+    os.replace(relative_path, renamed)
+    assert renamed.is_file()
+
+
+@pytest.mark.asyncio
+async def test_archiver_completes_with_relative_db_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """回归（M1 主用例）：相对 GLOBAL_DB_ROOT 下同一进程也能完成归档。
+
+    这是生产配置下的端到端路径：写入非活跃月分片 -> 推进时钟 -> 归档巡检，
+    必须产出 .zst、移走在线库、manifest 转 cold。修复前（键不匹配）归档被
+    WinError 32 挡住，且失败被吞、job 依旧报成功。
+    """
+    from src.lib.db import connectors as connectors_module
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", Path("./dbroot"))
+    monkeypatch.setattr(
+        connectors_module,
+        "get_current_time",
+        lambda: arrow.get("2026-06-08 12:00:00").int_timestamp,
+    )
+
+    db = EventStore(
+        namespace="relative_root",
+        prefix="events",
+        fmt="%Y_%m",
+        active_window_months=1,
+    )
+    await db.init_schema(_ShardBase)
+
+    april = arrow.get("2026-04-08").datetime
+    async with db.write_session(time_ctx=april) as session:
+        session.add(_ShardModel(value="cold"))
+
+    report = await db.run_archiver_task()
+
+    # cwd 已切到 tmp_path：相对 root 下的物理文件就在这里。
+    archived_path = tmp_path / "dbroot" / "relative_root" / "events_2026_04.db.zst"
+    online_path = tmp_path / "dbroot" / "relative_root" / "events_2026_04.db"
+    assert report.archived == ["2026_04"]
+    assert report.ok is True
+    assert archived_path.is_file()
+    assert not online_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_run_archiver_task_recovers_staging_residue_when_db_missing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """回归（M2 自愈）：归档中断留下的 .archiving 残留在巡检时被归位。
+
+    复刻 kill 点：retire 完成（db 已改名成 .archiving）、压缩尚未完成。
+    巡检必须把残留归位成在线分片并记入 healed，而不是无视它。
+    """
+    from src.lib.db import connectors as connectors_module
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
+    monkeypatch.setattr(
+        connectors_module,
+        "get_current_time",
+        lambda: arrow.get("2026-06-08 12:00:00").int_timestamp,
+    )
+
+    db = EventStore(
+        namespace="framework_heal_staging",
+        prefix="events",
+        fmt="%Y_%m",
+        active_window_months=1,
+    )
+    await db.init_schema(_ShardBase)
+
+    april = arrow.get("2026-04-08").datetime
+    async with db.write_session(time_ctx=april) as session:
+        session.add(_ShardModel(value="residue"))
+
+    db_path = tmp_path / "framework_heal_staging" / "events_2026_04.db"
+    staging_path = db_path.with_suffix(".archiving")
+    # 复刻 kill 点：retire 前缀（dispose + sidecar 清理 + rename）已全部完成。
+    await db._retire_shard_file("2026_04", db_path)
+    assert staging_path.is_file()
+    assert not db_path.exists()
+
+    report = await db.run_archiver_task()
+
+    assert report.healed == ["2026_04"]
+    assert not staging_path.exists()
+    # 归位后的分片随即按正常流程归档；数据必须完整可读（hydrate 读回全部行）。
+    async with db.read_session(time_ctx=april, cold_policy=ColdPolicy.HYDRATE) as s:
+        values = (await s.execute(select(_ShardModel.value))).scalars().all()
+    assert list(values) == ["residue"]
+
+
+@pytest.mark.asyncio
+async def test_retire_shard_file_refuses_to_overwrite_staging_residue(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """回归（M2 覆盖守卫）：staging 残留与在线分片并存时，绝不覆盖，宁可拒绝上报。
+
+    这是旧版本遗留的磁盘状态（残留由旧版归档中断产生，在线库由旧版写路径
+    重建）。旧实现会在下一次归档时把新库 os.replace 到同名 staging，残留里
+    尚未压缩的真实行被静默销毁；现在必须保留两者并把冲突显式上报。
+    """
+    from src.lib.db import connectors as connectors_module
+    from src.lib.db.connectors import ArchiveStagingConflictError
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
+    monkeypatch.setattr(
+        connectors_module,
+        "get_current_time",
+        lambda: arrow.get("2026-06-08 12:00:00").int_timestamp,
+    )
+
+    db = EventStore(
+        namespace="framework_conflict",
+        prefix="events",
+        fmt="%Y_%m",
+        active_window_months=1,
+    )
+    await db.init_schema(_ShardBase)
+
+    april = arrow.get("2026-04-08").datetime
+    async with db.write_session(time_ctx=april) as session:
+        session.add(_ShardModel(value="old-row"))
+
+    db_path = tmp_path / "framework_conflict" / "events_2026_04.db"
+    staging_path = db_path.with_suffix(".archiving")
+    await db._retire_shard_file("2026_04", db_path)
+
+    def _read_values(path: Path) -> list[str]:
+        # 显式关闭连接：`with sqlite3.connect(...)` 只提交不关闭，Windows 下
+        # 残留句柄会钉住文件，使后续 rename 抛 WinError 32。
+        conn = sqlite3.connect(path)
+        try:
+            return [row[0] for row in conn.execute("SELECT value FROM sample_shard")]
+        finally:
+            conn.close()
+
+    # 直接构造「残留 + 在线库并存」的磁盘状态：模拟旧版写路径重建的空库。
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute("CREATE TABLE sample_shard (id INTEGER PRIMARY KEY, value TEXT)")
+        conn.execute("INSERT INTO sample_shard (value) VALUES ('new-row')")
+        conn.commit()
+    finally:
+        conn.close()
+
+    assert _read_values(staging_path) == ["old-row"]
+    assert _read_values(db_path) == ["new-row"]
+
+    # 直接路径：拒绝覆盖并抛显式异常。
+    with pytest.raises(ArchiveStagingConflictError):
+        await db._retire_shard_file("2026_04", db_path)
+
+    # 巡检路径：不覆盖、不归档，冲突进入报告，两侧数据原样保留。
+    report = await db.run_archiver_task()
+
+    assert [f.shard_key for f in report.failures] == ["2026_04"]
+    assert report.failures[0].outcome.value == "conflict"
+    assert report.ok is False
+    assert report.archived == []
+    assert not db_path.with_suffix(".db.zst").exists()
+    assert _read_values(staging_path) == ["old-row"]
+    assert _read_values(db_path) == ["new-row"]
+
+
+@pytest.mark.asyncio
+async def test_compress_failure_leaves_no_partial_archive(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """回归（M2 原子落地）：压缩中途失败不留下半截 .zst，在线库回滚。
+
+    旧实现 destination.open("wb") 直写：崩在中间会留下「看起来像归档、实际
+    被截断」的 .zst；它被 hydrate 后是损坏库，会让该分片写入永久卡死。
+    """
+    from src.lib.db import connectors as connectors_module
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
+    monkeypatch.setattr(
+        connectors_module,
+        "get_current_time",
+        lambda: arrow.get("2026-06-08 12:00:00").int_timestamp,
+    )
+
+    db = EventStore(
+        namespace="framework_atomic",
+        prefix="events",
+        fmt="%Y_%m",
+        active_window_months=1,
+    )
+    await db.init_schema(_ShardBase)
+    april = arrow.get("2026-04-08").datetime
+    async with db.write_session(time_ctx=april) as session:
+        session.add(_ShardModel(value="payload"))
+
+    def _failing_copy(src: object, dst: object) -> None:
+        cast(Any, dst).write(b"partial-bytes")
+        raise RuntimeError("compress interrupted")
+
+    monkeypatch.setattr(
+        connectors_module.zstd.ZstdCompressor,
+        "copy_stream",
+        _failing_copy,
+    )
+
+    report = await db.run_archiver_task()
+
+    archive_path = tmp_path / "framework_atomic" / "events_2026_04.db.zst"
+    tmp_path_archive = archive_path.with_suffix(".zst.tmp")
+    online_path = tmp_path / "framework_atomic" / "events_2026_04.db"
+    assert archive_path.exists() is False
+    assert tmp_path_archive.exists() is False
+    assert online_path.is_file()
+    assert [f.shard_key for f in report.failures] == ["2026_04"]
+    assert report.failures[0].outcome.value == "failed"
+    async with db.read_session(time_ctx=april, cold_policy=ColdPolicy.HYDRATE) as s:
+        values = (await s.execute(select(_ShardModel.value))).scalars().all()
+    assert list(values) == ["payload"]
+
+
+@pytest.mark.asyncio
+async def test_read_session_heals_staging_residue_before_creating_empty_shard(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """回归（M2 读路径自愈）：db 缺失 + 残留存在时，读路径先把残留归位。
+
+    修复前读到的是「分片不存在」：活跃月的读会静默新建空库，残留里的行
+    随即不可见（数据孤儿化）。
+    """
+    from src.lib.db import connectors as connectors_module
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
+    monkeypatch.setattr(
+        connectors_module,
+        "get_current_time",
+        lambda: arrow.get("2026-04-08 12:00:00").int_timestamp,
+    )
+
+    db = EventStore(
+        namespace="framework_read_heal",
+        prefix="events",
+        fmt="%Y_%m",
+        active_window_months=1,
+    )
+    await db.init_schema(_ShardBase)
+    april = arrow.get("2026-04-08").datetime
+    async with db.write_session(time_ctx=april) as session:
+        session.add(_ShardModel(value="kept"))
+
+    db_path = tmp_path / "framework_read_heal" / "events_2026_04.db"
+    staging_path = db_path.with_suffix(".archiving")
+    await db._retire_shard_file("2026_04", db_path)
+
+    async with db.read_session(time_ctx=april) as session:
+        values = (await session.execute(select(_ShardModel.value))).scalars().all()
+    assert list(values) == ["kept"]
+    assert not staging_path.exists()
+    assert db_path.is_file()
+
+
+@pytest.mark.asyncio
+async def test_ensure_budget_skips_eviction_without_archive(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """回归：WARM 分片没有可用归档时跳过逐出，绝不删唯一副本。
+
+    逐出 = 删除在线文件；此前不检查归档是否存在，一旦归档缺失/被删，
+    唯一的完整数据就被销毁。
+    """
+    from src.lib.db import connectors as connectors_module
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
+    monkeypatch.setattr(
+        connectors_module,
+        "get_current_time",
+        lambda: arrow.get("2026-06-08 12:00:00").int_timestamp,
+    )
+
+    db = EventStore(
+        namespace="framework_budget",
+        prefix="events",
+        fmt="%Y_%m",
+        active_window_months=1,
+        warm_ttl_seconds=0,
+        warm_budget_mb=0,
+    )
+    await db.init_schema(_ShardBase)
+    april = arrow.get("2026-04-08").datetime
+    async with db.write_session(time_ctx=april) as session:
+        session.add(_ShardModel(value="only-copy"))
+
+    db_path = tmp_path / "framework_budget" / "events_2026_04.db"
+    archive_path = db_path.with_suffix(".db.zst")
+    # WARM 状态但归档缺失（模拟归档从未产出/被外部删除）。
+    entry = db._manifest_entry("2026_04", db_path, archive_path)
+    entry.state = connectors_module.SegmentState.WARM
+    assert not archive_path.exists()
+
+    await db._ensure_budget()
+
+    assert db_path.is_file()
+    async with db.read_session(time_ctx=april) as session:
+        values = (await session.execute(select(_ShardModel.value))).scalars().all()
+    assert list(values) == ["only-copy"]

@@ -29,7 +29,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import DeclarativeBase
 
 from src.lib.db.backup import BackupSource
-from src.lib.db.connectors import ColdPolicy, MomentLike, SegmentStore
+from src.lib.db.connectors import (
+    ColdPolicy,
+    MomentLike,
+    SegmentArchiveReport,
+    SegmentStore,
+)
 from src.lib.db.ops import BaseOps
 from src.lib.db.schema import PatchRegistry
 from src.lib.trace_log import log_trace_event
@@ -503,8 +508,8 @@ class AliasStore[OpsT: OpsFactory]:
     async def init(self, base: type[DeclarativeBase]) -> None:
         await self._store.init(base)
 
-    async def run_archiver_task(self) -> None:
-        await self._store.run_archiver_task()
+    async def run_archiver_task(self) -> SegmentArchiveReport:
+        return await self._store.run_archiver_task()
 
     async def flush_manifest(self) -> None:
         await self._store.flush_manifest()

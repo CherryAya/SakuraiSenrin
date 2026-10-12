@@ -19,8 +19,6 @@ from src.lib.utils.time_utils import get_current_time
 
 WaterWorkerJobName = Literal[
     "settlement",
-    "message_archive",
-    "summary_archive",
     "daily_report_prepare",
 ]
 WaterWorkerStatus = Literal["success", "skipped", "failed", "partial"]
@@ -38,8 +36,6 @@ _WATER_REPORT_MESSAGE_KINDS: tuple[WaterPreparedReportMessageKind, ...] = (
 )
 _WATER_WORKER_JOB_NAMES: tuple[WaterWorkerJobName, ...] = (
     "settlement",
-    "message_archive",
-    "summary_archive",
     "daily_report_prepare",
 )
 

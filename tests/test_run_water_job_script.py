@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 from typing import Any, cast
-from unittest.mock import AsyncMock
 
 import pytest
 
@@ -66,41 +65,33 @@ async def test_run_job_initializes_water_tables_before_settlement(
 
 
 @pytest.mark.asyncio
-async def test_run_job_initializes_water_tables_before_summary_archive(
+async def test_run_job_rejects_archive_job_names(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    init_mock = AsyncMock()
-    archive_mock = AsyncMock()
-    prune_mock = AsyncMock(return_value=7)
+    """回归：归档已移回主进程，子进程脚本不得再接受归档 job 名。
 
-    monkeypatch.setattr(
-        water_repo,
-        "init_all_tables",
-        init_mock,
-    )
-    monkeypatch.setattr(
-        water_repo,
-        "archive_summary_shards",
-        archive_mock,
-    )
-    monkeypatch.setattr(
-        water_repo,
-        "prune_hot_summaries",
-        prune_mock,
-    )
-    monkeypatch.setattr(run_water_job_script, "get_current_time", lambda: 1_785_456_000)
+    此前 message_archive/summary_archive 走子进程且无条件上报 success——
+    归档失败（Windows 句柄钉住）时 job 依旧报「cron archive done」。
+    归档改由主进程内执行后，这两个 job 名必须从脚本入口消失。
+    """
+    monkeypatch.setattr(run_water_job_script.sys, "argv", ["run_water_job.py"])
+    with pytest.raises(SystemExit):
+        run_water_job_script.parse_args()
 
-    manifest = await run_water_job_script._run_job(
+    argv = [
+        "run_water_job.py",
+        "--job",
         "summary_archive",
-        job_id="job-2",
-        output_dir=run_water_job_script.Path("/tmp/water-job-test"),
-        record_date=None,
-        locale="zh-CN",
-        force=False,
-    )
+    ]
+    monkeypatch.setattr(run_water_job_script.sys, "argv", argv)
+    with pytest.raises(SystemExit):
+        run_water_job_script.parse_args()
 
-    init_mock.assert_awaited_once()
-    archive_mock.assert_awaited_once()
-    prune_mock.assert_awaited_once()
-    assert manifest.status == "success"
-    assert manifest.metrics["pruned"] == 7
+    argv = [
+        "run_water_job.py",
+        "--job",
+        "message_archive",
+    ]
+    monkeypatch.setattr(run_water_job_script.sys, "argv", argv)
+    with pytest.raises(SystemExit):
+        run_water_job_script.parse_args()

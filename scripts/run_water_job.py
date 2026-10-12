@@ -39,8 +39,6 @@ def parse_args() -> argparse.Namespace:
         required=True,
         choices=[
             "settlement",
-            "message_archive",
-            "summary_archive",
             "daily_report_prepare",
         ],
     )
@@ -128,45 +126,6 @@ async def _run_job(
                 "reason": result.reason,
             },
             error=result.reason,
-        )
-    if job_name == "message_archive":
-        await water_repo.archive_message_shards()
-        log_trace_event(
-            event_name="worker_job",
-            source_kind="water_worker",
-            component="water.worker",
-            status="success",
-            summary=f"Finished water worker job {job_name}.",
-            trace_id=trace_id,
-            job_id=job_id,
-        )
-        return WaterWorkerManifest(
-            job_name=typed_job_name,
-            job_id=job_id,
-            started_at=started_at,
-            finished_at=get_current_time(),
-            status="success",
-        )
-    if job_name == "summary_archive":
-        await water_repo.archive_summary_shards()
-        pruned = await water_repo.prune_hot_summaries()
-        log_trace_event(
-            event_name="worker_job",
-            source_kind="water_worker",
-            component="water.worker",
-            status="success",
-            summary=f"Finished water worker job {job_name}.",
-            trace_id=trace_id,
-            job_id=job_id,
-            payload_json={"pruned": pruned},
-        )
-        return WaterWorkerManifest(
-            job_name=typed_job_name,
-            job_id=job_id,
-            started_at=started_at,
-            finished_at=get_current_time(),
-            status="success",
-            metrics={"pruned": pruned},
         )
     prepared = await water_report_service.prepare_daily_group_report_push(
         locale=cast(LocaleCode, locale),

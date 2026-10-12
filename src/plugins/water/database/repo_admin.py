@@ -18,6 +18,7 @@ from sqlalchemy import delete
 from sqlalchemy.engine.row import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.lib.db.connectors import SegmentArchiveReport
 from src.lib.types import JsonObject
 
 from .chunking import split_chunks
@@ -427,8 +428,8 @@ class WaterRepositoryAdminMixin:
         _ = before_ts
         return 0
 
-    async def archive_message_shards(self) -> None:
-        await water_message.run_archiver_task()
+    async def archive_message_shards(self) -> SegmentArchiveReport:
+        return await water_message.run_archiver_task()
 
     async def unlock_achievements(self, payloads: list[WaterAchievementPayload]) -> int:
         if not payloads:
@@ -691,8 +692,8 @@ class WaterRepositoryAdminMixin:
                 .get_group_activity_rank(group_id)
             )
 
-    async def archive_summary_shards(self) -> None:
-        await water_summary.run_archiver_task()
+    async def archive_summary_shards(self) -> SegmentArchiveReport:
+        return await water_summary.run_archiver_task()
 
     async def prune_hot_summaries(self, today_ts: int | None = None) -> int:
         repo_self = cast("WaterRepository", self)

@@ -78,6 +78,59 @@ class ArchiveCodec(StrEnum):
     ZSTD = "zstd"
 
 
+class SegmentArchiveOutcome(StrEnum):
+    """单个分片归档的结果。区分「跳过的正常状态」与「真正的失败」。"""
+
+    ARCHIVED = "archived"
+    SKIPPED = "skipped"
+    FAILED = "failed"
+    CONFLICT = "conflict"
+
+
+@dataclass(slots=True, frozen=True)
+class SegmentArchiveFailure:
+    """归档失败/冲突的显式记录，供 job 层如实上报。
+
+    此前 run_archiver_task 返回 None、_archive_shard 用 bool 混淆 skip/fail，
+    失败被宽 except 吞掉后 job 仍上报 success。这里把「哪个分片、什么原因」
+    固定成可传递的数据，让上层无法再谎报成功。
+    """
+
+    shard_key: str
+    outcome: SegmentArchiveOutcome
+    reason: str
+
+
+@dataclass(slots=True)
+class SegmentArchiveReport:
+    """一次归档巡检的汇总结果。"""
+
+    archived: list[str] = field(default_factory=list[str])
+    skipped: list[str] = field(default_factory=list[str])
+    failures: list[SegmentArchiveFailure] = field(
+        default_factory=list[SegmentArchiveFailure]
+    )
+    healed: list[str] = field(default_factory=list[str])
+
+    @property
+    def ok(self) -> bool:
+        return not self.failures
+
+    def summary(self) -> str:
+        return (
+            f"archived={len(self.archived)} skipped={len(self.skipped)} "
+            f"healed={len(self.healed)} failed={len(self.failures)}"
+        )
+
+
+class ArchiveStagingConflictError(RuntimeError):
+    """在线分片与归档残留（.archiving）冲突：拒绝覆盖，交由运维裁决。
+
+    绝不能把新分片 rename 到已存在的 staging 上——那会静默销毁残留里尚未
+    压缩的数据。宁可拒绝归档并把冲突显式暴露。
+    """
+
+
 @dataclass(slots=True)
 class SegmentManifestEntry:
     segment_id: str
@@ -574,9 +627,18 @@ class SegmentStore(BaseDB):
             conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         finally:
             conn.close()
+        # 先写 tmp 再原子改名：压缩中途被杀只会留下 .zst.tmp，不会产出
+        # 「看起来像归档、实际被截断」的 .zst（后者被 hydrate 后是损坏库，
+        # 会让该分片写入永久卡死）。
+        tmp_path = destination.with_suffix(f"{destination.suffix}.tmp")
         cctx = zstd.ZstdCompressor(level=10)
-        with source.open("rb") as src, destination.open("wb") as dst:
-            cctx.copy_stream(src, dst)
+        try:
+            with source.open("rb") as src, tmp_path.open("wb") as dst:
+                cctx.copy_stream(src, dst)
+            os.replace(tmp_path, destination)
+        except Exception:
+            tmp_path.unlink(missing_ok=True)
+            raise
 
     def _cleanup_sqlite_sidecars(self, db_path: Path) -> None:
         # -journal 是回滚日志模式下的残留，同样需要清理，否则 rename 后会在
@@ -588,9 +650,16 @@ class SegmentStore(BaseDB):
 
     def _decompress_file(self, source: Path, destination: Path) -> None:
         destination.parent.mkdir(parents=True, exist_ok=True)
+        # 同 _compress_file：tmp + 原子改名，解压中途失败不留下半截损坏的 .db。
+        tmp_path = destination.with_suffix(f"{destination.suffix}.tmp")
         dctx = zstd.ZstdDecompressor()
-        with source.open("rb") as src, destination.open("wb") as dst:
-            dctx.copy_stream(src, dst)
+        try:
+            with source.open("rb") as src, tmp_path.open("wb") as dst:
+                dctx.copy_stream(src, dst)
+            os.replace(tmp_path, destination)
+        except Exception:
+            tmp_path.unlink(missing_ok=True)
+            raise
 
     async def _touch_segment(
         self,
@@ -636,10 +705,38 @@ class SegmentStore(BaseDB):
             shard_key = self._shard_key_for_path(Path(entry.path))
             if shard_key is None:
                 continue
+            # 逐出 = 删除在线文件：只有归档存在时才允许，否则会删掉唯一副本。
+            archive_path = Path(entry.archive_path) if entry.archive_path else None
+            if archive_path is None or not await asyncio.to_thread(archive_path.exists):
+                logger.warning(
+                    f"[{self.namespace}/{self.prefix}] 分片 {shard_key} 无归档可回灌，"
+                    f"跳过逐出以免删除唯一副本"
+                )
+                continue
             async with self._shard_lock(shard_key):
                 db_path = Path(entry.path)
                 if await asyncio.to_thread(db_path.exists):
-                    staging = await self._retire_shard_file(shard_key, db_path)
+                    try:
+                        staging = await self._retire_shard_file(shard_key, db_path)
+                    except ArchiveStagingConflictError as exc:
+                        # 该分片存在归档残留：保留两者，跳过本次逐出。
+                        # 逐出发生在调用方的读/写路径上，绝不能因此让调用方失败。
+                        logger.error(
+                            f"[{self.namespace}/{self.prefix}] 逐出分片 {shard_key} "
+                            f"被归档残留阻塞，已保留待人工裁决: {exc}"
+                        )
+                        log_trace_event(
+                            event_name="staging_conflict",
+                            source_kind="segment_lifecycle",
+                            component=f"{self.namespace}.{self.prefix}",
+                            status="conflict",
+                            summary=(
+                                f"Eviction of {shard_key} blocked by staging residue."
+                            ),
+                            level="ERROR",
+                            shard_key=shard_key,
+                        )
+                        continue
                     with suppress(OSError):
                         await asyncio.to_thread(os.remove, staging)
             entry.state = SegmentState.COLD
@@ -698,12 +795,71 @@ class SegmentStore(BaseDB):
         「分片不存在」，会走新建/唤醒路径，绝不会写进正在被压缩的文件；而已经在
         飞行中的写事务仍然写在这个 inode 上，其数据会随 staging 一起进入归档，
         不会丢。
+
+        安全约束：staging 已存在时拒绝覆盖并抛 ArchiveStagingConflictError。
+        上次归档在 rename 之后被中断会留下残留 staging，里面装着尚未压缩的真实
+        数据；直接覆盖等于静默销毁它（此前正是这么丢数据的）。
         """
         staging_path = self._get_staging_path(shard_key)
+        if await asyncio.to_thread(staging_path.exists):
+            raise ArchiveStagingConflictError(
+                f"staging residue exists for shard {shard_key}: {staging_path.name}"
+            )
         await db_manager.dispose(str(db_path))
+        # 先把 WAL 中的已提交帧回放进主库、再删 sidecar：否则崩溃残留的 -wal
+        # 会在归档前被直接删除，其中的提交随之丢失。
+        await asyncio.to_thread(self._checkpoint_wal, db_path)
         await asyncio.to_thread(self._cleanup_sqlite_sidecars, db_path)
         await asyncio.to_thread(os.replace, db_path, staging_path)
         return staging_path
+
+    @staticmethod
+    def _checkpoint_wal(db_path: Path) -> None:
+        """把 WAL 中的已提交帧合并进主库；-wal 不存在时是空操作。"""
+        if not Path(f"{db_path}-wal").exists():
+            return
+        conn = sqlite3.connect(db_path)
+        try:
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        finally:
+            conn.close()
+
+    async def _restore_staged_shard(self, shard_key: str) -> bool:
+        """在线分片缺失而 .archiving 残留存在时把残留归位，返回是否恢复。
+
+        上次归档在 rename 之后、压缩完成之前被中断会留下这种残留。staging 是
+        一个完整的 .db 文件（含归档时点的全部数据），比 .zst 归档严格更新；
+        若放任不管，写路径会把它当作「分片不存在」而重建空库，整段数据被孤儿化，
+        后续归档还会用空库覆盖销毁它。访问与巡检路径先在此归位，保住数据。
+        """
+        staging_path = self._get_staging_path(shard_key)
+        if not await asyncio.to_thread(staging_path.exists):
+            return False
+        db_path, _ = self._get_file_paths(shard_key)
+        if await asyncio.to_thread(db_path.exists):
+            return False
+        # 与 hydrate 同锁：map_reduce 等路径调用 _ensure_shard_online 时不持锁，
+        # 归位与解压/新建并发会写出损坏库。
+        async with self._shard_lock(shard_key):
+            if await asyncio.to_thread(db_path.exists):
+                return False
+            if not await asyncio.to_thread(staging_path.exists):
+                return False
+            await db_manager.dispose(str(db_path))
+            try:
+                await asyncio.to_thread(os.replace, staging_path, db_path)
+            except FileNotFoundError:
+                # 并发路径（访问与巡检各一次归位尝试）已完成恢复
+                return False
+        log_trace_event(
+            event_name="recover_staged_shard",
+            source_kind="segment_online",
+            component=f"{self.namespace}.{self.prefix}",
+            status="success",
+            summary=f"Restored staged shard residue for {shard_key}.",
+            shard_key=shard_key,
+        )
+        return True
 
     async def _ensure_shard_online(
         self,
@@ -715,6 +871,13 @@ class SegmentStore(BaseDB):
         policy = cold_policy or self.cold_policy
         db_path, archive_path = self._get_file_paths(shard_key)
         entry = self._manifest_entry(shard_key, db_path, archive_path)
+        # 先处理归档残留：db 缺失而 .archiving 在时归位，避免下面把它当成分片
+        # 不存在而重建空库（那会让整段数据不可见，见 _restore_staged_shard）。
+        if not await asyncio.to_thread(db_path.exists):
+            restored = await self._restore_staged_shard(shard_key)
+            if restored:
+                entry.state = SegmentState.HOT
+                entry.updated_at = get_current_time()
         if await asyncio.to_thread(db_path.exists):
             await self._touch_segment(
                 shard_key,
@@ -904,21 +1067,71 @@ class SegmentStore(BaseDB):
         results = await asyncio.gather(*(_run(key) for key in shard_keys))
         return [result for result in results if result is not None]
 
-    async def run_archiver_task(self) -> None:
-        """ILM 巡检：hot -> warm -> cold，并按保留期回收。
+    async def run_archiver_task(self) -> SegmentArchiveReport:
+        """ILM 巡检：残留自愈 -> hot -> warm -> cold，并按保留期回收。
 
         对应 ES 的 ILM：hot 是可写索引，warm 是刚压缩完仍可被唤回的，cold 只剩
         归档。这里在时间窗口之外再加一道体积闸门（active 分片超过阈值也 seal），
         以及一条 delete 阶段（retention_months > 0 时删除超期归档）。
+
+        返回结构化报告：调用方据此如实上报失败/冲突，不能再把巡检当成必然成功。
         """
+        report = SegmentArchiveReport()
         now = self._tz_now()
         active_keys = {
             now.shift(months=-offset).strftime(self.fmt)
             for offset in range(self.active_window_months)
         }
+        # 阶段 0：上次归档中断留下的 .archiving 残留自愈。
+        # （进程被 kill 会停在 rename 之后、压缩完成之前，此时残留是唯一的
+        # 完整数据；归位或显式暴露，绝不静默处置。）
+        conflicted: set[str] = set()
+        residue_pattern = f"{self.prefix}_*{ARCHIVE_STAGING_SUFFIX}"
+        for residue in sorted(self.base_dir.glob(residue_pattern)):
+            shard_key = residue.name.removeprefix(f"{self.prefix}_").removesuffix(
+                ARCHIVE_STAGING_SUFFIX
+            )
+            if not shard_key:
+                continue
+            db_path, _ = self._get_file_paths(shard_key)
+            async with self._shard_lock(shard_key):
+                if await asyncio.to_thread(db_path.exists):
+                    conflicted.add(shard_key)
+                    report.failures.append(
+                        SegmentArchiveFailure(
+                            shard_key=shard_key,
+                            outcome=SegmentArchiveOutcome.CONFLICT,
+                            reason=(
+                                f"staging residue coexists with online shard: "
+                                f"{residue.name}"
+                            ),
+                        )
+                    )
+                    logger.error(
+                        f"[{self.namespace}/{self.prefix}] 分片 {shard_key} 同时存在"
+                        f"在线库与归档残留 {residue.name}，已保留两者待人工裁决"
+                    )
+                    log_trace_event(
+                        event_name="staging_conflict",
+                        source_kind="segment_lifecycle",
+                        component=f"{self.namespace}.{self.prefix}",
+                        status="conflict",
+                        summary=(
+                            f"Staging residue coexists with online shard "
+                            f"{shard_key}; both preserved."
+                        ),
+                        level="ERROR",
+                        shard_key=shard_key,
+                    )
+                    continue
+                if await self._restore_staged_shard(shard_key):
+                    report.healed.append(shard_key)
         for db_file in self.base_dir.glob(f"{self.prefix}_*.db"):
             file_key = db_file.stem.removeprefix(f"{self.prefix}_")
             if not file_key:
+                continue
+            # 已在阶段 0 判定为「残留与在线库并存」的分片不再重复归档/上报。
+            if file_key in conflicted:
                 continue
             size_mb = await asyncio.to_thread(
                 lambda: db_file.stat().st_size / (1024 * 1024)
@@ -933,11 +1146,45 @@ class SegmentStore(BaseDB):
                     f"分片 {file_key} 已达 {size_mb:.1f}MB，超过 "
                     f"{SEGMENT_SIZE_ROLLOVER_MB}MB 阈值，将被 seal",
                 )
-            await self._archive_shard(file_key, force=oversized)
+            outcome, reason = await self._archive_shard(file_key, force=oversized)
+            if outcome == SegmentArchiveOutcome.ARCHIVED:
+                report.archived.append(file_key)
+            elif outcome == SegmentArchiveOutcome.SKIPPED:
+                report.skipped.append(file_key)
+            else:
+                report.failures.append(
+                    SegmentArchiveFailure(
+                        shard_key=file_key,
+                        outcome=outcome,
+                        reason=reason,
+                    )
+                )
         await self._ensure_budget()
         if self.retention_months > 0:
             await self._enforce_retention(now)
         await self.flush_manifest()
+        log_trace_event(
+            event_name="archive_sweep",
+            source_kind="segment_lifecycle",
+            component=f"{self.namespace}.{self.prefix}",
+            status="success" if report.ok else "partial",
+            summary=f"Archive sweep finished: {report.summary()}",
+            level="INFO" if report.ok else "ERROR",
+            payload_json={
+                "archived": list(report.archived),
+                "skipped": list(report.skipped),
+                "healed": list(report.healed),
+                "failures": [
+                    {
+                        "shard_key": f.shard_key,
+                        "outcome": f.outcome.value,
+                        "reason": f.reason,
+                    }
+                    for f in report.failures
+                ],
+            },
+        )
+        return report
 
     async def _enforce_retention(self, now: arrow.Arrow) -> None:
         """ILM delete 阶段：删除超过保留期的归档文件。
@@ -986,8 +1233,13 @@ class SegmentStore(BaseDB):
                 },
             )
 
-    async def _archive_shard(self, shard_key: str, *, force: bool = False) -> bool:
-        """两阶段归档单个分片。
+    async def _archive_shard(
+        self,
+        shard_key: str,
+        *,
+        force: bool = False,
+    ) -> tuple[SegmentArchiveOutcome, str]:
+        """两阶段归档单个分片，返回 (结果, 原因)。
 
         force=True 时用于「体积闸门 seal 活跃分片」，会跳过活跃窗口保护。
 
@@ -997,9 +1249,11 @@ class SegmentStore(BaseDB):
         之所以用 rename 而不是直接 unlink，是因为 unlink 之后已经在飞行中的写事务
         仍会写进那个已被删除的 inode，数据静默丢失；rename 之后写入方看到的是
         「分片不存在」，会走新建/唤醒路径，而旧 inode 上的数据随 staging 进入归档。
+
+        返回结构化结果而非 bool：调用方无法再把「跳过」与「失败」混为一谈，
+        也让 job 层能如实上报失败分片。
         """
         db_path, archive_path = self._get_file_paths(shard_key)
-        staging_path = self._get_staging_path(shard_key)
         trace_id = log_trace_event(
             event_name="archive_shard",
             source_kind="segment_archive",
@@ -1014,12 +1268,11 @@ class SegmentStore(BaseDB):
                 # force=True 表示「按体积闸门主动 seal 活跃分片」，跳过该保护。
                 if not force and self._is_active_shard(shard_key):
                     await self._touch_segment(shard_key, state=SegmentState.HOT)
-                    return False
+                    return SegmentArchiveOutcome.SKIPPED, "active window"
                 if not await asyncio.to_thread(db_path.exists):
-                    return False
+                    return SegmentArchiveOutcome.SKIPPED, "shard offline"
                 safe_db = self._safe_resolve(db_path)
                 safe_archive = self._safe_resolve(archive_path)
-                safe_staging = self._safe_resolve(staging_path)
                 logger.info(f"归档冷库: {safe_db.name} -> {safe_archive.name}")
                 retired = await self._retire_shard_file(shard_key, safe_db)
                 safe_staging = self._safe_resolve(retired)
@@ -1028,7 +1281,8 @@ class SegmentStore(BaseDB):
             except Exception as exc:
                 async with self._shard_lock(shard_key):
                     with suppress(OSError):
-                        await asyncio.to_thread(os.replace, safe_staging, safe_db)
+                        if await asyncio.to_thread(safe_staging.exists):
+                            await asyncio.to_thread(os.replace, safe_staging, safe_db)
                 logger.error(f"归档失败，已回滚分片 {safe_db.name}: {exc}")
                 log_trace_event(
                     event_name="archive_shard",
@@ -1041,7 +1295,7 @@ class SegmentStore(BaseDB):
                     shard_key=shard_key,
                     payload_json={"error": repr(exc)},
                 )
-                return False
+                return SegmentArchiveOutcome.FAILED, repr(exc)
             with suppress(OSError):
                 await asyncio.to_thread(os.remove, safe_staging)
             async with self._shard_lock(shard_key):
@@ -1068,7 +1322,24 @@ class SegmentStore(BaseDB):
                 trace_id=trace_id,
                 shard_key=shard_key,
             )
-            return True
+            return SegmentArchiveOutcome.ARCHIVED, ""
+        except ArchiveStagingConflictError as exc:
+            logger.error(
+                f"归档分片 {shard_key} 冲突：存在未压缩的 staging 残留，"
+                f"拒绝覆盖以免丢数据: {exc}"
+            )
+            log_trace_event(
+                event_name="archive_shard",
+                source_kind="segment_archive",
+                component=f"{self.namespace}.{self.prefix}",
+                status="conflict",
+                summary=f"Archiving shard {shard_key} refused: staging residue.",
+                level="ERROR",
+                trace_id=trace_id,
+                shard_key=shard_key,
+                payload_json={"error": repr(exc)},
+            )
+            return SegmentArchiveOutcome.CONFLICT, repr(exc)
         except Exception as exc:
             logger.error(f"归档分片 {shard_key} 异常: {exc}")
             log_trace_event(
@@ -1082,7 +1353,7 @@ class SegmentStore(BaseDB):
                 shard_key=shard_key,
                 payload_json={"error": repr(exc)},
             )
-            return False
+            return SegmentArchiveOutcome.FAILED, repr(exc)
 
     def iter_backup_sources(self) -> list[BackupSource]:
         sources: list[BackupSource] = []
@@ -1137,11 +1408,15 @@ class EventStore(SegmentStore):
 
 __all__ = [
     "ArchiveCodec",
+    "ArchiveStagingConflictError",
     "BaseDB",
     "ColdPolicy",
     "CounterStore",
     "EventStore",
     "MomentLike",
+    "SegmentArchiveFailure",
+    "SegmentArchiveOutcome",
+    "SegmentArchiveReport",
     "SegmentConfig",
     "SegmentManifest",
     "SegmentManifestEntry",
