@@ -18,7 +18,7 @@ def create_plugin_metadata(
     extra: Mapping[str, object],
 ) -> PluginMetadata:
     """统一构造 PluginMetadata；详细帮助文档统一放在 extra.docs。"""
-    # extra 声明为 dict[Any, Any]，逐项拷贝收窄键值类型
+    # extra 为 dict[Any, Any]：拷贝收窄键值
     resolved_extra: dict[str, object] = {}
     for key, value in extra.items():
         resolved_extra[key] = value

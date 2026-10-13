@@ -100,7 +100,7 @@ async def finish_i18n(
             message=message,
             source_kind="i18n_matcher_finish",
         )
-        # getattr 取 finish：绕开 pyright 泛型推导
+        # getattr 取 finish：绕开 pyright 泛型
         finish = getattr(matcher, "finish")
         await finish()
         return

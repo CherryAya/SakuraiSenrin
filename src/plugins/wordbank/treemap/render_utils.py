@@ -1,4 +1,4 @@
-# mixin 方法在同一实例上调用宿主类私有辅助函数：pyright 私有访问豁免
+# mixin 同实例调宿主私有：pyright 豁免
 # pyright: reportPrivateUsage=false
 """Rendering utility mixin for wordbank search treemap cards."""
 
@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 _IMAGE_PLACEHOLDER_RE = re.compile(r"\s*\[图片x\d+\]\s*")
 
-# 渲染字体：truetype 优先，失败时回退 Pillow 默认位图字体
+# 渲染字体：truetype 优先，回退位图字体
 from src.plugins.wordbank.text_layout import load_font, text_width
 
 type TreemapFont = ImageFont.FreeTypeFont | ImageFont.ImageFont

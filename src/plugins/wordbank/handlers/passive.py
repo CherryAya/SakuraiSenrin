@@ -517,7 +517,7 @@ async def handle_passive_notice(
     return None
 
 
-# 被动响应编译与投递：passive / notice 共用循环
+# 被动响应编译与投递：共用循环
 
 
 @dataclass(slots=True, frozen=True)

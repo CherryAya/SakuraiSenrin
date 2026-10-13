@@ -14,7 +14,7 @@ import nonebot
 from pil_utils import BuildImage
 
 if TYPE_CHECKING:
-    # 类型标注专用：运行期避免经 water 包触发 nonebot 初始化
+    # 类型标注专用：绕开 water 包 nonebot 初始化
     from src.lib.i18n.types import LocaleCode
     from src.plugins.water.services.rank_types import (
         WaterRankPeriod,
@@ -291,7 +291,7 @@ async def _render_images_from_cache(
 async def main() -> None:
     args = parse_args()
     output_dir = Path(args.output_dir)
-    # argparse 返回 str；显式收窄成 LocaleCode 再交给字面量构建器
+    # argparse 出 str，收窄成 LocaleCode
     locale: LocaleCode = _as_locale(args.locale)
     runtime = await _init_runtime()
 

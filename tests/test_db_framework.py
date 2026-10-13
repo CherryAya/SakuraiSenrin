@@ -360,7 +360,7 @@ async def test_segment_store_treats_current_month_as_active_at_cst_month_start(
     from src.lib.db import connectors as connectors_module
 
     monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
-    # 2026-09-01 00:30 +08:00 落在 UTC 的前一日 16:30
+    # CST 月初 00:30 落在 UTC 前一日
     monkeypatch.setattr(
         connectors_module,
         "get_current_time",
@@ -489,8 +489,8 @@ async def test_segment_store_reinitializes_schema_after_shard_file_deleted(
     await db.flush_manifest()
 
     db_path = tmp_path / "framework_heal" / "events_2026_09.db"
-    # 模拟「分片文件被外部删除」：先释放连接池里的引擎，Windows 下引擎
-    # 句柄钉住文件、挡住 unlink。产品代码的 retire 与分片重建路径
+    # 模拟分片被外部删除：先释放引擎，Windows 句柄
+    # 钉住文件会挡住 unlink
     # 同样先 dispose 再动文件。
     await db_manager.dispose(str(db_path))
     db_path.unlink()
@@ -655,7 +655,7 @@ async def test_segment_store_retention_removes_archived_shards_only(
     async with db.write_session(time_ctx=january) as session:
         session.add(_ShardModel(value="old"))
 
-    # 4 月：1 月已出活跃窗口 -> 归档；保留期 3 个月，1 月尚在保留期内
+    # 4 月已出窗：1 月归档并留在保留期内
     await db.run_archiver_task()
     db_dir = tmp_path / "framework_retention"
     assert (db_dir / "events_2026_01.db.zst").is_file()
@@ -742,7 +742,7 @@ async def test_alias_store_routes_by_payload_timestamp(
         time_field="created_at",
     )
 
-    # 时间戳 / record_date 字符串 / 整数 / 分片键，四形态等价
+    # 四形态等价：时间戳/record_date/整数/分片键
     ts = arrow.get("2026-08-15 10:00:00+08:00").int_timestamp
     assert alias.shard_key_for(ts) == "2026_08"
     assert alias.shard_key_for("20260815") == "2026_08"
@@ -974,8 +974,8 @@ async def test_batch_writer_watchdog_unwedges_stuck_flush_callback() -> None:
     )
 
     await writer.add(1)
-    # 首次尝试即被看门狗取消 -> 整批进入死信；drain 重抛 TimeoutError
-    # wait_for 5s 是测试兜底：看门狗失效时 drain 会挂起。
+    # 首次即被看门狗取消：整批进死信，drain 重抛
+    # wait_for 5s 为兜底：失效时 drain 会挂起
     with pytest.raises(TimeoutError):
         await asyncio.wait_for(writer.drain(), timeout=5)
 
@@ -1038,7 +1038,7 @@ async def test_batch_writer_health_exposes_pending_depth() -> None:
     )
     try:
         await writer.add_all([1, 2, 3])
-        # 等 worker 把批次取进回调——此后批次处于「在飞」状态。
+        # 等 worker 取批进回调：此后为在飞状态
         await asyncio.wait_for(started.wait(), timeout=5)
         assert writer.health.pending_items == 3
 
@@ -1046,7 +1046,7 @@ async def test_batch_writer_health_exposes_pending_depth() -> None:
         await asyncio.wait_for(writer.drain(), timeout=5)
         assert writer.health.pending_items == 0
     finally:
-        # 断言失败也要放行回调并关停 worker，避免残留 worker 拖住进程。
+        # 断言失败也要放行并关停 worker
         block.set()
         await writer.close()
 
@@ -1076,7 +1076,7 @@ async def test_batch_writer_is_flushing_resets_when_trace_logging_raises(
     fired = {"count": 0}
 
     def _flaky_log(*args: object, **kwargs: object) -> str:
-        # 只让 flush_started 这一次抛错：它正是旧实现里位于「置位之后、
+        # 只让 flush_started 抛错：旧实现的危险窗口
         # try 之前」的那次调用。
         if kwargs.get("event_name") == "flush_started" and fired["count"] == 0:
             fired["count"] += 1
@@ -1086,7 +1086,7 @@ async def test_batch_writer_is_flushing_resets_when_trace_logging_raises(
     monkeypatch.setattr(batch_module, "log_trace_event", _flaky_log)
 
     await writer.add(1)
-    # wait_for 兜底：旧行为下楔死表现为挂起，这里以断言失败收场。
+    # wait_for 兜底：旧行为楔死，此处断言失败收场
     with pytest.raises(RuntimeError, match="trace sink exploded"):
         await asyncio.wait_for(writer.flush_now(), timeout=5)
 
@@ -1305,7 +1305,7 @@ async def test_atomic_session_commits_across_all_attached_files(
         tmp_path / "log_db" / "log_202610.db", "sys_audit_log"
     )
 
-    # 单库会话也能读到：attached schema 已映射回 main
+    # 单库会话可读：schema 映射回 main
     async with core_db.session(commit=False) as s:
         total = await s.scalar(select(func.count()).select_from(User))
     assert int(total or 0) == 1
@@ -1343,8 +1343,8 @@ async def test_atomic_session_uses_rollback_journal_for_cross_file_atomicity(
     from src.database.instances import core_db, log_db, snapshot_db
     from src.lib.db.atomic import system_atomic_session
 
-    # 真实启动先经 services.db 登记跨库事务参与者走 rollback
-    # journal。分片被管理器以 WAL 打开过后，journal 模式就此定型。
+    # 真实启动登记参与者库走 rollback
+    # 分片被 WAL 打开过后模式定型
     from src.lib.db.manager import db_manager
 
     monkeypatch.setattr(db_manager, "_rollback_journal_dirs", [])
@@ -1452,9 +1452,9 @@ def test_affected_rows_rejects_non_integer_rowcount(bad_rowcount: object) -> Non
         affected_rows(result)
 
 
-# --------------------------------------------
-# 归档健壮性：引擎键归一化 / staging 残留 / 原子落地 / 诚实上报
-# --------------------------------------------
+# ────────────
+# 归档健壮性回归
+# ────────────
 
 
 @pytest.mark.asyncio
@@ -1474,7 +1474,7 @@ async def test_database_manager_dispose_matches_relative_open_path(
     async with db_manager_local.open(str(relative_path), commit=True) as session:
         await session.execute(text("CREATE TABLE probe (id INTEGER PRIMARY KEY)"))
 
-    # 绝对路径 dispose，等价于归档路径 _safe_resolve 后的形态。
+    # 绝对路径 dispose：等价归档形态
     await db_manager_local.dispose(str(relative_path.resolve()))
 
     # 句柄已释放：Windows 上此时 rename 才能成功。
@@ -1516,7 +1516,7 @@ async def test_archiver_completes_with_relative_db_root(
 
     report = await db.run_archiver_task()
 
-    # cwd 已切到 tmp_path：相对 root 下的物理文件就在这里。
+    # cwd 已切 tmp_path：相对 root 的文件在此
     archived_path = tmp_path / "dbroot" / "relative_root" / "events_2026_04.db.zst"
     online_path = tmp_path / "dbroot" / "relative_root" / "events_2026_04.db"
     assert report.archived == ["2026_04"]
@@ -1566,7 +1566,7 @@ async def test_run_archiver_task_recovers_staging_residue_when_db_missing(
 
     assert report.healed == ["2026_04"]
     assert not staging_path.exists()
-    # 归位后的分片随即按正常流程归档；数据完整可读（hydrate 读回全部行）。
+    # 归位后按正常流程归档；数据完整可读
     async with db.read_session(time_ctx=april, cold_policy=ColdPolicy.HYDRATE) as s:
         values = (await s.execute(select(_ShardModel.value))).scalars().all()
     assert list(values) == ["residue"]
@@ -1608,15 +1608,15 @@ async def test_retire_shard_file_refuses_to_overwrite_staging_residue(
     await db._retire_shard_file("2026_04", db_path)
 
     def _read_values(path: Path) -> list[str]:
-        # 显式关闭连接：with sqlite3.connect(...) 退出时只提交，句柄交由
-        # GC 释放；Windows 下残留句柄会钉住文件、阻挡后续 rename。
+        # 显式关闭：with 只提交，句柄交给 GC
+        # 残留句柄会钉住文件阻挡 rename
         conn = sqlite3.connect(path)
         try:
             return [row[0] for row in conn.execute("SELECT value FROM sample_shard")]
         finally:
             conn.close()
 
-    # 直接构造「残留 + 在线库并存」的磁盘状态：模拟旧版写路径重建的空库。
+    # 构造残留+在线库并存的磁盘状态
     conn = sqlite3.connect(db_path)
     try:
         conn.execute("CREATE TABLE sample_shard (id INTEGER PRIMARY KEY, value TEXT)")
@@ -1782,9 +1782,9 @@ async def test_ensure_budget_skips_eviction_without_archive(
     assert list(values) == ["only-copy"]
 
 
-# --------------------------------------------
-# 分片生命周期：读路径锁 / 归档完整性 / manifest 容错
-# --------------------------------------------
+# ────────────
+# 分片生命周期回归
+# ────────────
 
 
 @pytest.mark.asyncio
@@ -1840,7 +1840,7 @@ async def test_map_reduce_holds_shard_lock_against_archiver(
         _query,
     )
 
-    # 查询期间归档被分片锁挡住（此时仍属进行中），查询读到完整数据。
+    # 查询期间归档被锁挡住，数据完整
     assert blocked_mid_query == [True]
     assert observed == [1]
     assert results == [1]
@@ -1939,8 +1939,8 @@ async def test_manifest_flush_failure_does_not_block_writes(
         _always_fail,
     )
 
-    # 用一个「全新」月份：只有 create_if_missing 的建分片占位分支
-    # 会真正调用 flush_manifest()。已存在的月份会绕过该分支，测试将空转。
+    # 用全新月份：只有占位分支真正调 flush_manifest
+    # 已存在的月份会绕过该分支使测试空转
     fresh = arrow.get("2027-01-08").datetime
     async with db.write_session(time_ctx=fresh) as session:
         session.add(_ShardModel(value="written-without-manifest"))
@@ -1988,12 +1988,12 @@ async def test_ensure_budget_rechecks_warm_state_under_lock(
     archive_path = db_path.with_suffix(".db.zst")
     assert archive_path.is_file()
 
-    # 复刻 hydrate 之后的 WARM 在线库（手动控制逐出时机）。
+    # 复刻 hydrate 后的 WARM 在线库
     await asyncio.to_thread(db._decompress_file, archive_path, db_path)
     await db._touch_segment("2026_04", state=SegmentState.WARM)
     assert db_path.is_file()
 
-    # 模拟并发写入在「快照之后、取锁之前」完成：写入会把分片提升为 HOT。
+    # 快照后取锁前完成并发写入：分片升 HOT
     real_shard_lock = db._shard_lock
 
     def _flip_then_lock(shard_key: str) -> object:
@@ -2042,7 +2042,7 @@ async def test_atomic_write_works_after_production_init_sequence(
 
     await init_db()
 
-    # init_db 之后三个库已经是 DELETE，原子路径只是沿用。
+    # init_db 后三库即 DELETE，原子路径沿用
     for name in ("core_db/core.db",):
         conn = sqlite3.connect(tmp_path / name)
         try:
@@ -2051,7 +2051,7 @@ async def test_atomic_write_works_after_production_init_sequence(
             conn.close()
         assert mode == "delete", f"{name} 应为 delete，实际 {mode}"
 
-    # 关键断言：生产顺序下原子写恢复可用（此处曾是 database is locked）。
+    # 关键断言：生产顺序下原子写可用
     from src.database.core.consts import Permission
     from src.database.core.ops import UserOps
     from src.lib.db.atomic import system_atomic_session
@@ -2125,7 +2125,7 @@ async def test_atomic_session_revives_sealed_shard_before_attach(
     from src.database.core.consts import Permission
     from src.database.core.ops import UserOps
 
-    # 生产启动会经 services.db 登记参与者库走 rollback journal。
+    # 生产启动经 services.db 登记参与者库
     from src.database.instances import core_db, log_db, snapshot_db
     from src.database.log.consts import AuditAction, AuditCategory, AuditContext
     from src.database.log.ops import AuditLogOps
@@ -2152,7 +2152,7 @@ async def test_atomic_session_revives_sealed_shard_before_attach(
             action=AuditAction.GRANT,
         )
 
-    # 2) 复刻体积闸门 force seal 当月 log 分片。
+    # 2) 复刻体积闸门 force seal 当月分片
     log_shard = log_db.store._get_file_paths("202610")[0]
     await db_manager.dispose(str(log_shard))
     outcome, _ = await log_db.store._archive_shard("202610", force=True)
@@ -2177,7 +2177,7 @@ async def test_atomic_session_revives_sealed_shard_before_attach(
         )
     finally:
         conn.close()
-    # 关键断言：旧行（t1）与新行（t2）同处一个分片，影子库分裂绝迹。
+    # 关键断言：新旧行同处一分片
     assert rows == ["t1", "t2"]
 
 
@@ -2262,7 +2262,7 @@ async def test_restore_reset_clears_shard_caches_for_in_place_overwrite(
     register_backup_database(db)
     reset_registered_database_runtime_states()
 
-    # 关键断言：schema 标记与 manifest 缓存都已复位，下次访问重放补丁。
+    # 关键断言：标记与缓存均复位
     assert db._initialized_shards == {}
     assert db._manifest is None
     assert db._manifest_dirty is False

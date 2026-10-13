@@ -110,7 +110,7 @@ def _build_wordbank_command_progress_spec(
     return None
 
 
-# entry_commands 按包级名导入，长任务审计据此定位本轮装配
+# entry_commands 包级名导入：审计据此定位
 __all__ = [
     "_build_wordbank_command_progress_spec",
     "_finish_guided_add",

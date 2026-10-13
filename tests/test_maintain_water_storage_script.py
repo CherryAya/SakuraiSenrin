@@ -267,15 +267,15 @@ async def test_main_runs_selected_steps_and_writes_report(
 
     await maintain_script.main()
 
-    # captured 的值是 object，用 cast 显式收窄，下游 dict 取值才
+    # captured 是 object：cast 收窄供下游取值
     # 落到具体类型（运行期断言照旧保留）。
     report_record = cast("tuple[object, dict[str, object]]", captured["report"])
     report_payload = report_record[1]
     assert report_payload["summary_backfill"] == {"moved_rows": 1}
     assert report_payload["log_index_cleanup"] == {"shards_touched": 2}
     assert report_payload["summary_prune"] == {"pruned_rows": 3}
-    # db_root 是真实文件系统路径，Windows 下为反斜杠；按路径语义比较
-    # （与 test_audit_water_storage_script.py 写法一致）。
+    # db_root 为真实路径，Windows 反斜杠
+    # 与 audit 脚本测试写法一致
     post_audit = cast("dict[str, object]", report_payload["post_audit"])
     db_root = cast(str, post_audit["db_root"])
     assert Path(db_root) == Path("data/db")

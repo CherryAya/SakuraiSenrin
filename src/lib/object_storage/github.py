@@ -174,7 +174,7 @@ class GitHubObjectStorageClient:
             raise ObjectStorageError(
                 f"GitHub contents list failed: {response.status_code}"
             )
-        # response.json() 静态返回为 Any，显式声明后收窄
+        # response.json() 静态返回 Any，显式收窄
         payload: JsonValue = response.json()
         if not isinstance(payload, list):
             raise ObjectStorageError("GitHub contents list response is not an array")

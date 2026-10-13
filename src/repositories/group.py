@@ -110,7 +110,7 @@ class GroupRepository:
 
     async def _save_immediate(self, ctx: GroupChangeContext) -> None:
         event_time = get_current_time()
-        # 单一事务：core + 当月 log 分片 + 当月 snapshot 分片。
+        # 单一事务：core + 当月 log + snapshot
         async with system_atomic_session(event_time) as session:
             group_ops = GroupOps(session)
             audit_log_ops = AuditLogOps(session)
@@ -141,7 +141,7 @@ class GroupRepository:
                 await audit_log_ops.create_audit_log(
                     target_id=ctx.group_id,
                     context_type=AuditContext.GROUP,
-                    # 同 buffered 路径（writers.py:190）：属访问控制
+                    # 同 buffered 路径：属访问控制
                     category=AuditCategory.ACCESS,
                     action=AuditAction.CHANGE,
                     context_id=ctx.group_id,

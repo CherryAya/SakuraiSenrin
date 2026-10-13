@@ -444,7 +444,7 @@ async def _warm_up_core_repositories() -> None:
 
 
 async def _reload_runtime_state_after_restore() -> None:
-    # 恢复就地覆盖文件（inode 保持），先复位派生状态再触发重载
+    # 恢复就地覆盖：先复位派生状态再重载
     from src.lib.backup.registry import reset_registered_database_runtime_states
 
     reset_registered_database_runtime_states()

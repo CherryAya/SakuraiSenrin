@@ -160,7 +160,7 @@ STUDY_STEP_GROUP_BLOCK = 2
 STUDY_STEP_TRIGGER = 3
 STUDY_STEP_RESPONSE = 4
 STUDY_STEP_WEIGHT = 5
-# TODO: 各步骤 cleanup_keys 覆盖范围待核实。
+# TODO: 各步骤 cleanup_keys 覆盖范围待核实
 STUDY_RECALL_PENDING_KEYS: tuple[str, ...] = (
     "study_forward_response_pending",
     "study_forward_response_event",
@@ -170,20 +170,20 @@ STUDY_RECALL_PENDING_KEYS: tuple[str, ...] = (
 
 # region recall 快照保留键
 # 撤回重建时按步骤恢复已确认状态，集中声明一份。
-# TRIGGER 步骤快照：shape 留待 RESPONSE 补。
+# TRIGGER 快照：shape 留待 RESPONSE
 STUDY_SNAPSHOT_KEYS_AFTER_TRIGGER: tuple[str, ...] = (
     "study_trig_mode",
     "study_group_block",
     "study_trigger_preloaded",
     "study_response_after_preloaded_trigger",
 )
-# RESPONSE 步骤确认回答后追加 trigger shape 与后续步骤标记。
+# RESPONSE 确认后补 trigger shape
 STUDY_SNAPSHOT_KEYS_AFTER_RESPONSE: tuple[str, ...] = (
     *STUDY_SNAPSHOT_KEYS_AFTER_TRIGGER,
     "study_trigger_shape",
     "study_weight_after_preloaded_trigger",
 )
-# WEIGHT 步骤只差提交本身，需再带上 response shape 供最终落库。
+# WEIGHT 需带 response shape 供最终落库
 STUDY_SNAPSHOT_KEYS_AFTER_WEIGHT: tuple[str, ...] = (
     *STUDY_SNAPSHOT_KEYS_AFTER_RESPONSE,
     "study_response_shape",
@@ -192,8 +192,8 @@ STUDY_SNAPSHOT_KEYS_AFTER_WEIGHT: tuple[str, ...] = (
 
 
 # region 引导步骤处理
-# 与 wordbank/guided_flow.py 各自实现：触发词预载与五步权重。
-# 共享 state 内核见 src/lib/guided_state.py。
+# 与 guided_flow.py 各自实现
+# 共享内核见 src/lib/guided_state.py
 @lru_cache(maxsize=1)
 def _build_study_submission_lifecycle() -> SubmissionLifecycle:
 
@@ -362,7 +362,7 @@ async def _start_guided_study_from_partial_args(
     clear_interaction_errors(state)
     register_root_message(state, event)
     state["study_trig_mode"] = trig_mode
-    # 命令行已带上触发词模式，对应的步骤处理器须跳过本次输入（见命令入口级联说明）。
+    # 带触发词模式：步骤处理器跳过本次输入
     state["study_skip_mode_step"] = True
 
     if len(tokens) == 1:
@@ -855,17 +855,17 @@ async def _start_guided_study_with_trigger_image(
 
 
 # region 命令入口
-# handler 共享 study_command，按注册顺序级联：
-# 命中 pause 终止整链；其余直接 return，交给下一个 handler。
+# handler 共享 study_command 级联：
+# pause 终止整链；其余 return 交下一个
 #
-#   #study <args> → 入口：带参直接提交 / 预填步骤
-#   模式          → 消费 study_skip_mode_step 后跳过
-#   分组范围      → 消费 study_skip_group_block_step
+# #study <args> → 入口：带参提交 / 预填步骤
+# 模式 → 消费 skip_mode_step 后跳过
+# 分组 → 消费 skip_group_block_step
 #   触发/回答     → 按 *_preloaded 标记分流
 #   回答/权重     → 合并转发选择 / 记录回答
-#   权重与提交    → 仅 study_weight_pending 时执行
+# 权重与提交 → 待 study_weight_pending
 #
-# 注意：*_skip_* 为一次性令牌，命中即 pop；重排顺序等同改行为。
+# 注意：*_skip_* 为一次性令牌，命中即 pop
 @study_command.handle()
 async def _(
     bot: Bot,
@@ -1121,7 +1121,7 @@ async def _(bot: Bot, matcher: Matcher, event: NoticeEvent) -> None:
 
     locale = "zh-CN"
     checkpoint = session.checkpoint
-    # Matcher._default_state 受保护，经 getattr 取只读视图
+    # _default_state 受保护：getattr 只读
     state = cast(
         "Mapping[str, object]",
         getattr(session.matcher_cls, "_default_state"),

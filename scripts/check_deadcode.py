@@ -26,17 +26,17 @@ KEEP_KINDS = frozenset(
         "framework-hook",  # nonebot/apscheduler 装饰器注册的回调
         "orm-contract",  # SQLAlchemy 列 / relationship 钩子
         "protocol-member",  # Protocol 结构化匹配成员（形参名逐字对齐第三方）
-        "data-contract",  # TypedDict / dataclass / manifest 序列化字段
+        "data-contract",  # TypedDict / dataclass 序列化字段
         "state-accessor",  # 枚举 is_xxx/can_xxx 访问器
         "test-double",  # 测试替身按属性名满足契约的成员
         "test-binding",  # src 符号仅被 tests 直接引用
-        "module-protocol",  # 模块协议：__path__ / __getattr__ / __all__
+        "module-protocol",  # 模块协议：__path__ / __getattr__
         "public-api",  # 有意保留的公共 API 面（附理由）
         "manual-entry",  # 供人工执行的脚本入口（__main__）
     },
 )
 
-# 扫描根；plugins/hooks 走 nonebot 加载，豁免走 allowlist
+# plugins/hooks 由 nonebot 加载，豁免
 SCAN_ROOTS = ("src", "tests", "scripts")
 SKIP_PARTS = frozenset({"__pycache__", ".venv", "node_modules"})
 

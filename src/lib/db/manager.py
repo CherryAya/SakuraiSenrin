@@ -95,7 +95,7 @@ class DatabaseManager:
 
             echo = self._resolve_sql_echo()
             engine = create_async_engine(url, echo=echo)
-            # 单库会话：attached schema 前缀映射回 main
+            # 单库会话：attached schema 归 main
             engine = engine.execution_options(
                 schema_translate_map=_standalone_schema_map(),
             )

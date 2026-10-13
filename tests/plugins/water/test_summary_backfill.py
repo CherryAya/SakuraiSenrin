@@ -222,7 +222,7 @@ async def test_summary_shard_receives_backfilled_rows_after_archiver_runs() -> N
     await water_repo.backfill_expiring_summaries(today_ts=today_ts)
     await water_repo.archive_summary_shards()
 
-    # 归档把分片转冷：按业务约束显式以 HYDRATE 读回（与查询路径一致）。
+    # 归档转冷：显式 HYDRATE 读回
     async with water_summary.read_session_for(
         "2026_03",
         cold_policy=ColdPolicy.HYDRATE,
@@ -243,7 +243,7 @@ def test_hot_window_anchor_is_cst_not_utc() -> None:
     early = arrow.get("2026-07-01 00:35:00+08:00").int_timestamp
     late = arrow.get("2026-07-01 09:00:00+08:00").int_timestamp
 
-    # 旧实现在 early 给出 20260402（UTC 日界），与新边界相差一天。
+    # 旧实现在 early 给 20260402（UTC 日界）
     assert WaterRepository._hot_summary_start_date(early) == 20260403
     # 同一 CST 日内边界恒定：job 与读路径必须切在同一处。
     assert WaterRepository._hot_summary_start_date(
@@ -277,5 +277,5 @@ async def test_bulk_upsert_summary_chunks_large_batches() -> None:
     async with water_core_db.session(commit=True) as session:
         written = await WaterSummaryOps(session).bulk_upsert_summary(payloads)
 
-    # 分块后 9000 行全部落库（4000 + 4000 + 1000）。
+    # 9000 行经分块全部落库
     assert written == 9000

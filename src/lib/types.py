@@ -44,7 +44,7 @@ def is_json_object(value: object) -> TypeGuard[JsonObject]:
 
     与 is_object_mapping 的区别：本函数额外校验值确实是 JSON 形态。
     """
-    # is_json_value 的映射分支已校验键为 str，这里只需收紧 dict 判断
+    # 映射分支已校验 str 键：此处收紧 dict
     if not isinstance(value, dict):
         return False
     return is_json_value(cast("Mapping[object, object]", value))

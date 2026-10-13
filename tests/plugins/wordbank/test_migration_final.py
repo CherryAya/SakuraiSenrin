@@ -53,8 +53,8 @@ async def test_migrate_legacy_rows_recreates_target_namespace_without_patches(
     sentinel.write_text("legacy", encoding="utf-8")
 
     # 该目录稍后整目录 rmtree（重建流程）。
-    # `with sqlite3.connect(...)` 退出时只提交，句柄靠 GC；
-    # Windows 下残留句柄钉住文件会挡住 rmtree，closing() 立即释放。
+    # with 只提交：句柄靠 GC
+    # 残留句柄钉住文件会挡住 rmtree
     with contextlib.closing(sqlite3.connect(db_path)) as conn:
         conn.execute(
             """

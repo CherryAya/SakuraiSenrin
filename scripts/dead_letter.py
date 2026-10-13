@@ -57,7 +57,7 @@ def _build_handlers() -> dict[str, object]:
         for value in vars(module).values():
             if isinstance(value, BatchWriter):
                 handlers[value.worker_name] = value.flush_callback
-    # trace writer 懒建在模块私有变量里，模块级扫描缺席；显式补上
+    # trace writer 懒建在私有变量，模块级扫描缺席
     trace_writer = get_trace_writer()
     handlers[trace_writer.worker_name] = trace_writer.flush_callback
     return handlers

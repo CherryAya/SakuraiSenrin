@@ -159,7 +159,7 @@ def _attach_context_to_event(event: Event) -> None:
 
 
 async def notify_admin(error_message: str) -> None:
-    # get_bot 离线时抛异常，须吞掉：告警失败会上报，成自激循环。
+    # get_bot 离线异常吞掉：告警失败会重复上报
     try:
         bot = get_bot()
     except Exception as e:
@@ -167,7 +167,7 @@ async def notify_admin(error_message: str) -> None:
         return
     try:
         await deliver_admin_notification_i18n(
-            # get_bot() 静态返回基类 Bot；本仓库 bot.py 只注册 V11 适配器。
+            # get_bot() 静态返回基类 Bot；本仓仅 V11
             cast(Bot, bot),
             locale="zh-CN",
             key="sentry.alert",
@@ -179,7 +179,7 @@ async def notify_admin(error_message: str) -> None:
 
 
 def before_send_handler(event: Event, hint: Hint) -> Event | None:
-    # 仅丢弃 websockets keepalive 噪声；业务异常全量通报。
+    # websockets keepalive 噪声丢弃，其余通报
     if _should_drop_event(hint):
         logger.debug("Skip reporting websocket keepalive AssertionError noise.")
         return None
@@ -189,7 +189,7 @@ def before_send_handler(event: Event, hint: Hint) -> Event | None:
         if not isinstance(exc_type, type):  # pragma: no cover - 防御
             return event
 
-        # 顺序有讲究：先补上下文，再定 Sentry level，最后通报管理员。
+        # 顺序：补上下文，定 Sentry level，再通知管理员
         _attach_context_to_event(event)
 
         if _should_downgrade_level(exc_value):

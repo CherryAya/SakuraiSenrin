@@ -520,7 +520,7 @@ class WaterRankService:
             }
         if subject == "group":
             resolved = await group_repo.get_names_by_gids(entity_ids)
-            # 兜底命名与 resolve_group_name(None, ...) 保持一致
+            # 兜底命名对齐 resolve_group_name
             return {
                 entity_id: resolved.get(entity_id) or f"群聊_{entity_id[-4:]}"
                 for entity_id in entity_ids

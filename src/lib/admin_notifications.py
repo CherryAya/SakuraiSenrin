@@ -47,7 +47,7 @@ def parse_admin_notification_group_ids(raw: object) -> tuple[str, ...]:
     if not isinstance(raw, (list, tuple, set, frozenset)):
         raise ValueError("ADMIN_NOTIFY_GROUP_IDS must be an array-like value")
 
-    # 元素类型写实为 object：str() 接受任意形态，收窄走 cast
+    # 元素类型写成 object：str() 接受任意形态
     payload = cast("Collection[object]", raw)
 
     group_ids: list[str] = []
@@ -103,7 +103,7 @@ async def deliver_admin_notification_plan(
                 plan=plan,
                 target=target.delivery_target,
             )
-        except Exception as exc:  # pragma: no cover - defensive logging
+        except Exception as exc:  # pragma: no cover - 防御日志
             logger.warning(
                 "[AdminNotify] delivery failed "
                 f"source_kind={plan.source_kind or '-'} "

@@ -74,7 +74,7 @@ def _load_stores() -> dict[str, AliasStore[_NoopOps]]:
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
 
-    # 用空壳包绕开插件 bootstrap 的 NoneBot 副作用
+    # 空壳包绕开 NoneBot 插件 bootstrap 副作用
     for name, path in (
         ("src.plugins.water", project_root / "src" / "plugins" / "water"),
         ("src.plugins.wordbank", project_root / "src" / "plugins" / "wordbank"),

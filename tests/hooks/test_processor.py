@@ -25,7 +25,7 @@ def _isolated_processor_module(
 ) -> Iterator[ModuleType]:
     original_run_preprocessors = message_module._run_preprocessors.copy()
     # nonebot 插件注册表是进程级全局的，重导入同名插件会撞
-    # "Plugin processor already exists"；执行前先摘掉。
+    # plugin 已存在：先摘掉
     saved_plugin = nonebot_plugin._plugins.pop("processor", None)
     sys.modules.pop("src.hooks.processor", None)
     module = importlib.import_module("src.hooks.processor")

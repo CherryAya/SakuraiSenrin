@@ -22,7 +22,7 @@ RUNTIME_SCAN_ROOTS = (
 )
 WAIT_PROMPT_PATTERN = re.compile(f"({ZH_CATALOG['i18n.wait_prompt_words']})")
 
-# 等待提示 i18n 键白名单：.running/.processing 里混有状态标签，
+# 等待提示 i18n 键白名单：混有状态标签
 # 故逐键对目录校验以防漂移。
 WAIT_I18N_KEYS = frozenset(
     {
@@ -552,7 +552,7 @@ def _collect_heavy_path_candidates(
 ) -> list[LongTaskHeavyPathCandidate]:
     candidates: list[LongTaskHeavyPathCandidate] = []
     for path in _iter_runtime_python_files(root):
-        # endpoint 是 git 跟踪产物，路径固定 POSIX 形式
+        # endpoint 为 git 跟踪产物：POSIX 路径
         relative_path = path.relative_to(root).as_posix()
         source = _read_text(path)
         if not source:
@@ -620,7 +620,7 @@ def build_long_task_progress_report(
     return {
         "version": 1,
         "generated_at": datetime.fromtimestamp(get_current_time()).isoformat(),
-        # 同上：root 以 POSIX 形式输出，换机生成时整文件 diff 稳定
+        # 同上：POSIX 路径让 diff 跨机稳定
         "root": root.as_posix(),
         "summary": {
             "total_targets": len(target_rows),

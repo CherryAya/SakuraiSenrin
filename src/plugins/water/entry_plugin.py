@@ -473,7 +473,7 @@ async def _(bot: Bot, matcher: Matcher, event: NoticeEvent) -> None:
     if session is None:
         return
 
-    # _default_state 为 nonebot 内部字段，getattr 取原值
+    # _default_state 为 nonebot 内部字段
     default_state = cast("T_State", getattr(session.matcher_cls, "_default_state", {}))
     locale = _water_rank_locale(default_state)
     checkpoint = session.checkpoint

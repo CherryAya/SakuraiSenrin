@@ -104,7 +104,7 @@ def find_recall_session(
             continue
         if matcher_cls.module_name != matcher_source.module_name:
             continue
-        # _source / _default_state：nonebot 内部字段
+        # 内部字段：_source / _default_state
         cls_source = cast("MatcherSource | None", getattr(matcher_cls, "_source", None))
         source = cast("MatcherSource | None", getattr(matcher_source, "_source", None))
         if cls_source != source:
@@ -159,7 +159,7 @@ def rebuild_temp_matcher(
     step_index: int,
     state: Mapping[str, object],
 ) -> type[Matcher]:
-    # _source / _default_*_updater：nonebot 内部字段
+    # 内部字段：_default_*_updater 等
     source = cast("MatcherSource | None", getattr(matcher_source, "_source", None))
     type_updater = cast(
         "T_TypeUpdater | Dependent[str] | None",

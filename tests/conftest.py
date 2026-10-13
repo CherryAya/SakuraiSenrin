@@ -9,12 +9,12 @@ from nonebug import NONEBOT_INIT_KWARGS
 import pytest
 import pytest_asyncio
 
-# sentry 插件导入前就设置好：init() 在模块导入时全局生效，
-# 用例失败会派发管理员告警，异步 task 落到后续用例 event loop，
+# sentry 在导入前关：init() 全局生效且异步派发
+# 失败告警的 task 会落到后续用例 loop
 # 造成连锁失败。
 os.environ.setdefault("SAKURAI_DISABLE_SENTRY_NOTIFY", "1")
 
-# 测试收集阶段拦截插件引导模块导入：只测子模块，避开 NoneBot 副作用。
+# 收集阶段拦截插件引导：只测子模块
 _root = Path(__file__).resolve().parents[1]
 _water_pkg_path = _root / "src" / "plugins" / "water"
 _wordbank_pkg_path = _root / "src" / "plugins" / "wordbank"
@@ -81,9 +81,9 @@ if "src.config" not in sys.modules:
 
 
 def pytest_configure(config: pytest.Config) -> None:
-    # nonebug 把 kwargs 原样交给 nonebot.init()。
-    # pydantic-settings 按字段名精确匹配程序化 kwargs：
-    # nonebot 声明小写 superusers；大写名落进 extra 字段。
+    # nonebug 原样转交 kwargs 给 nonebot
+    # pydantic 按字段名精确匹配程序化 kwargs：
+    # 小写 superusers 才进真实字段
     # 生产 .env 查找会同时填好两者；这里也双写。
     config.stash[NONEBOT_INIT_KWARGS] = {
         "superusers": {"1"},

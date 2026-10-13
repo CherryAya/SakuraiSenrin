@@ -973,7 +973,7 @@ async def handle_search_session_event(
     state: T_State,
     locale: LocaleCode,
 ) -> None:
-    # 局部导入：views/errors 依赖本模块，模块级导入成环
+    # 局部导入：views/errors 依赖本模块成环
     from src.plugins.wordbank import views as views_module
     from src.plugins.wordbank.errors import build_wordbank_error_message
 

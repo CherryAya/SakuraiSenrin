@@ -1441,7 +1441,7 @@ class WaterReportService:
         )
         current_rows_by_group = self._group_summary_rows_by_group(current_rows_all)
         previous_rows_by_group = self._group_summary_rows_by_group(previous_rows_all)
-        # 聚合与排序口径收口在 repo 的 distribution 查询
+        # 口径收口在 repo 的 distribution 查询
         distribution_items = tuple(
             await water_repo.get_group_daily_distribution_items(
                 record_date=record_date,

@@ -39,22 +39,18 @@ from .schema import PatchBase, PatchRegistry
 
 MAX_MAP_REDUCE_MONTH_SPAN = 24
 
-# 分片键业务时区：路由与活跃判定同源
+# 分片键时区：路由与活跃判定共用
 DEFAULT_SEGMENT_TZ = "Asia/Shanghai"
 
-# manifest 去抖落盘间隔（秒），允许延迟
-MANIFEST_FLUSH_INTERVAL = 5.0
+MANIFEST_FLUSH_INTERVAL_SECONDS = 5.0
 
-# 单分片体积上限（MB），对齐 ES ILM
 DEFAULT_MAX_SEGMENT_SIZE_MB = 512
 
-# 超阈值分片在巡检时强制 seal 转 COLD
+# 超阈值分片巡检时强制 seal
 SEGMENT_SIZE_ROLLOVER_MB = 256
 
-# 两阶段归档的中间态后缀
 ARCHIVE_STAGING_SUFFIX = ".archiving"
 
-# 业务时间入参：时间戳 / datetime / Arrow / 字符串
 type MomentLike = datetime | arrow.Arrow | str | int
 
 
@@ -241,7 +237,6 @@ class BaseDB(ABC):
         time_ctx: datetime | None = None,
         cold_policy: ColdPolicy | None = None,
     ) -> AbstractAsyncContextManager[AsyncSession]:
-        # 具名参数如实转发：分片库据此路由，单文件库忽略
         if commit:
             return self.write_session(time_ctx=time_ctx)
         return self.read_session(time_ctx=time_ctx, cold_policy=cold_policy)
@@ -539,7 +534,7 @@ class SegmentStore(BaseDB):
         manifest = self._load_manifest()
         target = self.manifest_path
         payload = manifest.to_json()
-        # 临时名取 uuid：主进程与 cron worker 并发落盘时避免互踩
+        # uuid 临时名：并发落盘互踩防护
         tmp_path = target.with_suffix(f".json.{uuid.uuid4().hex}.tmp")
         try:
             tmp_path.write_text(payload, encoding="utf-8")
@@ -560,7 +555,7 @@ class SegmentStore(BaseDB):
             loop = asyncio.get_running_loop()
         except RuntimeError:
             return
-        # 残留任务属于别的 loop 时直接丢弃并同步落盘
+        # 跨 loop 残留任务直接同步落盘
         if task is not None and self._manifest_loop is not loop:
             self._manifest_flush_task = None
             self._write_manifest_atomic()
@@ -570,7 +565,7 @@ class SegmentStore(BaseDB):
         self._manifest_flush_task = loop.create_task(self._manifest_flush_loop())
 
     async def _manifest_flush_loop(self) -> None:
-        await asyncio.sleep(MANIFEST_FLUSH_INTERVAL)
+        await asyncio.sleep(MANIFEST_FLUSH_INTERVAL_SECONDS)
         if not self._manifest_dirty:
             return
         self._manifest_dirty = False
@@ -607,7 +602,7 @@ class SegmentStore(BaseDB):
                 summary=f"Initializing shard schema for {shard_key}.",
                 shard_key=shard_key,
             )
-            # 分片文件身份变化时先释放旧引擎：连接池可能仍握着失效 inode
+            # 身份变化先释放旧引擎：池可能握失效 inode
             await db_manager.dispose(str(db_path))
             async with db_manager.open(str(db_path), commit=True) as session:
                 engine = session.bind
@@ -633,14 +628,14 @@ class SegmentStore(BaseDB):
 
     def _compress_file(self, source: Path, destination: Path) -> None:
         destination.parent.mkdir(parents=True, exist_ok=True)
-        # Windows：连接句柄会钉住 .db 与 sidecar，先显式关闭再 rename
+        # Windows 句柄钉住：先关闭再 rename
         conn = sqlite3.connect(source)
         try:
             conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         finally:
             conn.close()
-        # 先写 tmp 再原子改名，压缩中断只留下 .zst.tmp
-        # write_checksum：供解压侧识别截断与位翻转
+        # 先写 tmp 再原子改名：中断只留 .tmp
+        # write_checksum：解压侧识别截断与位翻转
         tmp_path = destination.with_suffix(f"{destination.suffix}.tmp")
         cctx = zstd.ZstdCompressor(level=10, write_checksum=True)
         try:
@@ -652,7 +647,7 @@ class SegmentStore(BaseDB):
             raise
 
     def _cleanup_sqlite_sidecars(self, db_path: Path) -> None:
-        # -journal 是回滚日志模式下的残留，一并清理
+        # -journal 亦为残留，一并清理
         for suffix in ("-wal", "-shm", "-journal"):
             sidecar = Path(f"{db_path}{suffix}")
             if sidecar.exists():
@@ -660,7 +655,7 @@ class SegmentStore(BaseDB):
 
     def _decompress_file(self, source: Path, destination: Path) -> None:
         destination.parent.mkdir(parents=True, exist_ok=True)
-        # tmp + 原子改名；用 decompressobj 识别截断与校验和失配
+        # decompressobj 识别截断与校验和失配
         tmp_path = destination.with_suffix(f"{destination.suffix}.tmp")
         dctx = zstd.ZstdDecompressor()
         decompressor = dctx.decompressobj()
@@ -725,7 +720,6 @@ class SegmentStore(BaseDB):
             shard_key = self._shard_key_for_path(Path(entry.path))
             if shard_key is None:
                 continue
-            # 逐出即删在线文件：仅归档在场时可做
             archive_path = Path(entry.archive_path) if entry.archive_path else None
             if archive_path is None or not await asyncio.to_thread(archive_path.exists):
                 logger.warning(
@@ -733,7 +727,7 @@ class SegmentStore(BaseDB):
                     f"跳过逐出以免删除唯一副本"
                 )
                 continue
-            # 锁忙时跳过：跨分片等待会形成 AB-BA 死锁
+            # 锁忙跳过：跨分片等待成 AB-BA 死锁
             lock = self._shard_lock(shard_key)
             if lock.is_busy():
                 logger.debug(
@@ -742,7 +736,7 @@ class SegmentStore(BaseDB):
                 )
                 continue
             async with lock:
-                # 状态复检：期间写路径可能把该分片提升回 HOT
+                # 状态复检：写路径可能已提升回 HOT
                 if entry.state != SegmentState.WARM:
                     continue
                 db_path = Path(entry.path)
@@ -750,7 +744,6 @@ class SegmentStore(BaseDB):
                     try:
                         staging = await self._retire_shard_file(shard_key, db_path)
                     except ArchiveStagingConflictError as exc:
-                        # 归档残留阻塞逐出：保留两者并跳过本次
                         logger.error(
                             f"[{self.namespace}/{self.prefix}] 逐出分片 {shard_key} "
                             f"被归档残留阻塞，已保留待人工裁决: {exc}"
@@ -826,7 +819,7 @@ class SegmentStore(BaseDB):
                 f"staging residue exists for shard {shard_key}: {staging_path.name}"
             )
         await db_manager.dispose(str(db_path))
-        # 先回放 WAL 已提交帧、再删 sidecar，固定此顺序
+        # 先回放 WAL 再删 sidecar：顺序即正确性
         await asyncio.to_thread(self._checkpoint_wal, db_path)
         await asyncio.to_thread(self._cleanup_sqlite_sidecars, db_path)
         await asyncio.to_thread(os.replace, db_path, staging_path)
@@ -851,7 +844,7 @@ class SegmentStore(BaseDB):
         db_path, _ = self._get_file_paths(shard_key)
         if await asyncio.to_thread(db_path.exists):
             return False
-        # 与 hydrate 同锁：归位与解压/新建并发会写出损坏库
+        # 与 hydrate 同锁：并发归位写出损坏库
         async with self._shard_lock(shard_key):
             if await asyncio.to_thread(db_path.exists):
                 return False
@@ -861,7 +854,6 @@ class SegmentStore(BaseDB):
             try:
                 await asyncio.to_thread(os.replace, staging_path, db_path)
             except FileNotFoundError:
-                # 并发路径已完成归位
                 return False
         log_trace_event(
             event_name="recover_staged_shard",
@@ -910,7 +902,7 @@ class SegmentStore(BaseDB):
         policy = cold_policy or self.cold_policy
         db_path, archive_path = self._get_file_paths(shard_key)
         entry = self._manifest_entry(shard_key, db_path, archive_path)
-        # 归档残留在场时先归位，避免下方重建空库
+        # 残留先归位，避免下方重建空库
         if not await asyncio.to_thread(db_path.exists):
             restored = await self._restore_staged_shard(shard_key)
             if restored:
@@ -964,7 +956,7 @@ class SegmentStore(BaseDB):
             try:
                 await asyncio.to_thread(self._decompress_file, safe_archive, safe_db)
             except ArchiveIntegrityError as exc:
-                # 损坏归档：隔离留证并把该分片显式报错
+                # 损坏归档：隔离留证并显式报错
                 quarantine = await self._quarantine_archive(shard_key, exc)
                 log_trace_event(
                     event_name="hydrate_shard",
@@ -982,7 +974,7 @@ class SegmentStore(BaseDB):
                 )
                 raise
             await self._touch_segment(shard_key, state=SegmentState.WARM)
-        # 放分片锁之外执行，避免嵌套加锁
+        # 放分片锁之外：嵌套加锁有死锁风险
         await self._ensure_budget()
         logger.success(f"冷库解压完成: {safe_db.name}")
         log_trace_event(
@@ -1032,7 +1024,7 @@ class SegmentStore(BaseDB):
         if time_ctx is None:
             time_ctx = self._tz_now().datetime
         shard_key = self._get_shard_key(time_ctx)
-        # 全程持分片锁：归档须等在途写事务结束后才能动文件
+        # 全程持锁：归档等写事务结束后动文件
         async with self._shard_lock(shard_key):
             await self._ensure_shard_online(
                 shard_key,
@@ -1054,7 +1046,7 @@ class SegmentStore(BaseDB):
         *,
         cold_policy: ColdPolicy | None = None,
     ) -> list[T]:
-        # 窗口边界先归一到 self.tz 再取月，与分片切分口径一致
+        # 边界先归一到 self.tz 再取月：同分片口径
         start_local = self._to_local(start_time)
         end_local = self._to_local(end_time)
         curr = start_local.floor("month")
@@ -1064,7 +1056,7 @@ class SegmentStore(BaseDB):
             + end_local.month
             - start_local.month
         )
-        # 通用分片扫描的库级护栏，业务侧应各自收窄窗口
+        # 库级护栏：业务侧各自收窄窗口
         if months_span > MAX_MAP_REDUCE_MONTH_SPAN:
             from src.lib.i18n.catalog import tr
 
@@ -1090,7 +1082,7 @@ class SegmentStore(BaseDB):
                 f"{start_local.strftime('%Y-%m')} to {end_local.strftime('%Y-%m')}."
             ),
             batch_size=len(shard_keys),
-            # list[str] 赋给 JsonValue 需显式 cast
+            # list[str] 赋 JsonValue：显式 cast
             payload_json=cast("JsonObject", {"shard_keys": list(shard_keys)}),
         )
         semaphore = asyncio.Semaphore(self.map_reduce_concurrency)
@@ -1098,7 +1090,7 @@ class SegmentStore(BaseDB):
         async def _run(key: str) -> T | None:
             policy = cold_policy or self.cold_policy
             async with semaphore:
-                # 全程持分片锁：锁内检查与 open 之间是 TOCTOU 窗口
+                # 全程持锁：检查与 open 间是 TOCTOU 窗口
                 async with self._shard_lock(key):
                     try:
                         is_online = await self._ensure_shard_online(
@@ -1133,7 +1125,7 @@ class SegmentStore(BaseDB):
             now.shift(months=-offset).strftime(self.fmt)
             for offset in range(self.active_window_months)
         }
-        # 阶段 0：上次归档中断留下的 .archiving 残留自愈
+        # 阶段 0：.archiving 残留自愈
         conflicted: set[str] = set()
         residue_pattern = f"{self.prefix}_*{ARCHIVE_STAGING_SUFFIX}"
         for residue in sorted(self.base_dir.glob(residue_pattern)):
@@ -1179,13 +1171,11 @@ class SegmentStore(BaseDB):
             file_key = db_file.stem.removeprefix(f"{self.prefix}_")
             if not file_key:
                 continue
-            # 阶段 0 已判定冲突的分片留在该集合里，此处跳过
             if file_key in conflicted:
                 continue
             size_mb = await asyncio.to_thread(
                 lambda: db_file.stat().st_size / (1024 * 1024)
             )
-            # 窗口外或体积超阈值的分片都走 seal
             oversized = size_mb >= SEGMENT_SIZE_ROLLOVER_MB
             if file_key in active_keys and not oversized:
                 await self._touch_segment(file_key, state=SegmentState.HOT)
@@ -1302,7 +1292,7 @@ class SegmentStore(BaseDB):
         )
         try:
             async with self._shard_lock(shard_key):
-                # 归档期间可能正好跨月，复检活跃窗口；force 跳过该保护
+                # 复检活跃窗口：归档期间可能跨月；force 跳过
                 if not force and self._is_active_shard(shard_key):
                     await self._touch_segment(shard_key, state=SegmentState.HOT)
                     return SegmentArchiveOutcome.SKIPPED, "active window"

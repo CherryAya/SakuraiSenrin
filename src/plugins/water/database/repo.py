@@ -106,7 +106,7 @@ class WaterRepository(
 
     @staticmethod
     def _hot_summary_start_date(today_ts: int | None = None) -> int:
-        # 日界按业务时区取：arrow.get(int) 默认走 UTC
+        # 日界取业务时区：arrow.get(int) 默认 UTC
         anchor = arrow.get(today_ts or get_current_time()).to("Asia/Shanghai")
         return int(
             anchor.floor("day")

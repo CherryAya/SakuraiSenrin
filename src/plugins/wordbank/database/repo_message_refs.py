@@ -1,4 +1,4 @@
-# mixin 方法在同一实例上调用宿主类私有辅助函数：pyright 私有访问豁免
+# mixin 同实例调宿主私有：pyright 豁免
 # pyright: reportPrivateUsage=false
 """Message reference helpers for the wordbank repository."""
 

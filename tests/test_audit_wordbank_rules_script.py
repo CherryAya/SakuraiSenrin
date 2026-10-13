@@ -42,7 +42,7 @@ def test_parse_args_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
 
     args = audit_script.parse_args()
 
-    # default_db_path() 按 GLOBAL_DB_ROOT 造真实路径，
+    # default_db_path 按 DB_ROOT 造路径
     # Windows 下为反斜杠；按路径语义与真实默认值比较。
     assert Path(args.db_path) == audit_script.default_db_path()
     assert args.report == audit_script.DEFAULT_REPORT

@@ -26,7 +26,7 @@ from sqlalchemy.pool import ConnectionPoolEntry
 from src.lib.utils.time_utils import get_current_time
 from src.logger import logger
 
-# ATTACH 出的库在 ORM 里按 schema 前缀寻址，取名避开保留字
+# ATTACH 库按 schema 寻址；避开保留字
 SCHEMA_LOG = "aud"
 SCHEMA_SNAPSHOT = "snapsht"
 
@@ -36,7 +36,7 @@ _SCHEMA_TRANSLATE_MAP: dict[str | None, str | None] = {
     SCHEMA_SNAPSHOT: SCHEMA_SNAPSHOT,
 }
 
-# 单库会话用：把 attached schema 前缀映射回 main
+# 单库会话：attached schema 归 main
 STANDALONE_SCHEMA_TRANSLATE_MAP: dict[str | None, str | None] = {
     None: None,
     SCHEMA_LOG: None,
@@ -69,7 +69,7 @@ class AtomicStore:
         journal_mode: str = "DELETE",
     ) -> None:
         self._primary_path = primary_path
-        # (schema, path)：与 bind_attached_schemas 的标记一致
+        # (schema, path)：与 bind 标记一致
         self._attached: list[tuple[str, Path]] = [
             (self._infer_schema(path), path) for path in attached_paths
         ]
@@ -100,7 +100,7 @@ class AtomicStore:
             _record: ConnectionPoolEntry,
         ) -> None:
             cursor = dbapi_conn.cursor()
-            # 跨库事务参与者固定 rollback journal，保证跨文件原子
+            # rollback journal：跨文件原子
             cursor.execute(f"PRAGMA journal_mode={self._journal_mode}")
             cursor.execute("PRAGMA foreign_keys=ON")
             cursor.execute("PRAGMA busy_timeout=5000")
@@ -118,7 +118,7 @@ class AtomicStore:
             if self._session is not None:
                 return self._session
             engine = self._build_engine()
-            # schema_translate_map 挂在 engine 上
+            # schema_translate_map 挂 engine
             engine = engine.execution_options(
                 schema_translate_map=_SCHEMA_TRANSLATE_MAP,
             )

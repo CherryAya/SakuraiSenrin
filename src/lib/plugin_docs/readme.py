@@ -450,7 +450,7 @@ def parse_flow_section_tokens(
     return "\n".join(cleaned).strip(), tuple(demo_turns)
 
 
-# 元组形态：pyright 对 ``x in <tuple>`` 把 str 收窄成字面量
+# 元组形态：pyright 收窄 str 字面量
 _DEMO_SPEAKERS: tuple[Literal["USER", "BOT", "SYSTEM"], ...] = (
     "USER",
     "BOT",

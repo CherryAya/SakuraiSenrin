@@ -35,7 +35,7 @@ def register_cross_store_journal_modes() -> None:
 
 
 async def init_db() -> None:
-    # 绑定 schema 前缀与 journal：须先于各库首次连接
+    # 绑定 schema 前缀与 journal：先于首连
     bind_cross_store_schemas()
     register_cross_store_journal_modes()
     await core_db.init(CoreBase)

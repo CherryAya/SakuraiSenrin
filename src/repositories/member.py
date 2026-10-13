@@ -97,7 +97,7 @@ class MemberRepository:
 
     async def _save_immediate(self, ctx: MemberChangeContext) -> None:
         event_time = get_current_time()
-        # 单一事务：core + 当月 log 分片 + 当月 snapshot 分片。
+        # 单一事务：core + 当月 log + snapshot
         async with system_atomic_session(event_time) as session:
             member_ops = MemberOps(session)
             audit_log_ops = AuditLogOps(session)

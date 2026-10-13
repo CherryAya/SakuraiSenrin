@@ -56,7 +56,7 @@ class _SessionCtx:
 
 
 async def _build_session_factory(tmp_path: Path) -> Any:
-    # 文件型 SQLite：各连接共享同一库文件，并发 upsert 依赖这一点。
+    # 文件型 SQLite：连接共享同一库文件
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'asset.db'}")
     async with engine.begin() as conn:
         await conn.run_sync(MessageAsset.metadata.create_all)

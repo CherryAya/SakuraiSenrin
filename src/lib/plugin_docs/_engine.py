@@ -204,7 +204,7 @@ from .static_assets import (
     summary_target_key,
 )
 
-# ``_support_note`` 由包门面与测试显式再导出，故列入 __all__
+# ``_support_note`` 供包门面与测试再导出
 __all__ = ["_support_note"]
 
 
@@ -218,7 +218,7 @@ def _support_text_block(locale: LocaleCode) -> str:
 
 type HelpHomeSectionKind = Literal["system", "developer", "community"]
 
-# 帮助首页「系统」分组的插件文档 category，经 metadata 声明
+# 帮助首页系统组：metadata 声明的 category
 HELP_HOME_SYSTEM_CATEGORIES: frozenset[str] = frozenset({"core", "system", "admin"})
 
 HELP_HOME_SECTION_TITLE_KEYS: dict[HelpHomeSectionKind, MessageKey] = {

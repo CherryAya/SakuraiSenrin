@@ -88,7 +88,7 @@ def test_before_send_handler_keeps_real_errors_and_notifies(
     monkeypatch.setattr("src.plugins.sentry.notify_admin", _fake_notify)
     monkeypatch.setattr("src.plugins.sentry.background_tasks", set())
     monkeypatch.setattr(asyncio, "get_running_loop", lambda: loop)
-    # 本用例校验「真实错误会通报管理员」，需绕开测试环境的全局静默开关。
+    # 本用例校验真实错误通报：绕开全局静默开关
     monkeypatch.delenv("SAKURAI_DISABLE_SENTRY_NOTIFY", raising=False)
 
     try:
@@ -100,8 +100,8 @@ def test_before_send_handler_keeps_real_errors_and_notifies(
         loop.run_until_complete(asyncio.gather(*pending))
     finally:
         loop.close()
-        # 关闭的 loop 归还线程前先换新，避免同 worker 后续用例撞上
-        # "There is no current event loop" 报错。
+        # 关闭的 loop 先换新：避免后续用例撞上
+        # no current event loop 报错
         asyncio.set_event_loop(asyncio.new_event_loop())
 
     assert result is event
@@ -137,7 +137,7 @@ def _run_before_send(
     monkeypatch.setattr("src.plugins.sentry.notify_admin", _fake_notify)
     monkeypatch.setattr("src.plugins.sentry.background_tasks", set())
     monkeypatch.setattr(asyncio, "get_running_loop", lambda: loop)
-    # 本用例校验「真实错误会通报管理员」，需绕开测试环境的全局静默开关。
+    # 本用例校验真实错误通报：绕开全局静默开关
     monkeypatch.delenv("SAKURAI_DISABLE_SENTRY_NOTIFY", raising=False)
 
     try:
@@ -146,8 +146,8 @@ def _run_before_send(
         loop.run_until_complete(asyncio.gather(*pending))
     finally:
         loop.close()
-        # 关闭的 loop 归还线程前先换新，避免同 worker 后续用例撞上
-        # "There is no current event loop" 报错。
+        # 关闭的 loop 先换新：避免后续用例撞上
+        # no current event loop 报错
         asyncio.set_event_loop(asyncio.new_event_loop())
     return recorded_messages
 
@@ -313,7 +313,7 @@ def test_action_failed_downgrade_preserves_scope_tags(
     本插件在该形状上增量合并，整体替换属于破坏。"""
     reset_error_context()
     exc = _build_action_failed("send group message rejected: result=299 err=限流")
-    # 模拟 scope 已先把标签写进 event（SDK 的真实行为）
+    # 模拟 scope 已写入标签（SDK 真实行为）
     event = cast(Event, {"message": "rate-limited", "tags": {"release": "v1.2"}})
     try:
         _run_before_send(monkeypatch, event, exc)
@@ -354,5 +354,5 @@ def test_notify_admin_swallows_missing_bot(
 
     monkeypatch.setattr("src.plugins.sentry.get_bot", _raise)
 
-    # 抛错止步于此，避免告警失败再次触发 Sentry 形成自激循环。
+    # 在此止步：告警失败再触发会成自激循环
     asyncio.run(notify_admin("boom"))

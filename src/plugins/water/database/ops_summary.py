@@ -54,7 +54,7 @@ class _WaterSummaryOpsBase[T: WaterDailySummary | WaterArchivedDailySummary](
         if not summary_data:
             return 0
 
-        # upsert 分块上限：8 字段 * 4000 行在 SQLite 参数上限内
+        # upsert 分块 4000 行：SQLite 参数上限
         summary_upsert_chunk_rows = 4000
         total = 0
         for chunk in split_chunks(summary_data, summary_upsert_chunk_rows):

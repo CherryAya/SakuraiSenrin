@@ -919,7 +919,7 @@ def test_render_plugin_guide_and_copy_text_list_all_visible_features() -> None:
             )
         )
     )
-    # guide 画布高宽比很大，超出 WebP 单边上限后编码阶段等比缩放；
+    # 画布高宽比超出 WebP 上限：编码时等比缩放
     # 断言"落在编码上限内 + 仍是长图"，绕开具体像素宽度。
     assert image.format == "WEBP"
     assert max(image.size) <= WEBP_MAX_DIMENSION

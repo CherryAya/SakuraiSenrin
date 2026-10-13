@@ -11,7 +11,7 @@ from src.lib.utils.time_utils import get_current_time
 from src.logger import logger
 
 if TYPE_CHECKING:
-    # Record 仅在 loguru __init__.pyi 中可导入
+    # Record 仅存于 loguru __init__.pyi
     from loguru import Record
 
     from src.lib.db.batch import BatchWriter

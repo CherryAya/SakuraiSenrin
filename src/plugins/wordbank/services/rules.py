@@ -25,7 +25,7 @@ Scope = Literal[
 ]
 Role = Literal["any", "owner", "admin", "member"]
 
-# 规则原始值：普通 JSON，scope 位置额外允许集合字面量
+# 规则原始值：JSON；scope 允许集合字面量
 type RuleValue = JsonValue | AbstractSet[str]
 
 VALID_SCOPES: set[str] = {
@@ -393,7 +393,7 @@ def rule_allows(
 
     call_count = rule.get("call_count")
     if isinstance(call_count, dict):
-        # 走回落的 as_int：存储里的 null 会让 int(None) 抛错
+        # as_int 回落：存储 null 会抛错
         window_seconds = as_int(call_count.get("window_seconds"), 0)
         if window_seconds <= 0 or window_seconds > MAX_CALL_COUNT_WINDOW_SECONDS:
             return False

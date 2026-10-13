@@ -250,7 +250,7 @@ async def _try_forward_single_message(
                 f"target={target.kind}:{target.target_id} message_id={message_id}"
             )
             return await bot.call_api(api, **payload)
-        except Exception as exc:  # pragma: no cover - adapter specific
+        except Exception as exc:  # pragma: no cover - 适配器差异
             logger.debug(
                 "[MessageDelivery] forward single message failed "
                 f"api={api} message_id={message_id} error={exc}"

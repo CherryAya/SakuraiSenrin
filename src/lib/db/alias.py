@@ -37,7 +37,7 @@ class OpsFactory(Protocol):
     def __init__(self, session: AsyncSession) -> None: ...
 
 
-# 时间窗口边界的可选形态，比 MomentLike 少字符串两档
+# 窗口边界：MomentLike 去掉 str
 type WindowBound = datetime | arrow.Arrow | int
 
 
@@ -174,7 +174,7 @@ class AliasStore[OpsT: OpsFactory]:
             # record_date 形态，如 "20260901"
             return arrow.get(moment, "YYYYMMDD")
         if isinstance(moment, int):
-            # 时间戳；小数值形态按 record_date 解析（YYYYMMDD）
+            # 小数值按 record_date 解析
             if 10_000_000 < moment < 100_000_000:
                 return arrow.get(str(moment), "YYYYMMDD")
             return arrow.get(moment)

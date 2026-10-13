@@ -203,7 +203,7 @@ def test_can_view_node_respects_permission() -> None:
         ),
     )
 
-    # 普通用户被挡在门外：can_view_node 为 False
+    # 普通用户被挡：can_view_node 为 False
     assert not can_view_node(admin_node, Permission.NORMAL)
 
     # 管理员可查看

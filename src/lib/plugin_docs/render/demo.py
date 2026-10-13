@@ -335,7 +335,7 @@ def turn_rects(
             return [("system bubble", placement.bubble_rect)]
         return [("system text", placement.text_rect)]
     rects: list[tuple[str, tuple[int, int, int, int]]] = []
-    # 上面早退分支已排除 avatar_rect 为 None 的情形
+    # 早退分支已排除 avatar_rect 为 None
     rects.append(("avatar", placement.avatar_rect))
     if placement.bubble_rect is not None:
         rects.append(("bubble", placement.bubble_rect))
@@ -542,7 +542,7 @@ class DemoImageRenderer:
             theme_name=self.theme_name,
             impression_color=self.impression_color,
         )
-        # 文本测量缓存：同一渲染器内 (字体, 文本) 的 bbox 结果一致
+        # 文本测量缓存：同渲染器内 bbox 稳定
         self._text_bbox_cache: dict[tuple[int, str], tuple[int, int, int, int]] = {}
         try:
             self.kicker_font = ImageFont.truetype(MAPLE_FONT_PATH, 24)
@@ -2473,14 +2473,14 @@ class DemoImageRenderer:
             font_families=self.FONT_FAMILIES,
             stroke_ratio=0,
         )
-        # ImageDraw 底层 Image 直取 _image，保住 mask 语义
+        # ImageDraw 直取 _image：保住 mask
         draw._image.paste(text_layer, (int(x), int(y)), text_layer)  # pyright: ignore[reportPrivateUsage]
 
     def _text_size(self, text: str, font: DocsFont) -> tuple[int, int, int, int]:
         if not text:
             return (0, 0, 0, self._font_line_height(font))
         if not contains_emoji(text):
-            # font.getbbox 按单行处理换行，与 textbbox 语义有别
+            # font.getbbox 单行：textbbox 多行
             key = (id(font), text)
             cached = self._text_bbox_cache.get(key)
             if cached is None:

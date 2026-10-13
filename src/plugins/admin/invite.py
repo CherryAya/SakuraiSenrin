@@ -362,7 +362,7 @@ class InvitationListRenderer:
         self.SUB_TEXT_COLOR = self.theme.sub_text_color
         self.HIGHLIGHT_COLOR = self.theme.highlight_color
 
-        # 尺寸与超采样配置 (渲染宽度 800*3.2=2560 达到 2K 标准)
+        # 超采样 3.2 倍：渲染宽度 2560 达 2K
         self.SCALE = 3.2
         self.RENDER_WIDTH = int(800 * self.SCALE)
         self.PADDING = int(30 * self.SCALE)

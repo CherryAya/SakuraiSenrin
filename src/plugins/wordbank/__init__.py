@@ -107,7 +107,7 @@ from . import bootstrap as bootstrap  # 注册启动钩子与定时任务
 
 # 入口模块导入即完成 matcher 注册：
 #   entry_commands —— 命令 / 引导流程
-#   entry_runtime  —— 回复路由 / 被动响应 / 通知
+# entry_runtime —— 回复/被动/通知
 from . import entry_commands as entry_commands
 from . import entry_runtime as entry_runtime
 from .docs_support import wordbank_docs_meta

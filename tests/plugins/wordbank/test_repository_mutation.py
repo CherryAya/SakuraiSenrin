@@ -573,6 +573,6 @@ async def test_repository_creator_leaderboard_total_includes_previous_periods(
     assert snapshot.range_start == previous_month_start + 10
     assert snapshot.total_creator_count == 2
     assert snapshot.total_approved_count == 2
-    # 榜单按积分排序：10002 为 all_groups(1.0)，
-    # 10001 为 current_group(0.7)，10002 居前。
+    # 按积分排序：10002 all_groups(1.0) 居前
+    # 10001 current_group(0.7) 随后
     assert [item.created_by for item in snapshot.items] == ["10002", "10001"]

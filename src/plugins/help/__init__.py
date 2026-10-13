@@ -600,7 +600,7 @@ async def _(
     await _deliver_help_plan(bot, matcher, event, docs_plan, locale=locale)
 
 
-# forward 辅助被外部测试直接引用，显式导出供 pyright 识别。
+# forward 辅助供外部测试引用，显式导出
 __all__ = [
     "_resolve_forward_sender",
     "_send_help_forward",

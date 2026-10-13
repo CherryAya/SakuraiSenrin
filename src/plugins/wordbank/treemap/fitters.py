@@ -1,4 +1,4 @@
-# mixin 方法在同一实例上调用宿主类私有辅助函数：pyright 私有访问豁免
+# mixin 同实例调宿主私有：pyright 豁免
 # pyright: reportPrivateUsage=false
 """Wordbank 树图标题/文本适配与预览。"""
 
@@ -95,7 +95,7 @@ class SearchTreemapFittersMixin:
                 return font, lines
             if fallback_fit is None:
                 fallback_fit = (font, lines[:max_lines])
-        # 循环体至少执行一次并命中赋值分支，fallback_fit 此处已有值
+        # 循环体至少执行一次：fallback_fit 有值
         return fallback_fit
 
     def _choose_response_title_font(

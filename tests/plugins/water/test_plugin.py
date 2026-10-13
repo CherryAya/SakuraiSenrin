@@ -932,9 +932,9 @@ async def test_water_today_report_group_shared_cooldown(
 ) -> None:
     water_plugin.clear_water_query_cooldowns()
     water_report_service.clear_today_report_cooldowns()
-    # 剩余秒数是 int(expires_at - now) 的截断值，时钟快慢决定展示数字
-    # （同一秒内重放得到 60，跨过 1 秒才是 59），固定字面量断言随秒漂移。
-    # 接管 monotonic 让两次请求之间恰好推进 1 秒，使断言确定。
+    # 剩余秒数为 int(expires_at - now) 截断
+    # 固定字面量断言会随秒漂移
+    # 接管 monotonic 推进 1 秒使断言确定
     from src.lib import cooldown as cooldown_module
 
     clock = [1000.0]

@@ -285,9 +285,9 @@ async def test_backup_service_rejects_cross_env_backup_target(
         lambda: None,
     )
 
-    # 跨环境备份授权这一策略判定与 restic 可用性解耦：探测先打桩。
-    # 探测照跑的话，缺 restic 会先抛它自己的异常，授权检查被
-    # 挡在外面（test_backup_service.py 同类用例同样处理）。
+    # 授权判定与 restic 可用性解耦：探测打桩
+    # 探测照跑会先抛 restic 自身异常
+    # test_backup_service.py 同类用例同处理
     def _stub_which(command: str) -> str:
         return f"/bin/{command}"
 

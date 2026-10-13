@@ -87,7 +87,7 @@ async def _ensure_invitation_dependencies(
     group_id: str,
     group_name: str,
 ) -> None:
-    # biz_invitation 外键校验数据库行；父行须显式落库。
+    # biz_invitation 外键校验数据库行
     inviter = await user_repo.get_user(inviter_id)
     inviter_name = ""
     if inviter is None:
@@ -186,7 +186,7 @@ async def _record_invitation_notice_delivery(
             origin_target_id=origin_target_id,
             fallback_message=report_message,
         )
-    except Exception as exc:  # pragma: no cover - defensive logging
+    except Exception as exc:  # pragma: no cover - defensive
         logger.warning(
             "[NoticeInvite] reply context record skipped "
             f"invitation_id={invitation_id} channel={target.channel} "
