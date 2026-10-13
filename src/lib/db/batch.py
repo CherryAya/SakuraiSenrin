@@ -23,7 +23,6 @@ if TYPE_CHECKING:
 
 from .alias import AliasStore, OpsFactory
 
-# flush 回调单次上限（秒），超时进死信
 DEFAULT_FLUSH_TIMEOUT_SECONDS = 30.0
 
 
@@ -77,8 +76,7 @@ class BufferedWriterConfig[T]:
     max_retries: int = 3
     retry_backoff: float = 0.2
     dedupe_key: Callable[[T], str] | None = None
-    # flush 回调上限（秒）；None 关看门狗（测试用）
-    # 生产 writer 用默认值
+    # None 关看门狗（测试用）
     flush_timeout: float | None = DEFAULT_FLUSH_TIMEOUT_SECONDS
 
 
@@ -408,8 +406,7 @@ class BatchWriter[T]:
                         attempts_made = attempts
 
                 assert last_error is not None
-                # 超时 break：attempts_made 可能偏小
-                # 两种路径均取真实次数
+                # 超时 break：attempts 偏小，取真实次数
                 recorded_attempts = max(attempts_made, 1)
                 dead_letter = DeadLetterRecord(
                     worker_name=self.worker_name,

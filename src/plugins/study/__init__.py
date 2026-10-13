@@ -857,15 +857,13 @@ async def _start_guided_study_with_trigger_image(
 # region 命令入口
 # handler 共享 study_command 级联：
 # pause 终止整链；其余 return 交下一个
-#
 # #study <args> → 入口：带参提交 / 预填步骤
 # 模式 → 消费 skip_mode_step 后跳过
 # 分组 → 消费 skip_group_block_step
-#   触发/回答     → 按 *_preloaded 标记分流
-#   回答/权重     → 合并转发选择 / 记录回答
+# 触发/回答 → 按 *_preloaded 标记分流
+# 回答/权重 → 合并转发选择 / 记录回答
 # 权重与提交 → 待 study_weight_pending
-#
-# 注意：*_skip_* 为一次性令牌，命中即 pop
+# *_skip_* 为一次性令牌，命中即 pop
 @study_command.handle()
 async def _(
     bot: Bot,
