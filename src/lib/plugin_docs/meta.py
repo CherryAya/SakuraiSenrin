@@ -181,14 +181,6 @@ def read_docs_metas(metadata: PluginMetadata) -> tuple[DocsMeta, ...]:
     return ()
 
 
-_DOC_NODE_KINDS: tuple[DocNodeKind, ...] = (
-    "plugin",
-    "overview",
-    "internal",
-    "static",
-)
-
-
 def _normalize_doc_node_kind(value: object) -> DocNodeKind:
     """把插件手写的 ``extra.docs["kind"]`` 收窄成白名单字面量。
 
@@ -196,7 +188,13 @@ def _normalize_doc_node_kind(value: object) -> DocNodeKind:
     大小写写错（``Overview``）会静默通过并让入口形态判定走错分支。
     与 ``scripts/build_docs.py`` 的既有白名单回落保持一致，非法值回落 plugin。
     """
-    if isinstance(value, str) and value in _DOC_NODE_KINDS:
+    doc_node_kinds: tuple[DocNodeKind, ...] = (
+        "plugin",
+        "overview",
+        "internal",
+        "static",
+    )
+    if isinstance(value, str) and value in doc_node_kinds:
         return value
     return "plugin"
 

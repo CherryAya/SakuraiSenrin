@@ -32,7 +32,6 @@ from src.services.db import init_db
 from src.services.runtime_policy import resolve_invitation_transition
 
 _LEGACY_TZ = ZoneInfo("Asia/Shanghai")
-_PLACEHOLDER_USER_REMARK = "[migration placeholder from invitation]"
 
 
 @dataclass(slots=True, frozen=True)
@@ -522,7 +521,7 @@ def _build_placeholder_users(
             "user_id": row.inviter_id,
             "user_name": row.inviter_id,
             "permission": Permission.NORMAL,
-            "remark": _PLACEHOLDER_USER_REMARK,
+            "remark": "[migration placeholder from invitation]",
             "created_at": created_at,
             "updated_at": updated_at,
         }
