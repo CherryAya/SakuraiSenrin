@@ -58,11 +58,6 @@ __plugin_meta__ = create_plugin_metadata(
 )
 background_tasks: set[asyncio.Task[None]] = set()
 
-# ActionFailed 代表平台侧拒绝了本次调用（限流、重复处理、非好友、权限不足等）。
-# 这类异常同样要通报管理员，只是它们通常不是代码缺陷，
-# 因此在 Sentry 侧降级为 warning，避免污染 error 列表。
-_ACTION_FAILED_TAG: dict[str, str] = {"action_failed": "true"}
-
 
 def _sentry_notify_disabled() -> bool:
     """测试环境不派发管理员告警。
@@ -153,14 +148,18 @@ def _describe_context() -> str:
 
 
 def _downgrade_level_to_warning(event: Event) -> None:
-    """把 ActionFailed 在 Sentry 侧降级为 warning，避免污染 error 列表。"""
+    """把 ActionFailed 在 Sentry 侧降级为 warning，避免污染 error 列表。
+
+    ActionFailed 代表平台侧拒绝了本次调用（限流、重复处理、非好友、权限不足
+    等）；这类异常同样要通报管理员，但通常不是代码缺陷，故降级并打标。
+    """
     event["level"] = "warning"
     contexts = dict(event.get("contexts") or {})
     default = dict(contexts.get("default") or {})
     default["level"] = "warning"
     contexts["default"] = default
     event["contexts"] = contexts
-    _merge_tags(event, _ACTION_FAILED_TAG)
+    _merge_tags(event, {"action_failed": "true"})
 
 
 def _attach_context_to_event(event: Event) -> None:

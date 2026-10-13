@@ -21,11 +21,10 @@ from src.locales.lzh import CATALOG as LZH_CATALOG
 from src.locales.x_meme import CATALOG as X_MEME_CATALOG
 from src.locales.zh_cn import CATALOG as ZH_CATALOG
 
-PLACEHOLDER_PATTERN = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
-
 
 def _extract_placeholders(value: str) -> set[str]:
-    return set(PLACEHOLDER_PATTERN.findall(value))
+    placeholder_pattern = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
+    return set(placeholder_pattern.findall(value))
 
 
 def _assert_no_unknown_keys() -> None:

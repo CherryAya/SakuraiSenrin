@@ -14,8 +14,6 @@ from sqlalchemy.engine import Result
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import DeclarativeBase
 
-_MISSING = object()
-
 
 def affected_rows(result: Result[object]) -> int:
     """取 DML 影响行数。
@@ -38,8 +36,9 @@ def affected_rows(result: Result[object]) -> int:
     ``CursorResult`` 会被 pyright 判为缺少类型参数；集中在此处收口，
     ops 层只需面对一个语义明确的 ``-> int``。
     """
-    rowcount = getattr(result, "rowcount", _MISSING)
-    if rowcount is _MISSING:
+    missing = object()
+    rowcount = getattr(result, "rowcount", missing)
+    if rowcount is missing:
         raise TypeError(
             "affected_rows() 需要带 rowcount 的结果对象（单参 execute 的 DML 返回值），"
             f"实际收到 {type(result).__name__}；executemany 形态返回的 "

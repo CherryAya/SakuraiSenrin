@@ -26,12 +26,6 @@ from .types import (
     WaterSummaryRecord,
 )
 
-# 单条 upsert 语句的行数上限。SQLite 的绑定参数上限是编译期常量
-# （本机 MAX_VARIABLE_NUMBER=32766），WaterSummaryPayload 有 8 个字段，
-# 实测 4095 行可过、4096 行即 "too many SQL variables"。取 4000 留出余量；
-# ops 层自带分块后，调用方传多大的批次都不会踩上限。
-_SUMMARY_UPSERT_CHUNK_ROWS = 4000
-
 
 class _WaterSummaryOpsBase[T: WaterDailySummary | WaterArchivedDailySummary](
     BaseOps[T]
@@ -60,10 +54,15 @@ class _WaterSummaryOpsBase[T: WaterDailySummary | WaterArchivedDailySummary](
         if not summary_data:
             return 0
 
+        # 单条 upsert 语句的行数上限。SQLite 的绑定参数上限是编译期常量
+        # （本机 MAX_VARIABLE_NUMBER=32766），WaterSummaryPayload 有 8 个字段，
+        # 实测 4095 行可过、4096 行即 "too many SQL variables"。取 4000 留余量；
+        # ops 层自带分块后，调用方传多大的批次都不会踩上限。
+        summary_upsert_chunk_rows = 4000
         total = 0
         # 自带分块：单条语句的绑定参数有 SQLite 编译期上限，调用方（归档
         # 回填、维护脚本）可能传入数千行——不分块会 "too many SQL variables"。
-        for chunk in split_chunks(summary_data, _SUMMARY_UPSERT_CHUNK_ROWS):
+        for chunk in split_chunks(summary_data, summary_upsert_chunk_rows):
             stmt = sqlite_insert(self.model).values(chunk)
             stmt = stmt.on_conflict_do_update(
                 index_elements=[

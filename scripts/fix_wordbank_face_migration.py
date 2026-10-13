@@ -28,7 +28,6 @@ from src.plugins.wordbank.message_model import (
 
 DEFAULT_DB_PATH = ROOT / "data" / "db" / "wordbank_db" / "wordbank_main.db"
 DEFAULT_REPORT_PATH = ROOT / ".devtest" / "wordbank-face-fix-report.json"
-LEGACY_FACE_TEXT_RE = re.compile(r"^\[face:(?P<face_id>[0-9]+)\]$")
 
 
 @dataclass(slots=True)
@@ -60,7 +59,8 @@ def _repair_shape(shape: MessageShape, report: FaceFixReport) -> MessageShape:
         if atom.kind != "text":
             atoms.append(atom)
             continue
-        match = LEGACY_FACE_TEXT_RE.fullmatch(atom.text.strip())
+        legacy_face_text_re = re.compile(r"^\[face:(?P<face_id>[0-9]+)\]$")
+        match = legacy_face_text_re.fullmatch(atom.text.strip())
         if match is None:
             atoms.append(atom)
             continue

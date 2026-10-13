@@ -25,7 +25,6 @@ type MessageInput = (
     | tuple[MessageSegment, ...]
 )
 _SPACE_RE = re.compile(r"\s+")
-_RESPONSE_PLACEHOLDER_RE = re.compile(r"(\[[^\]]+\]|【[^】]+】)")
 EVENT_TRIGGER_ESCAPED_PREFIX = "\\"
 EVENT_TRIGGER_BRACKET_PAIRS = (("[", "]"), ("【", "】"))
 RESPONSE_TARGET_SENDER = "__sender__"
@@ -139,7 +138,8 @@ def shape_from_response_text(text: str) -> MessageShape:
         return MessageShape(())
     atoms: list[MessageAtom] = []
     last_index = 0
-    for match in _RESPONSE_PLACEHOLDER_RE.finditer(text):
+    response_placeholder_re = re.compile(r"(\[[^\]]+\]|【[^】]+】)")
+    for match in response_placeholder_re.finditer(text):
         if match.start() > last_index:
             _append_response_text_atom(atoms, text[last_index : match.start()])
         placeholder_atom = _parse_response_placeholder(match.group(0))

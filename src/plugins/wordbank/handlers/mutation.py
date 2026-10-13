@@ -38,19 +38,6 @@ class ApprovalMutationOutcome:
 
 
 APPROVAL_OVERRIDE_TOKENS = {"continue", "override", "继续", "覆盖"}
-_APPROVAL_OVERRIDE_PATTERN = "|".join(
-    sorted(
-        (re.escape(token) for token in APPROVAL_OVERRIDE_TOKENS),
-        key=len,
-        reverse=True,
-    )
-)
-_APPROVAL_TARGET_RE = re.compile(
-    rf"^(?:(?P<prefix>{_APPROVAL_OVERRIDE_PATTERN})\s*)?"
-    rf"(?P<id>\d+)"
-    rf"(?:\s*(?P<suffix>{_APPROVAL_OVERRIDE_PATTERN}))?$",
-    re.IGNORECASE,
-)
 
 
 def build_mutation_actor(event: MessageEvent) -> MutationActor:
@@ -75,7 +62,20 @@ def parse_approval_target(text: str) -> tuple[int, bool] | None:
     )
     if not normalized:
         return None
-    match = _APPROVAL_TARGET_RE.fullmatch(normalized)
+    override_pattern = "|".join(
+        sorted(
+            (re.escape(token) for token in APPROVAL_OVERRIDE_TOKENS),
+            key=len,
+            reverse=True,
+        )
+    )
+    approval_target_re = re.compile(
+        rf"^(?:(?P<prefix>{override_pattern})\s*)?"
+        rf"(?P<id>\d+)"
+        rf"(?:\s*(?P<suffix>{override_pattern}))?$",
+        re.IGNORECASE,
+    )
+    match = approval_target_re.fullmatch(normalized)
     if match is None:
         return None
     return int(match.group("id")), bool(match.group("prefix") or match.group("suffix"))

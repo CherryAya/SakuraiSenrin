@@ -5,9 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 import re
 
-_CQ_CODE_RE = re.compile(r"\[CQ:[^\]]+\]")
-_LEADING_CQ_AT_RE = re.compile(r"^(?:\s*\[CQ:at,[^\]]+\])+\s*")
-
 
 @dataclass(slots=True, frozen=True)
 class TokenSpan:
@@ -94,9 +91,9 @@ def normalize_cq_plain_text(
 ) -> str:
     normalized = text.strip()
     if strip_leading_at:
-        normalized = _LEADING_CQ_AT_RE.sub("", normalized).strip()
+        normalized = re.sub(r"^(?:\s*\[CQ:at,[^\]]+\])+\s*", "", normalized).strip()
     if collapse_cq_only_text and normalized:
-        without_cq = _CQ_CODE_RE.sub("", normalized)
+        without_cq = re.sub(r"\[CQ:[^\]]+\]", "", normalized)
         if not has_meaningful_text(without_cq):
             return ""
     return normalized

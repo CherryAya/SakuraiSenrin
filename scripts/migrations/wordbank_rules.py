@@ -27,8 +27,6 @@ _LEGACY_EVENT_NAMES = {
 _LEGACY_RULE_KEYS = {"group_id", "user_id", "role", "call_count", "$and", "$or"}
 _LEGACY_ROLES = {"owner", "admin", "member"}
 _LEGACY_DEFAULT_CALL_WINDOW_SECONDS = 60 * 60 * 24 * 90
-_LEGACY_MAX_CALL_WINDOW_SECONDS = _LEGACY_DEFAULT_CALL_WINDOW_SECONDS
-_LEGACY_INLINE_TEXT_SPACE_RE = re.compile(r"[^\S\r\n]+")
 
 
 class MigrationError(Exception):
@@ -423,7 +421,7 @@ def _resolve_legacy_call_window_seconds(trigger_config: object) -> int:
         return _LEGACY_DEFAULT_CALL_WINDOW_SECONDS
     if seconds <= 0:
         return _LEGACY_DEFAULT_CALL_WINDOW_SECONDS
-    return min(seconds, _LEGACY_MAX_CALL_WINDOW_SECONDS)
+    return min(seconds, _LEGACY_DEFAULT_CALL_WINDOW_SECONDS)
 
 
 def _prune_subsumed_targets(
@@ -712,8 +710,7 @@ def truncate_text(value: str, *, limit: int) -> str:
 def normalize_legacy_message_text_preserving_newlines(text: str) -> str:
     normalized = text.replace("\r\n", "\n").replace("\r", "\n")
     normalized = "\n".join(
-        _LEGACY_INLINE_TEXT_SPACE_RE.sub(" ", line).strip()
-        for line in normalized.split("\n")
+        re.sub(r"[^\S\r\n]+", " ", line).strip() for line in normalized.split("\n")
     )
     normalized = normalized.strip("\n")
     if normalized:

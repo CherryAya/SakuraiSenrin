@@ -14,8 +14,6 @@ from src.plugins.wordbank.message_model import (
     shape_to_summary_text,
 )
 
-_DEBUG_TEXT_LIMIT = 48
-
 
 def perf_start() -> float:
     return perf_counter()
@@ -88,9 +86,10 @@ def describe_batch_errors(
 
 
 def _compact_debug_text(text: str) -> str:
+    debug_text_limit = 48
     normalized = text.replace("\n", "\\n").strip()
     if not normalized:
         return "-"
-    if len(normalized) <= _DEBUG_TEXT_LIMIT:
+    if len(normalized) <= debug_text_limit:
         return normalized
-    return normalized[: _DEBUG_TEXT_LIMIT - 3] + "..."
+    return normalized[: debug_text_limit - 3] + "..."

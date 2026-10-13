@@ -49,8 +49,6 @@ from src.plugins.wordbank.treemap import (
     render_search_results_treemap_bytes,
 )
 
-_NON_FILENAME_RE = re.compile(r"[^0-9A-Za-z\u4e00-\u9fff._-]+")
-_MEDIA_CACHE_ROOT = ROOT / "data" / "wordbank" / "media_cache"
 _IMAGE_PLACEHOLDER_RE = re.compile(r"\s*\[图片x\d+\]\s*")
 
 
@@ -437,17 +435,19 @@ def detect_match_source(
 
 
 def sanitize_filename(value: str) -> str:
-    cleaned = _NON_FILENAME_RE.sub("-", value.strip())
+    non_filename_re = re.compile(r"[^0-9A-Za-z\u4e00-\u9fff._-]+")
+    cleaned = non_filename_re.sub("-", value.strip())
     cleaned = cleaned.strip("._-")
     return cleaned[:80] or "keyword"
 
 
 def load_media_cache_samples(limit: int = 512) -> tuple[str, ...]:
-    if not _MEDIA_CACHE_ROOT.is_dir():
+    media_cache_root = ROOT / "data" / "wordbank" / "media_cache"
+    if not media_cache_root.is_dir():
         return ()
     samples = sorted(
         str(path.resolve())
-        for path in _MEDIA_CACHE_ROOT.iterdir()
+        for path in media_cache_root.iterdir()
         if path.is_file() and path.suffix.lower() in {".webp", ".png", ".jpg", ".jpeg"}
     )
     return tuple(samples[:limit])

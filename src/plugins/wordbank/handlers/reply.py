@@ -95,7 +95,6 @@ REPLY_COMMAND_ALIASES = (
 VIEW_DETAIL_ALIASES = {"详情", "group", "展开"}
 VIEW_NEXT_ALIASES = {"下一页", "next"}
 VIEW_PREV_ALIASES = {"上一页", "prev"}
-_PAGE_ONLY_RE = re.compile(r"^(?:第\s*)?(\d+)(?:\s*页)?$", re.IGNORECASE)
 _COMPACT_GROUP_VIEW_RE = re.compile(
     r"^(?P<action>详情|展开|group)(?P<group_id>\d+)(?:\s+(?P<page>\d+))?$",
     re.IGNORECASE,
@@ -1007,7 +1006,9 @@ def parse_view_reply_for_group_detail(
             trigger_group_id=trigger_group_id,
             page=max(1, current_page - 1),
         )
-    page_match = _PAGE_ONLY_RE.fullmatch(text.strip())
+    page_match = re.fullmatch(
+        r"^(?:第\s*)?(\d+)(?:\s*页)?$", text.strip(), re.IGNORECASE
+    )
     if page_match is not None:
         return ParsedViewReplyCommand(
             trigger_group_id=trigger_group_id,

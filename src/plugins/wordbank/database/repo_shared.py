@@ -11,7 +11,6 @@ import unicodedata
 from .tables import WordbankResponseItem, WordbankTriggerGroup, WordbankTriggerVariant
 
 _SPACE_RE = re.compile(r"\s+")
-_MAX_GRAM_SIZE = 3
 _SEARCH_RESULT_CANDIDATE_MULTIPLIER = 6
 _SEARCH_RESULT_MIN_CANDIDATES = 64
 _SEARCH_PREVIEW_LIMIT = 3
@@ -36,10 +35,11 @@ def condensed_search_text(text_value: str) -> str:
 
 
 def build_fts_query(text_value: str) -> str:
+    max_gram_size = 3
     condensed = condensed_search_text(text_value)
     if not condensed:
         return ""
-    gram_size = min(_MAX_GRAM_SIZE, len(condensed))
+    gram_size = min(max_gram_size, len(condensed))
     tokens = [
         condensed[index : index + gram_size]
         for index in range(0, len(condensed) - gram_size + 1)

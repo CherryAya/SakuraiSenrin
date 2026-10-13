@@ -14,10 +14,6 @@ from src.plugins.water.database import water_repo
 from src.repositories import group_repo, member_repo
 from src.services.info import resolve_group_name
 
-MIN_GROUP_MEMBER_BASE = 1  # TODO: config
-MIN_OVERLAP_USERS = 0
-SIMPSON_THRESHOLD = 0.68
-
 
 @dataclass(frozen=True)
 class MergeCandidate:
@@ -114,8 +110,11 @@ class MatrixSuggestionService:
         current_matrix_id: str,
         ignored: set[str],
     ) -> MergeCandidate | None:
+        min_group_member_base = 1  # TODO: config
+        min_overlap_users = 0
+        simpson_threshold = 0.68
         base_users = await member_repo.get_distinct_user_count(group_id)
-        if base_users < MIN_GROUP_MEMBER_BASE:
+        if base_users < min_group_member_base:
             return None
 
         working_groups = await group_repo.get_working_group_ids()
@@ -150,13 +149,13 @@ class MatrixSuggestionService:
                 target_users = await member_repo.get_distinct_user_count(
                     target_group_id
                 )
-                if target_users < MIN_GROUP_MEMBER_BASE:
+                if target_users < min_group_member_base:
                     continue
                 overlap = await member_repo.get_intersection_user_count(
                     group_id,
                     target_group_id,
                 )
-                if overlap < MIN_OVERLAP_USERS:
+                if overlap < min_overlap_users:
                     continue
                 valid_groups.append(target_group_id)
                 matrix_users += target_users
@@ -167,7 +166,7 @@ class MatrixSuggestionService:
                 continue
 
             score = score_sum / len(valid_groups)
-            if score < SIMPSON_THRESHOLD:
+            if score < simpson_threshold:
                 continue
 
             candidate = MergeCandidate(

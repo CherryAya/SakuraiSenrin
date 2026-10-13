@@ -19,8 +19,6 @@ from src.plugins.water.renderers.common import (
 from src.plugins.water.renderers.models import WaterProfileCardData
 from src.plugins.water.services.achievement import ACHIEVEMENT_RULES
 
-SEASONAL_ACHIEVEMENT_CAP = 10
-
 
 def format_profile_rank(rank: int | None, locale: LocaleCode = "zh-CN") -> str:
     return format_rank(rank, locale)
@@ -31,10 +29,12 @@ def format_profile_exp(exp: int | str) -> str:
 
 
 def seasonal_total_count(current_unlocked: int = 0) -> int:
+    # 赛季成就列表至少展示 10 个槽位（即使当前规则数更少）。
+    seasonal_achievement_cap = 10
     current_defined = sum(
         1 for rule in ACHIEVEMENT_RULES.values() if rule.track_type == "seasonal"
     )
-    return max(current_defined, current_unlocked, SEASONAL_ACHIEVEMENT_CAP)
+    return max(current_defined, current_unlocked, seasonal_achievement_cap)
 
 
 def split_achievement_views(

@@ -14,9 +14,6 @@ from .chunking import split_chunks
 from .tables import WaterHourlyCounter
 from .types import WaterMessagePayload
 
-_DEFAULT_SQLITE_MAX_VARIABLE_NUMBER = 999
-_WATER_MESSAGE_INSERT_MARGIN = 16
-_WATER_MESSAGE_BIND_PARAMS = len(WaterMessagePayload.__annotations__)
 _sqlite_max_variable_number: int | None = None
 
 
@@ -25,7 +22,7 @@ class WaterMessageOps(BaseOps[WaterHourlyCounter]):
         global _sqlite_max_variable_number
 
         if _sqlite_max_variable_number is None:
-            max_variables = _DEFAULT_SQLITE_MAX_VARIABLE_NUMBER
+            max_variables = 999
             result = await self.session.execute(text("PRAGMA compile_options"))
             for option in result.scalars():
                 if not option.startswith("MAX_VARIABLE_NUMBER="):
@@ -35,10 +32,11 @@ class WaterMessageOps(BaseOps[WaterHourlyCounter]):
                 break
             _sqlite_max_variable_number = max_variables
 
+        insert_margin = 16
+        bind_params = len(WaterMessagePayload.__annotations__)
         return max(
             1,
-            (_sqlite_max_variable_number - _WATER_MESSAGE_INSERT_MARGIN)
-            // _WATER_MESSAGE_BIND_PARAMS,
+            (_sqlite_max_variable_number - insert_margin) // bind_params,
         )
 
     async def bulk_insert_water_message(self, data: list[WaterMessagePayload]) -> int:

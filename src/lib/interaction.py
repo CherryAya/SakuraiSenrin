@@ -17,7 +17,6 @@ from src.lib.message_plan import (
 )
 from src.lib.types import is_object_mapping
 
-REVOKE_MARKERS = ("revoke", "recall", "exit")
 DEFAULT_ABORT_MESSAGE = tr("zh-CN", "interaction.cancelled")
 DEFAULT_TOO_MANY_ERRORS_MESSAGE = tr("zh-CN", "interaction.too_many_errors")
 INTERACTION_ERROR_COUNT_KEY = "__interaction_error_count__"
@@ -60,7 +59,8 @@ class SupportsInteractiveAbort(SupportsFinish, SupportsReject, Protocol):
 
 def _contains_revoke_marker(value: object) -> bool:
     text = str(value).casefold()
-    return any(marker in text for marker in REVOKE_MARKERS)
+    revoke_markers = ("revoke", "recall", "exit")
+    return any(marker in text for marker in revoke_markers)
 
 
 def is_revoke_signal(event: object) -> bool:

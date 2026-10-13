@@ -40,7 +40,6 @@ EXTENSION_TO_CONTENT_TYPE: Final[dict[str, str]] = {
 }
 _HEX_MD5_RE = re.compile(r"^[0-9a-fA-F]{32}$")
 _HEX_MD5_ANYWHERE_RE = re.compile(r"(?<![0-9a-fA-F])([0-9a-fA-F]{32})(?![0-9a-fA-F])")
-_URI_SCHEME_RE = re.compile(r"^[a-z][a-z0-9+.-]*://", re.IGNORECASE)
 
 
 class MediaError(WordbankUserError):
@@ -299,7 +298,8 @@ def default_cache_root_for(media_root: Path) -> Path:
 
 
 def is_remote_uri(path_value: str) -> bool:
-    return bool(path_value and _URI_SCHEME_RE.match(path_value))
+    uri_scheme_re = re.compile(r"^[a-z][a-z0-9+.-]*://", re.IGNORECASE)
+    return bool(path_value and uri_scheme_re.match(path_value))
 
 
 def extension_from_storage_path(path_value: str) -> str:

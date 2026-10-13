@@ -81,7 +81,6 @@ name = tr("zh-CN", "plugin.admin_invite.name")
 description = tr("zh-CN", "plugin.admin_invite.description")
 DOCS_SOURCE = Path(__file__).parent / "docs" / "invite" / "README.MD"
 IDENTITY = PluginDocIdentity(DOCS_SOURCE, name, description, Permission.SUPERUSER)
-INVITATION_AVATAR_CONCURRENCY = 8
 
 
 def build_docs(ctx: DocsRenderContext | None = None) -> MessagePlanInput:
@@ -572,7 +571,8 @@ async def generate_invitation_image_bytes(
 
     有股味我也懒得改了你就说他能不能用，能用的代码就是好代码对吧！
     """
-    avatar_limiter = asyncio.Semaphore(INVITATION_AVATAR_CONCURRENCY)
+    invitation_avatar_concurrency = 8
+    avatar_limiter = asyncio.Semaphore(invitation_avatar_concurrency)
     avatar_tasks = [
         asyncio.create_task(_load_invitation_avatar_pair(index, item, avatar_limiter))
         for index, item in enumerate(invitations_data)

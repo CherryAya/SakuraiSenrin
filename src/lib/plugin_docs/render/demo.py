@@ -65,9 +65,6 @@ def build_trace_footer_left_text(
     return " · ".join(footer_parts)
 
 
-_SHADOW_PATCH_MARGIN_FACTOR = 2
-
-
 def _blurred_shape_patch(
     *,
     canvas_size: tuple[int, int],
@@ -82,7 +79,8 @@ def _blurred_shape_patch(
     形状模糊半径之外的像素本就全透明，故局部模糊与整图逐字节一致；超长画布
     上重复整图模糊代价极高，这里只处理形状包围盒（外扩 ``2 * radius``）。
     """
-    margin = max(0, shadow_blur) * _SHADOW_PATCH_MARGIN_FACTOR
+    shadow_patch_margin_factor = 2
+    margin = max(0, shadow_blur) * shadow_patch_margin_factor
     canvas_width, canvas_height = canvas_size
     left = max(0, shape_rect[0] - margin)
     top = max(0, shape_rect[1] - margin)
