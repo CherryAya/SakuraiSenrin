@@ -1,4 +1,4 @@
-"""Wordbank command parsing helpers."""
+"""wordbank 命令解析辅助。"""
 
 from __future__ import annotations
 

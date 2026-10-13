@@ -1,4 +1,4 @@
-"""Object storage protocols and shared value types."""
+"""对象存储协议与共享值类型。"""
 
 from __future__ import annotations
 
@@ -7,11 +7,11 @@ from typing import Protocol
 
 
 class ObjectStorageError(RuntimeError):
-    """Raised when object storage operations fail."""
+    """对象存储操作失败。"""
 
 
 class ObjectStorageConfigError(ObjectStorageError):
-    """Raised when a storage provider is unavailable due to config."""
+    """存储提供方配置缺失。"""
 
 
 @dataclass(slots=True, frozen=True)

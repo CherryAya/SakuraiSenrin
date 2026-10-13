@@ -16,26 +16,7 @@ from sqlalchemy.orm import DeclarativeBase
 
 
 def affected_rows(result: Result[object]) -> int:
-    """取 DML 影响行数。
-
-    ``AsyncSession.execute()`` 的静态返回类型是 ``Result``，但 INSERT/UPDATE/DELETE
-    单参调用实际拿到的是 ``CursorResult``，只有后者带 ``rowcount``。
-
-    这里必须做运行时校验而非 ``cast``：executemany 形态
-    （``execute(stmt, [row1, row2])``）返回 ``IteratorResult``，它与
-    ``CursorResult`` 互不继承且没有 ``rowcount``。下游不仅用于计数，还有
-    多处 ``affected_rows(...) > 0`` 的状态扭转判据，静默返回 0 会把「写成功」
-    误判成「没写中」；因此这里 fail-fast 抛 TypeError，而不是让 AttributeError
-    在 batch writer 里被重试后变成死信。
-
-    校验用鸭子类型（``rowcount`` 属性是否存在）而非 ``isinstance(CursorResult)``：
-    本函数真实需要的契约只是「有 rowcount 的结果对象」，写成具体类会拒掉合法的
-    代理/桩实现（测试里的 ``_FakeResult`` 即为一例）。
-
-    SQLAlchemy 把 ``CursorResult`` 声明成变长泛型 ``Result[Unpack[_Ts]]``，裸写
-    ``CursorResult`` 会被 pyright 判为缺少类型参数；集中在此处收口，
-    ops 层只需面对一个语义明确的 ``-> int``。
-    """
+    """取 DML 影响行数；executemany 形态的结果对象缺 rowcount，抛 TypeError。"""
     missing = object()
     rowcount = getattr(result, "rowcount", missing)
     if rowcount is missing:

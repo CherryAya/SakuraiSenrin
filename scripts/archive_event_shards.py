@@ -1,4 +1,4 @@
-"""Operational entrypoint for archiving sharded event databases."""
+"""分片事件库的运维归档入口。"""
 
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ from src.plugins.wordbank.database.instances import (
 
 
 class _ArchivableStore(Protocol):
-    """``AliasStore`` 的最小归档视图（各分片库 ops 类型互不相同，故用鸭子类型收口）。"""
+    """AliasStore 的最小归档视图：各分片库 ops 类型互异，用鸭子类型收口。"""
 
     @property
     def base_dir(self) -> Path: ...
@@ -72,11 +72,7 @@ async def archive_targets(
     target: str,
     include_water_summary: bool = False,
 ) -> tuple[list[str], list[tuple[str, _ArchivableStore]], list[str]]:
-    """归档指定目标，返回 (完成清单, 供清理用的库, 失败详情)。
-
-    归档巡检返回结构化报告：失败分片必须如实带出（job 层此前只看"调用返回"
-    就报 completed，与主进程归档 job 的契约不一致）。
-    """
+    """归档指定目标，返回 (完成清单, 供清理的库, 失败详情)；失败如实带出。"""
     completed: list[str] = []
     stores: list[tuple[str, _ArchivableStore]] = []
     failures: list[str] = []
@@ -135,8 +131,7 @@ async def main() -> None:
     if args.cleanup_stale_sidecars:
         cleaned = await asyncio.to_thread(cleanup_stale_sidecars, stores)
     if failures:
-        # 失败必须可见：不得再以 completed 成功日志掩盖（运维会据此判断归档
-        # 是否生效）。非零退出码供监控探针直接判别。
+        # 失败必须可见：ERROR 日志 + 非零退出码供监控探针判别
         logger.error(
             "[archive-event-shards] FAILED "
             + f"archived={','.join(completed or ['none'])} "

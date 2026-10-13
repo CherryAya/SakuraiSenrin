@@ -100,12 +100,7 @@ class WaterSettlementService:
         chunk_pause_seconds: float = 0.1,
         prune_after_settlement: bool = True,
     ) -> SettlementResult:
-        """
-        每日结算总入口，满足三道防线:
-        1. 幂等锁 (water_settlement_job)。
-        2. 分块落盘 + 单会话事务。
-        3. 消息分片文件生命周期由独立归档任务处理。
-        """
+        """每日结算总入口：幂等锁 + 分块落盘 + 分片生命周期走归档任务。"""
         if target_date is None:
             target = (
                 arrow.get(get_current_time())
@@ -215,7 +210,7 @@ class WaterSettlementService:
         record_date: int,
         aggregates: list[DailyAggregateItem],
     ) -> int:
-        # 同一个用户在同一天可能跨群，这里按当天最大 msg_count 触发一次成就检查。
+        # 按当天最大 msg_count 触发一次成就检查
         user_context: dict[str, tuple[str, int]] = {}
         for row in aggregates:
             _, msg_count = user_context.get(row.user_id, ("", 0))
@@ -228,8 +223,7 @@ class WaterSettlementService:
         active_seasons = await water_repo.list_current_activity_seasons(record_date)
         sem = asyncio.Semaphore(20)
         unlocked_total = 0
-        # 一次性取回全部用户的已解锁成就：此前每个用户（且每个赛季）都会各开
-        # 一个会话重复查同一条记录
+        # 一次性取回全部用户已解锁成就，收口会话开销
         unlocked_by_user = await water_repo.get_achievement_items_bulk(
             list(user_context),
         )
@@ -237,8 +231,7 @@ class WaterSettlementService:
         async def _task(user_id: str, matrix_id: str, msg_count: int) -> None:
             nonlocal unlocked_total
             async with sem:
-                # 同一用户的永久与赛季成就共享一份已解锁集合：unlock 后就地补入，
-                # 否则赛季轮会重复判定并重复计数（数据库侧靠冲突忽略兜底）
+                # 永久与赛季成就共享一份已解锁集合，unlock 后就地补入
                 known: list[tuple[str, str, str, int]] = list(
                     unlocked_by_user.get(user_id, [])
                 )

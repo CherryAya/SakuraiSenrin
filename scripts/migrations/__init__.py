@@ -1,1 +1,1 @@
-"""Migration helpers for operational scripts."""
+"""运维脚本的迁移辅助包。"""

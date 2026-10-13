@@ -1,4 +1,4 @@
-# 测试/脚本需直接验证内部不变量，故关闭跨模块私有符号告警
+# 测试直取内部符号：pyright 私有访问豁免
 # pyright: reportPrivateUsage=false
 import asyncio
 from dataclasses import replace
@@ -773,9 +773,7 @@ async def test_build_water_group_report_image_accepts_all_edge_inputs(
 ) -> None:
     """各分支输入都能走通到渲染调用（可行性）。
 
-    真实绘制由下方的 test_build_water_group_report_image_smoke 覆盖，
-    像素正确性属性能/质量范畴，不在本用例的断言范围内。
-    """
+    真实绘制由下方的 smoke 用例覆盖，像素正确性归渲染质量测试。"""
     data = replace(_build_group_report_data(), **overrides)
     seen: list[Any] = []
 

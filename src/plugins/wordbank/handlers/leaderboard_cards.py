@@ -1,4 +1,4 @@
-"""Pillow leaderboard rendering for the wordbank creator board."""
+"""wordbank 创作者榜的 Pillow 渲染。"""
 
 from __future__ import annotations
 
@@ -112,7 +112,7 @@ class WordbankLeaderboardCardRenderer:
         height += 132
         height += 152 + SECTION_GAP
         if data.items:
-            # 冠军在 hero 区单独占位，行区只统计其余条目，避免重复计入。
+            # 冠军占 hero 区，行区只排其余条目
             height += CHAMPION_HEIGHT + SECTION_GAP
             row_count = max(0, len(data.items) - 1)
             if row_count:

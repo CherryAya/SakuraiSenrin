@@ -1,4 +1,4 @@
-"""Rule normalization helpers for wordbank migration."""
+"""wordbank 迁移的规则归一辅助。"""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ _LEGACY_DEFAULT_CALL_WINDOW_SECONDS = 60 * 60 * 24 * 90
 
 
 class MigrationError(Exception):
-    """Raised when a legacy wordbank record cannot be migrated."""
+    """遗留 wordbank 记录迁移失败时抛出。"""
 
 
 def load_legacy_json(value: object) -> JsonValue:

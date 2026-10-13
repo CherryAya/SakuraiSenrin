@@ -1,4 +1,4 @@
-"""Static help asset manifest and local-file loading helpers."""
+"""静态帮助资产清单与本地文件加载。"""
 
 from __future__ import annotations
 
@@ -23,11 +23,7 @@ StaticTargetKind = Literal["dashboard", "feature", "guide", "summary", "static"]
 
 
 def _as_permission_profile(value: object) -> StaticPermissionProfile | None:
-    """把清单里的原始键收窄成权限档位；未知值返回 None。
-
-    用显式成员判定而非 ``in frozenset``：后者只把类型收窄到 ``str``，无法建立
-    与 ``StaticPermissionProfile`` 字面量联合的对应关系。
-    """
+    """把清单原始键收窄成权限档位，其余值为 None；走字面量比较而非集合判定。"""
     if value == "normal":
         return "normal"
     if value == "group_admin":
@@ -128,8 +124,7 @@ def load_manifest(source_path: Path) -> StaticAssetManifest | None:
     if not manifest_path.is_file():
         return None
     try:
-        # json.loads 的静态返回是 Any；显式声明为 JsonValue，后续 isinstance
-        # 收窄才有据可依。
+        # json.loads 静态返回为 Any，显式声明供后续收窄
         payload: JsonValue = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None

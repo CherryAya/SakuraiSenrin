@@ -62,7 +62,7 @@ async def _(
     event: FriendRequestEvent,
 ) -> None:
     user_id = str(event.user_id)
-    # 延迟等待期间事件上下文可能失效，先做有效性校验，避免把非法 user_id 传给 API。
+    # 事件上下文随延迟失效：user_id 提前校验。
     if not user_id.isdigit() or int(user_id) < 1:
         logger.warning(
             f"[NoticeUser] friend request skipped reason=invalid_user_id "
@@ -78,7 +78,7 @@ async def _(
         stranger_info = await bot.get_stranger_info(user_id=int(user_id))
         user_name = str(stranger_info.get("nickname", "") or "")
     except ActionFailed as exc:
-        # 拉取资料失败不应中断后续入库与通报。
+        # 拉取资料失败仍继续入库与通报。
         logger.warning(
             f"[NoticeUser] get_stranger_info failed user_id={user_id} "
             f"error={type(exc).__name__}: {exc}"

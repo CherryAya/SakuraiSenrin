@@ -1,4 +1,4 @@
-"""Startup backup freshness check and optional remote restore flow."""
+"""启动期备份新鲜度检查与远端恢复流程。"""
 
 from __future__ import annotations
 
@@ -444,13 +444,12 @@ async def _warm_up_core_repositories() -> None:
 
 
 async def _reload_runtime_state_after_restore() -> None:
-    # 先复位各库的进程内派生状态（schema 初始化标记 / manifest 缓存）：恢复是
-    # 就地覆盖文件、inode 不变，不复位会误命中缓存导致补丁不重放。
+    # 恢复就地覆盖文件（inode 保持），先复位派生状态再触发重载
     from src.lib.backup.registry import reset_registered_database_runtime_states
 
     reset_registered_database_runtime_states()
     await _warm_up_core_repositories()
-    # 各插件在 bootstrap 阶段自注册重载回调，本层只负责触发。
+    # 各插件在 bootstrap 自注册重载回调，本层只负责触发
     await reload_registered_runtime_states()
 
 

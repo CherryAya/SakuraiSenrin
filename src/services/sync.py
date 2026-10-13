@@ -46,31 +46,7 @@ class MemberSyncReport:
 
 
 async def sync_users_from_api(bot: Bot) -> None:
-    """调用 API 全量同步好友用户信息
-
-    策略：
-    - 内存缓存 (Cache): 新增、改名、状态变动、权限变动。
-    - 数据库 (DB): 新增、改名。
-
-    API Response Reference:
-        Wait for `get_friend_list()`:
-        ```
-        {
-            "birthday_year": 2002,
-            "birthday_month": 4,
-            "birthday_day": 10,
-            "user_id": 1479559098,
-            "age": 23,
-            "phone_num": "-",
-            "email": "sakuraicora@gmail.com",
-            "category_id": 0,
-            "nickname": "SakuraiCora",
-            "remark": "",
-            "sex": "female",
-            "level": 64,
-        }
-        ```
-    """
+    """调用 API 全量同步好友用户信息。"""
     try:
         api_list = await bot.get_friend_list()
     except Exception:
@@ -81,25 +57,7 @@ async def sync_users_from_api(bot: Bot) -> None:
 
 
 async def sync_groups_from_api(bot: Bot) -> None:
-    """调用 API 全量同步群组信息
-
-    策略：
-    - 内存缓存 (Cache): 新增、改名、状态变动、全员禁言开关变动。
-    - 数据库 (DB): 新增、改名。
-
-    API Response Reference:
-        Wait for `get_group_list()`:
-        ```json
-        {
-            "group_id": 1107576103,
-            "group_name": "❄️凛雪列車｜描摹重日冷影❄️",
-            "group_all_shut": -1,  // -1: 开启全员禁言, 0: 关闭
-            "member_count": 449,
-            "max_member_count": 500
-            ...
-        }
-        ```
-    """
+    """调用 API 全量同步群组信息。"""
     try:
         api_list = await bot.get_group_list()
     except Exception:
@@ -129,35 +87,7 @@ async def sync_members_from_api(
     *,
     trigger_source: str = "manual",
 ) -> MemberSyncReport:
-    """调用 API 同步群成员信息
-
-    API Response Reference:
-        Wait for `get_group_member_list()`:
-        ```json
-        [
-            {
-                "group_id": 123456789,
-                "user_id": 1479559098,
-                "nickname": "SakuraiCora",
-                "card": "sticker_start_tag_for",
-                "sex": "unknown",
-                "age": 0,
-                "area": "",
-                "level": "100",
-                "qq_level": 0,
-                "join_time": 1533625923,
-                "last_sent_time": 1770951669,
-                "title_expire_time": 0,
-                "unfriendly": False,
-                "card_changeable": True,
-                "is_robot": False,
-                "shut_up_timestamp": 0,
-                "role": "owner", // "owner", "admin", "member"
-                "title": "xxx",
-            },
-            ...
-        ]
-    """
+    """调用 API 同步群成员信息，返回本次同步报告。"""
     async with _member_full_sync_locks[group_id]:
         started_at = get_current_time()
         started_monotonic = monotonic()
@@ -223,8 +153,7 @@ async def sync_members_from_api(
 
 
 async def sync_user_runtime(user_id: str, user_name: str) -> None:
-    """运行时用户同步，可差量同步。
-    单个事件 -> 处理 -> 立即入队"""
+    """运行时用户同步：单事件即可差量入队。"""
     from src.config import config
 
     if not user_id or not user_name:
@@ -237,10 +166,7 @@ async def sync_user_runtime(user_id: str, user_name: str) -> None:
 
 
 async def sync_group_runtime(bot: Bot, group_id: str) -> None:
-    """运行时群聊同步，由于没有返回群名，仅能做增量同步。
-
-    对于群名同步，参考 `sync_groups_from_api()`。
-    """
+    """运行时群聊增量同步；群名同步走 `sync_groups_from_api()`。"""
     if not group_id or await group_repo.get_group(group_id):
         return
     async with _group_runtime_locks[group_id]:
@@ -268,9 +194,7 @@ async def sync_member_runtime(
     group_card: str,
     role: str,
 ) -> None:
-    """运行时群成员同步，可差量同步。
-
-    单个事件 -> 处理 -> 立即入队"""
+    """运行时群成员同步：单事件即可差量入队。"""
     if not user_id or not user_name:
         return
     permission = _ROLE_MAPPING.get(role, Permission.NORMAL)

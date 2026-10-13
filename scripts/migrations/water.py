@@ -1,4 +1,4 @@
-"""Legacy water migration helpers."""
+"""water 遗留迁移辅助。"""
 
 from __future__ import annotations
 

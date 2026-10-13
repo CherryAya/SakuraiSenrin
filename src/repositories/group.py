@@ -32,10 +32,7 @@ from src.services.writers import (
 
 @dataclass
 class GroupChangeContext:
-    """
-    封装群组变更请求的上下文。
-    注意：is_all_shut 通常是运行时状态，但如果有持久化需求也可以包含在内。
-    """
+    """封装群组变更请求上下文；is_all_shut 属运行时状态。"""
 
     group_id: str
     group_name: str | Unset = UNSET
@@ -43,7 +40,7 @@ class GroupChangeContext:
     is_all_shut: bool | Unset = UNSET
     pre_ban_status: GroupStatus | Unset | None = UNSET
     is_new: bool = False
-    # 操作者：状态变更需可归因，审计表 operator_id 依赖它
+    # 操作者：审计表 operator_id 依赖它
     operator_id: str = ""
 
     def resolve_name(self, default: str = "") -> str:
@@ -144,8 +141,7 @@ class GroupRepository:
                 await audit_log_ops.create_audit_log(
                     target_id=ctx.group_id,
                     context_type=AuditContext.GROUP,
-                    # 与 buffered 路径（writers.py:190）保持一致：群授权/封禁属
-                    # 访问控制，不是操作者权限变更
+                    # 同 buffered 路径（writers.py:190）：属访问控制
                     category=AuditCategory.ACCESS,
                     action=AuditAction.CHANGE,
                     context_id=ctx.group_id,
@@ -174,12 +170,7 @@ class GroupRepository:
         policy: WritePolicy = WritePolicy.BUFFERED,
         operator_id: str = "",
     ) -> None:
-        """
-        Write-Behind:
-        1. 更新缓存 (Source of Truth)
-        2. 计算 Context (Diff)
-        3. 策略分流 (Buffered / Immediate)
-        """
+        """写路径：缓存 -> 算 diff -> buffered / immediate 分流。"""
         ctx = GroupChangeContext(group_id, group_name, status, is_all_shut)
         ctx.operator_id = operator_id
         old_item = self.cache.get(group_id)
@@ -251,11 +242,7 @@ class GroupRepository:
         return await self._hydrate_cache_item(group_id)
 
     async def ensure_persisted(self, group_id: str, group_name: str) -> None:
-        """确保 biz_group 中存在该群的数据库行。
-
-        运行时同步默认走 WritePolicy.BUFFERED，只更新缓存不落库；
-        外键约束校验的是数据库行，仅依赖缓存判断会导致后续写入失败。
-        """
+        """确保 biz_group 有该群的数据库行；外键校验的是库行。"""
         if not group_id:
             return
         async with core_db.session(commit=True) as session:

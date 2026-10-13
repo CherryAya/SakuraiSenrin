@@ -103,11 +103,7 @@ __plugin_meta__ = create_plugin_metadata(
 
 
 class _ArgvParser(Protocol):
-    """``ArgumentParser.parse_args`` 的纯字符串重载。
-
-    nonebot 把重载写在 ``TYPE_CHECKING`` 分支里，strict 模式下无法从实例推导，
-    返回类型退化为 partially unknown；本插件只传 ``list[str]``，按此声明最小协议。
-    """
+    """``ArgumentParser.parse_args`` 的纯字符串重载，收窄 strict 模式类型。"""
 
     def parse_args(self, args: Sequence[str]) -> Namespace: ...
 

@@ -1,4 +1,4 @@
-# 测试/脚本需直接验证内部不变量，故关闭跨模块私有符号告警
+# 测试直取内部符号：pyright 私有访问豁免
 # pyright: reportPrivateUsage=false
 from tests.plugins.wordbank.test_repository_support import *
 
@@ -213,7 +213,7 @@ async def test_runtime_incremental_refresh_only_touches_dirty_group(
     )
     called: list[int] = []
     service._dirty_group_ids.clear()
-    # 关闭防抖并直接等待后台重建任务，避免真睡等待。
+    # 关闭防抖并直接等待后台重建任务，省去真实睡眠。
     service.debounce_seconds = 0.0
 
     async def _spy_refresh(trigger_group_id: int) -> None:

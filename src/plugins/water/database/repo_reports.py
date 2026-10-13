@@ -1,7 +1,4 @@
-# 本文件的 mixin 方法把 self 显式 cast 成组合后的宿主类（如 WaterRepository），
-# 再调用同一次实例上的内部辅助方法。这些方法是该仓库层的实现细节，刻意不公开；
-# 但它们与调用方是同一个对象，不构成越权访问。pyright 无法表达「同一实例上的
-# mixin 内部协作」，故在此显式豁免。
+# 同实例 mixin 内部协作：pyright 私有访问豁免
 # pyright: reportPrivateUsage=false
 """Water repository report and realtime snapshot helpers."""
 
@@ -68,12 +65,9 @@ def _row_int(value: object) -> int:
 
 
 def _stats_row_tuple(row: object) -> tuple[str, str, int, int]:
-    """把聚合查询结果行归一成 ``(group_id, user_id, msg_count, active_hours)``。
+    """把聚合结果行归一成 ``(group_id, user_id, msg_count, active_hours)``。
 
-    ``aggregate_daily_stats`` 把行标注成 ``Row[tuple[str, str, int, int]]``（整个
-    四元组被当成单列），而 sqlalchemy 的 ``Row`` 泛型是按列可变的；该标注让
-    解包退化成 Unknown。这里不依赖行本身的类型，按列序显式收窄，既保留语义
-    又避开上游标注问题。
+    上游把整行标注成单列，解包会退化成 Unknown；这里按列序显式收窄。
     """
     values: list[object] = list(cast("Iterable[object]", row))
     return (
@@ -486,11 +480,7 @@ class WaterRepositoryReportsMixin:
         previous_rows: Sequence[WaterSummaryRecord],
         limit: int,
     ) -> "WaterGroupReportSnapshot | None":
-        """公开入口：由调用方提供已取好的 current/previous rows。
-
-        调用方（services/report.py）已经为「公开口径」聚合过一次 rows，
-        再由本方法复用同一批数据构造快照，避免重复查询与重复聚合实现。
-        """
+        """公开入口：由调用方提供已取好的 current/previous rows。"""
         return self._build_group_report_snapshot_from_rows(
             group_id=group_id,
             record_date=record_date,
@@ -595,7 +585,7 @@ class WaterRepositoryReportsMixin:
         radius: int,
         min_window_size: int = 0,
     ) -> "WaterGroupDailyRankSnapshot | None":
-        """公开入口：同 build_group_report_snapshot_from_rows，供跨类复用。"""
+        """公开入口：由调用方提供已取好的 current/previous rows。"""
         return self._build_group_daily_rank_snapshot_from_rows(
             focus_group_id=focus_group_id,
             record_date=record_date,

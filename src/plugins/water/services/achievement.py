@@ -95,9 +95,7 @@ class AchievementService:
     ) -> list[str]:
         """判定并解锁成就。
 
-        preloaded_items 由调用方批量预取（结算路径下每个用户会被调用
-        1 + len(seasons) 次，逐次查询是重复的会话开销）。传入的列表会被就地
-        追加本轮新解锁项，供同一用户的后续调用复用。
+        preloaded_items 为预取的已解锁列表，就地追加本轮新解锁项。
         """
         unlocked_items = (
             preloaded_items
@@ -148,7 +146,7 @@ class AchievementService:
             return []
         await water_repo.unlock_achievements(new_unlocks)
         if preloaded_items is not None:
-            # 回填到调用方持有的列表，供同一用户的赛季轮复用，避免重复判定
+            # 回填调用方列表，供同一用户赛季轮复用
             preloaded_items.extend(
                 (
                     str(item["achievement_id"]),

@@ -1,4 +1,4 @@
-# 测试/脚本需直接验证内部不变量，故关闭跨模块私有符号告警
+# 测试直取内部符号：pyright 私有访问豁免
 # pyright: reportPrivateUsage=false
 from __future__ import annotations
 
@@ -572,7 +572,7 @@ def test_backup_registration_loader_discovers_core_and_plugin_databases() -> Non
     # log/snapshot 已收敛为 AliasStore，注册表里存的是物理 store
     assert databases[:3] == (core_db, log_db.store, snapshot_db.store)
     assert water_core_db in databases
-    # water/wordbank 的分片库以 AliasStore 对外暴露，注册的是其物理 store
+    # water/wordbank 分片库以 AliasStore 对外，注册物理 store
     assert water_message.store in databases
     assert water_summary.store in databases
     assert wordbank_main_db in databases

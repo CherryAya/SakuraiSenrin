@@ -1,4 +1,4 @@
-"""Runtime backup scheduling."""
+"""备份定时调度。"""
 
 from __future__ import annotations
 
@@ -12,12 +12,7 @@ from src.logger import logger
 
 
 class _Scheduler(Protocol):
-    """本模块真正用到的 APScheduler 子集。
-
-    ``nonebot_plugin_apscheduler.scheduler`` 的类型经 apscheduler 3.x 传播后
-    参数退化成 ``Unknown``（apscheduler 未带 ``py.typed``）。这里只声明调用到的
-    两个方法，把第三方边界收口成一个明确的协议，避免整条调用链被判为未知。
-    """
+    """本模块用到的 APScheduler 子集：收口第三方类型，只声明调用的两个方法。"""
 
     def get_job(self, job_id: str, jobstore: str | None = ...) -> object | None: ...
 

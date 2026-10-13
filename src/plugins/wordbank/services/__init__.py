@@ -1,4 +1,4 @@
-"""Wordbank service exports."""
+"""wordbank service 导出。"""
 
 from pathlib import Path
 

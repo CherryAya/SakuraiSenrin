@@ -1,4 +1,4 @@
-"""Shared helpers for cancellable interactive matchers."""
+"""可取消交互 matcher 的公共辅助。"""
 
 from __future__ import annotations
 
@@ -23,14 +23,7 @@ INTERACTION_ERROR_COUNT_KEY = "__interaction_error_count__"
 
 
 class SupportsFinish(Protocol):
-    """nonebot Matcher 的 finish 能力面。
-
-    参数类型必须与 ``nonebot.internal.matcher.Matcher.finish`` 的真实签名一致：
-    ``str | Message | MessageSegment | MessageTemplate[str] | None``。
-    本协议原先写成 ``MessagePlanInput | None``，其中的 ``MessagePlanEntry``
-    并不被 finish 接受，导致真实 Matcher 无法满足该 Protocol（协议比实现更宽
-    时，实现方反而「不兼容」）。这里按真实契约收窄，Protocol 才成立。
-    """
+    """nonebot Matcher 的 finish 能力面：签名对齐真实实现。"""
 
     async def finish(
         self,
@@ -40,11 +33,7 @@ class SupportsFinish(Protocol):
 
 
 class SupportsReject(Protocol):
-    """nonebot Matcher 的 reject 能力面，签名同样对齐真实实现。
-
-    与 SupportsFinish 同理：原先写 ``MessagePlanInput | None``，其中
-    ``MessagePlanEntry`` 不被 reject 接受，导致真实 Matcher 反而不满足协议。
-    """
+    """nonebot Matcher 的 reject 能力面：签名对齐真实实现。"""
 
     async def reject(
         self,

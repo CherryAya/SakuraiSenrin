@@ -1,4 +1,4 @@
-"""Run one-shot maintenance for water storage slimming and log index baseline."""
+"""水存储瘦身与日志索引基准的一次性维护。"""
 
 from __future__ import annotations
 

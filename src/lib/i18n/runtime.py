@@ -1,8 +1,6 @@
-"""i18n 门面（兼容层）。
+"""i18n 门面（兼容层）：保留原有导入路径。
 
-拆分后：纯查表在 ``catalog``，事件绑定在 ``delivery``。
-本模块保留原有导入路径，避免一次性改动 95 个消费方；
-新代码请直接 import ``catalog``（只需文案时）或 ``delivery``。
+纯查表在 ``catalog``，事件绑定在 ``delivery``；新代码直接 import 二者。
 """
 
 from __future__ import annotations

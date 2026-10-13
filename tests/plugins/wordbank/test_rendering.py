@@ -267,7 +267,7 @@ async def test_build_reply_detail_plan_entry_renders_selected_response() -> None
     )
 
     rendered = render_message_plan_entry(entry)
-    # info_header 只保留范围/创建者/概率/权重，状态、启用、来源消息已下线
+    # info_header 只保留范围/创建者/概率/权重
     assert "词条详情 #300" in str(rendered)
     assert "范围: 当前群(20001)" in str(rendered)
     assert "创建者: 10001" in str(rendered)

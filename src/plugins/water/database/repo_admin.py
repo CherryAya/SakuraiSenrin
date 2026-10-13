@@ -1,7 +1,4 @@
-# 本文件的 mixin 方法把 self 显式 cast 成组合后的宿主类（如 WaterRepository），
-# 再调用同一次实例上的内部辅助方法。这些方法是该仓库层的实现细节，刻意不公开；
-# 但它们与调用方是同一个对象，不构成越权访问。pyright 无法表达「同一实例上的
-# mixin 内部协作」，故在此显式豁免。
+# 同实例 mixin 内部协作：pyright 私有访问豁免
 # pyright: reportPrivateUsage=false
 """Water repository settlement and administrative helpers."""
 
@@ -451,7 +448,7 @@ class WaterRepositoryAdminMixin:
         self,
         user_ids: list[str],
     ) -> dict[str, list[tuple[str, str, str, int]]]:
-        """一次会话取回多用户已解锁成就（结算路径逐用户调用会产生 N 个会话）。"""
+        """一次会话取回多用户已解锁成就。"""
         if not user_ids:
             return {}
         async with water_core_db.session(commit=False) as session:
@@ -717,15 +714,7 @@ class WaterRepositoryAdminMixin:
     ) -> WaterSummaryBackfillResult:
         """把即将滑出热窗的日汇总复制进归档分片，返回统计。
 
-        热窗是滑动窗口：超过 90 天的行由每日 prune 从 core.db 删除。此前
-        日常路径只写热窗内的行（结算目标恒为「昨天」），而唯一的「热行复制进
-        分片」实现是人工脚本 scripts/maintain_water_storage.py——没有接入任何
-        cron。结果：每行在写入约 90 天后被 prune 永久删除，长周期查询出现空洞。
-
-        这里把回填并入每日归档 job，在 prune 删除【之前】把全部窗口外行复制进
-        按月分片（upsert 幂等，重复执行安全）。不设下界：prune 每天都会清掉
-        窗口外行，因此 core.db 中的窗口外行数天然被热窗大小（约 90 天）约束，
-        全量回填既是数据保全最稳的语义，也不会无界增长。
+        每日归档 job 在 prune 之前调用；窗口外行 upsert 幂等。
         """
         repo_self = cast("WaterRepository", self)
         hot_start_date = repo_self._hot_summary_start_date(today_ts)

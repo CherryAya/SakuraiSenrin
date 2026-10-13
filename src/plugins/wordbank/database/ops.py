@@ -1,4 +1,4 @@
-"""Wordbank data access helpers."""
+"""wordbank 数据访问 ops。"""
 
 from __future__ import annotations
 

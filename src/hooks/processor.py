@@ -92,13 +92,7 @@ def _bind_event_context(event: Event, matcher: Matcher) -> ErrorContext:
 
 
 async def _runtime_sync(bot: Bot, event: Event) -> None:
-    """运行时同步钩子函数。
-
-    1. 用户信息同步，记录用户昵称变化。
-    2. 群聊信息同步，记录群组名变化。
-    3. 群成员信息同步，记录群名片、群权限变化。
-    4. 黑名单信息同步，控制自动解禁。
-    """
+    """运行时同步：用户、群、群成员信息。"""
 
     user_id = str(getattr(event, "user_id", ""))
     group_id = str(getattr(event, "group_id", ""))
@@ -111,21 +105,7 @@ async def _runtime_sync(bot: Bot, event: Event) -> None:
 
 
 async def _runtime_check(bot: Bot, event: Event, matcher: Matcher) -> None:
-    """运行时检查钩子函数，在所有事件触发前执行，集中处理缓存击穿。
-    主要 check 的点:
-
-    1. 插件是否开启了 no_check 标记
-    2. 用户是否全局配置忽略
-    3. 用户是否超级用户
-    4. 用户是否被封禁
-    5. 用户是否启用 self_ignore 且 event 是群组事件
-    6. 群聊是否有授权
-    7. 群聊是否启用全员禁言
-
-    对于缓存未命中的情况:
-    1. 用户未命中缓存，默认放行
-    2. 群聊未命中缓存，默认阻止
-    """
+    """运行时检查：忽略名单、超管、黑名单、群授权、全员静默。"""
 
     _user_id = getattr(event, "user_id", UNSET)
     _group_id = getattr(event, "group_id", UNSET)
@@ -203,7 +183,7 @@ async def _enrich_group_context(event: Event) -> None:
         return
     try:
         group_name = await group_repo.get_name_by_gid(group_id)
-    except Exception:  # pragma: no cover - 上下文补全失败不应影响主流程
+    except Exception:  # pragma: no cover - 群名补全兜底
         return
     if group_name:
         bind_error_context(group_name=group_name)
@@ -229,5 +209,5 @@ async def _runtime_cleanup(
     matcher: Matcher,
     exception: Exception | None = None,
 ) -> None:
-    # 事件处理结束后清空上下文，避免同一 worker 复用上下文造成串味。
+    # 事件收尾清空上下文，防同一 worker 复用串味
     reset_error_context()

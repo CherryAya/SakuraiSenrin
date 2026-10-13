@@ -1,4 +1,4 @@
-# 测试/脚本需直接验证内部不变量，故关闭跨模块私有符号告警
+# 测试直取内部符号：pyright 私有访问豁免
 # pyright: reportPrivateUsage=false
 from __future__ import annotations
 
@@ -68,12 +68,10 @@ async def test_run_job_initializes_water_tables_before_settlement(
 async def test_run_job_rejects_archive_job_names(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """回归：归档已移回主进程，子进程脚本不得再接受归档 job 名。
+    """归档 job 名从子进程脚本入口剔除（归档已移回主进程）。
 
-    此前 message_archive/summary_archive 走子进程且无条件上报 success——
-    归档失败（Windows 句柄钉住）时 job 依旧报「cron archive done」。
-    归档改由主进程内执行后，这两个 job 名必须从脚本入口消失。
-    """
+    此前 message_archive/summary_archive 走子进程且照常上报 success，
+    归档失败时 job 也报「cron archive done」。"""
     monkeypatch.setattr(run_water_job_script.sys, "argv", ["run_water_job.py"])
     with pytest.raises(SystemExit):
         run_water_job_script.parse_args()

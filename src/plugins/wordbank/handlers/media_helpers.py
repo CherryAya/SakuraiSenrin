@@ -1,4 +1,4 @@
-"""Wordbank media-related handler helpers."""
+"""wordbank 媒体相关 handler 辅助。"""
 
 from __future__ import annotations
 

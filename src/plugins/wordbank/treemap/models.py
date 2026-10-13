@@ -1,4 +1,4 @@
-"""Data models, fixture parsing, and treemap layout for wordbank search cards."""
+"""wordbank 搜索卡的数据模型、fixture 解析与 treemap 布局。"""
 
 from __future__ import annotations
 

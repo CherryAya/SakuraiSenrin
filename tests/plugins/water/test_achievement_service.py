@@ -1,4 +1,4 @@
-# 测试/脚本需直接验证内部不变量，故关闭跨模块私有符号告警
+# 测试直取内部符号：pyright 私有访问豁免
 # pyright: reportPrivateUsage=false
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -12,11 +12,7 @@ from src.plugins.water.services.achievement import AchievementService
 async def test_preloaded_items_avoid_refetch_and_are_reused(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """preloaded_items 必须既避免重复查询，又在 unlock 后回填供同用户后续轮复用。
-
-    结算路径下同一用户会被调用 1 + len(seasons) 次；若新解锁项不回填，赛季轮
-    会重复判定永久成就并重复计数。
-    """
+    """preloaded_items 复用给后续轮，省掉重复查询。"""
     service = AchievementService()
 
     from src.plugins.water.services import achievement as achievement_module
@@ -51,7 +47,7 @@ async def test_preloaded_items_avoid_refetch_and_are_reused(
         preloaded_items=known,
     )
     assert first == ["FIRST_BLOOD"]
-    # FIRST_BLOOD 为 permanent，应已回填到调用方持有的列表
+    # FIRST_BLOOD 已回填进调用方持有的列表
     assert [item[0] for item in known] == ["FIRST_BLOOD"]
 
     second = await service.check_and_unlock(
@@ -62,7 +58,7 @@ async def test_preloaded_items_avoid_refetch_and_are_reused(
         season_id="season-1",
         preloaded_items=known,
     )
-    # 永久成就已在 known 中，赛季轮不应再次判定它
+    # 永久成就命中 known：赛季轮直接跳过
     assert second == []
     fetch_mock.assert_not_awaited()
 

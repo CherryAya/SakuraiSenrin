@@ -1,4 +1,4 @@
-"""Wordbank docs and demo helpers."""
+"""wordbank 文档与演示辅助。"""
 
 from __future__ import annotations
 

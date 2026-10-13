@@ -1,10 +1,4 @@
-"""water 定时任务：结算、归档、日报推送。
-
-结算与日报是重活且需要超时兜底，走「长任务包裹 + 恢复期互斥 + 子进程执行 +
-清单校验」流程；归档改为在同进程内直调归档巡检——分片引擎由本进程持有，
-归档必须由句柄持有者执行，跨进程的 dispose 永远释放不掉本进程的连接池句柄，
-Windows 上会让归档被 WinError 32 永久挡住（详见 connectors 的键归一化注释）。
-"""
+"""water 定时任务：结算、归档、日报推送。"""
 
 from __future__ import annotations
 
@@ -68,11 +62,7 @@ async def _worker_job(
 
 
 def _raise_on_archive_failures(job_key: str, report: SegmentArchiveReport) -> None:
-    """归档失败/冲突时抛错，让 job 的 except 分支如实记 ERROR。
-
-    此前归档在子进程里失败也会写出 status="success" 的清单，job 层照样打
-    「cron archive done」——磁盘只涨不缩而日志一片太平。现在把失败变成异常。
-    """
+    """归档失败/冲突时抛错，让 job 的 except 分支记 ERROR。"""
     if report.ok:
         return
     details = "; ".join(
@@ -165,8 +155,7 @@ async def _water_summary_archive_job() -> None:
         ) as task:
             ensure_restore_not_in_progress(source="water_summary_archive")
             await task.advance("archiving")
-            # 先回填即将滑出热窗的行再 prune：否则 prune 会永久删除
-            # 那些从未复制进分片的行（日常结算只写「昨天」，恒在热窗内）。
+            # 顺序要求：先复制滑出热窗的行，再走 prune 清理
             backfill = await water_repo.backfill_expiring_summaries()
             report = await water_repo.archive_summary_shards()
             pruned = await water_repo.prune_hot_summaries()

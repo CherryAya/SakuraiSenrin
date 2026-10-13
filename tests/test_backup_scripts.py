@@ -285,10 +285,9 @@ async def test_backup_service_rejects_cross_env_backup_target(
         lambda: None,
     )
 
-    # 本用例验证的是「跨环境备份授权」这一策略判定，与运行环境是否装了 restic
-    # 无关。若不隔离可用性探测，宿主机缺少 restic 时会先抛 "restic command is
-    # not installed"，授权检查根本走不到。与 test_backup_service.py 中的同类
-    # 用例保持一致，统一打桩。
+    # 跨环境备份授权这一策略判定与 restic 可用性解耦：探测先打桩。
+    # 探测照跑的话，缺 restic 会先抛它自己的异常，授权检查被
+    # 挡在外面（test_backup_service.py 同类用例同样处理）。
     def _stub_which(command: str) -> str:
         return f"/bin/{command}"
 

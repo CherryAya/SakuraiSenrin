@@ -1,4 +1,4 @@
-"""Shared in-memory cooldown helpers."""
+"""内存冷却辅助。"""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ CooldownBypassChecker = Callable[
 
 
 class CooldownIsolateLevel(IntEnum):
-    """Cooldown isolation granularity."""
+    """冷却隔离粒度。"""
 
     GLOBAL = auto()
     GROUP = auto()

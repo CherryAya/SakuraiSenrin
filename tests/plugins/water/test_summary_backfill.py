@@ -1,12 +1,8 @@
-"""热窗滑出前的日汇总回填回归。
+"""热窗滑出前的日汇总回填契约。
 
-历史故障：结算只写「昨天」（恒在 90 天热窗内），因此日汇总只落 core.db；
-每日 00:35 的 prune 删除 ≥90 天的行，而把热行复制进 summary 分片的唯一实现
-是人工脚本——从未接入 cron。结果每行在约 90 天后被永久删除，长周期查询
-（季榜/年榜）出现空洞。
-
-修复后契约：summary 归档 job 在 prune 之前先把窗口外行回填进按月分片；
-分片读取（get_summaries_in_window）必须能看到它们。
+历史故障：日汇总只落 core.db，每天 00:35 的 prune 删除 ≥90 天前的行，
+回填分片一直靠人工脚本跑，季榜/年榜出现空洞。修复后：summary 归档 job
+先回填窗口外行，再走归档与 prune。
 """
 
 from __future__ import annotations
@@ -31,9 +27,8 @@ from src.plugins.water.database.types import WaterSummaryPayload
 async def _seed_core_summary(payload: WaterSummaryPayload) -> None:
     """直接写 core.db 的日汇总。
 
-    不能用 save_summary_batch：它按【真实当前时间】分流冷热，测试用的历史
-    日期会被直接路由进分片，绕开「core.db 中即将过期的行」这一被测状态。
-    """
+    save_summary_batch 按真实当前时间分流冷热，历史日期会直接路由进分片，
+    绕开「core.db 中即将过期的行」这一被测状态。"""
     async with water_core_db.session(commit=True) as session:
         await WaterSummaryOps(session).bulk_upsert_summary([payload])
 
@@ -85,7 +80,7 @@ async def test_backfill_expiring_summaries_copies_rows_to_shards() -> None:
     hot_start = water_repo._hot_summary_start_date(today_ts)
     assert hot_start == 20260402
 
-    # 一行已滑出热窗（即将被 prune），一行仍在窗内（不应被复制）。
+    # 一行滑出热窗（回填目标），一行留在窗内（原样保留）。
     await _seed_core_summary(_summary_payload(record_date=20260301, msg_count=7))
     await _seed_core_summary(_summary_payload(record_date=20260601, msg_count=2))
 
@@ -108,7 +103,7 @@ async def test_backfill_expiring_summaries_copies_rows_to_shards() -> None:
 
 @pytest.mark.asyncio
 async def test_backfill_expiring_summaries_is_idempotent() -> None:
-    """重复回填不得放大计数（upsert 覆盖写，而非累加）。"""
+    """重复回填幂等：upsert 覆盖写，计数保持一份。"""
     today_ts = arrow.get("2026-06-30", "YYYY-MM-DD").int_timestamp
     await _seed_core_summary(_summary_payload(record_date=20260301))
 
@@ -131,15 +126,10 @@ async def test_backfill_expiring_summaries_is_idempotent() -> None:
 async def test_backfill_then_prune_keeps_rows_queryable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """回填后 prune 仍可在分片读到该行——修复前这里会永久丢行。
+    """回填后 prune 仍可跨热/冷两段读到该行。
 
-    这是 M3 的端到端复现：旧实现的顺序是「prune 直接删」，长周期查询此后
-    永远查不到这一天的数据。修复后 job 先回填再 prune，查询跨热/冷两段
-    仍返回完整记录。
-
-    统一时钟：回填与读取都用同一固定「现在」，否则热窗边界在两条路径上
-    不一致（读取路径按真实时间切分冷热）。
-    """
+    旧实现顺序是 prune 直接删，长周期查询此后出现空洞；
+    修复后 job 先回填再 prune。"""
     from src.plugins.water.database import repo as repo_module
 
     today_ts = arrow.get("2026-06-30", "YYYY-MM-DD").int_timestamp
@@ -153,7 +143,7 @@ async def test_backfill_then_prune_keeps_rows_queryable(
     assert pruned == 1
     assert await _core_summary_row(20260301) is None
 
-    # 跨段查询：冷段（分片）返回被回填的行，热段返回尚未过期的行。
+    # 跨段查询：冷段（分片）返回回填行，热段返回窗内行。
     rows = await water_repo.get_summaries_in_window(
         20260301,
         20260629,
@@ -168,12 +158,10 @@ async def test_backfill_then_prune_keeps_rows_queryable(
 async def test_backfill_covers_rows_beyond_margin(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """回填不得只覆盖临近窗口的行：更早的历史行同样必须保全。
+    """回填覆盖全部窗口外行，更早的历史行同样保全。
 
-    首版实现带 margin_days=3 下界，会把更早的行留给 prune 永久删除；
-    现在全量回填窗口外行（core.db 中的窗口外行数由每日 prune 约束在上限
-    内，不会无界增长）。
-    """
+    首版实现带 margin_days=3 下界，更早的行会被 prune 永久删除；
+    现在全量回填（窗口外行数由每日 prune 约束在上限内）。"""
     today_ts = arrow.get("2026-06-30", "YYYY-MM-DD").int_timestamp
     await _seed_core_summary(_summary_payload(record_date=20251115, msg_count=9))
     await _seed_core_summary(_summary_payload(record_date=20260329, msg_count=8))
@@ -225,7 +213,7 @@ async def test_summary_archive_job_backfills_before_prune(
 
 @pytest.mark.asyncio
 async def test_summary_shard_receives_backfilled_rows_after_archiver_runs() -> None:
-    """归档巡检后分片仍可读回回填行（.db/.zst 两种物理形态都不影响读路径）。"""
+    """归档巡检后分片仍可读回回填行（.db/.zst 两种物理形态一致）。"""
     from src.lib.db.connectors import ColdPolicy
 
     today_ts = arrow.get("2026-06-30", "YYYY-MM-DD").int_timestamp
@@ -246,13 +234,10 @@ async def test_summary_shard_receives_backfilled_rows_after_archiver_runs() -> N
 
 
 def test_hot_window_anchor_is_cst_not_utc() -> None:
-    """回归：热窗边界必须按业务时区（CST）取日界，且在一个 CST 日内不漂移。
+    """热窗边界按业务时区（CST）取日界，且在一个 CST 日内恒定。
 
-    旧实现 `arrow.get(int).floor("day")` 按 UTC 取日界；CST 00:00-08:00 期间
-    UTC 仍在前一天，于是归档 job（00:35 CST）与读路径（08:00 后）对同一业务日
-    使用不同的热窗边界：边界那天在 core 未被 prune、也未被回填进分片，读路径
-    却去分片找它——查询静默漏掉该天约 16.5 小时/天。
-    """
+    旧实现按 UTC 取日界；CST 00:00-08:00 期间与读路径边界差一天，
+    边界那天被读路径当作已归档而静默漏查。"""
     from src.plugins.water.database.repo import WaterRepository
 
     early = arrow.get("2026-07-01 00:35:00+08:00").int_timestamp
@@ -268,12 +253,10 @@ def test_hot_window_anchor_is_cst_not_utc() -> None:
 
 @pytest.mark.asyncio
 async def test_bulk_upsert_summary_chunks_large_batches() -> None:
-    """回归：单次 upsert 超过 SQLite 绑定参数上限时必须自动分块。
+    """单次 upsert 超过 SQLite 绑定参数上限时自动分块。
 
-    维护脚本默认 `--summary-batch-size 5000`，而 WaterSummaryPayload 有 8 个
-    字段、本机上限 32766 个变量——实测 4096 行即 "too many SQL variables"。
-    ops 层自带分块后，调用方传多大都不会踩上限。
-    """
+    维护脚本默认 --summary-batch-size 5000，8 字段实测 4096 行即触发
+    "too many SQL variables"；ops 层分块后调用方传多大都安全。"""
     from src.plugins.water.database.instances import water_core_db
     from src.plugins.water.database.ops import WaterSummaryOps
 
@@ -294,5 +277,5 @@ async def test_bulk_upsert_summary_chunks_large_batches() -> None:
     async with water_core_db.session(commit=True) as session:
         written = await WaterSummaryOps(session).bulk_upsert_summary(payloads)
 
-    # 两次分块（4000 + 4000 + 1000）后全部落库，不报 too many SQL variables。
+    # 分块后 9000 行全部落库（4000 + 4000 + 1000）。
     assert written == 9000

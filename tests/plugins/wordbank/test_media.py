@@ -1,1 +1,1 @@
-"""Split into focused wordbank media test modules."""
+"""词库媒体测试拆分为聚焦模块。"""

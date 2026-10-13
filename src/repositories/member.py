@@ -31,9 +31,7 @@ from src.services.writers import (
 
 @dataclass
 class MemberChangeContext:
-    """
-    封装群成员变更上下文。
-    """
+    """封装群成员变更上下文。"""
 
     user_id: str
     group_id: str
@@ -41,7 +39,7 @@ class MemberChangeContext:
     permission: Permission | Unset = UNSET
     persisted_permission: Permission = Permission.NORMAL
     is_new: bool = False
-    # 操作者：权限变更需可归因，审计表 operator_id 依赖它
+    # 操作者：审计表 operator_id 依赖它
     operator_id: str = ""
 
     def resolve_card(self, default: str = "") -> str:
@@ -59,12 +57,7 @@ class MemberRepository:
         self.cache = cache
 
     async def _save_buffered(self, ctx: MemberChangeContext) -> None:
-        """
-        分流到三个不同的 Writer：
-        1. create: 新成员
-        2. update_card: 改名片
-        3. update_perm: 改权限
-        """
+        """分流到三个 writer：create / update_card / update_perm。"""
         event_time = get_current_time()
         if ctx.is_new:
             await member_create_writer.add(

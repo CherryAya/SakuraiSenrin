@@ -1,4 +1,4 @@
-"""Collection demo renderer shared by docs build scripts."""
+"""合集演示渲染器，供文档构建脚本共用。"""
 
 from __future__ import annotations
 
@@ -152,7 +152,7 @@ def _split_wrappable_segments(text: str) -> tuple[str, ...]:
 def _tile_line_height(
     font: ImageFont.ImageFont | ImageFont.FreeTypeFont,
 ) -> int:
-    """卡片行高：在小字号下保底 size + 8，保证瓦片可读。"""
+    """卡片行高：小字号下保底 size + 8。"""
     size = int(getattr(font, "size", 16))
     return ((max(ceil(size * 1.4), size + 8) + 7) // 8) * 8
 

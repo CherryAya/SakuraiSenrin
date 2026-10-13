@@ -1,4 +1,4 @@
-"""Wordbank database instances."""
+"""wordbank 数据库实例。"""
 
 from src.lib.backup import register_backup_database
 from src.lib.db.alias import AliasStore

@@ -1,4 +1,4 @@
-"""Shared helpers for plugin docs renderers."""
+"""插件文档渲染器的公共辅助。"""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Lightweight text parsing helpers that preserve user input slices."""
+"""文本解析辅助：保留用户输入的原始切片边界。"""
 
 from __future__ import annotations
 

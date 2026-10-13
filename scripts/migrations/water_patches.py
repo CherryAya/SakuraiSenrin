@@ -95,9 +95,9 @@ async def _add_water_group_stats_indexes(session: AsyncSession) -> None:
 
 
 async def _add_water_query_indexes(session: AsyncSession) -> None:
-    """补齐实际查询所需、但 ORM 元数据未声明的索引。
+    """补齐 ORM 元数据之外的查询索引。
 
-    只 CREATE IF NOT EXISTS；已由 metadata.create_all 建过的库不会重复建。
+    只走 CREATE IF NOT EXISTS；metadata.create_all 建过的库直接跳过。
     """
     await session.execute(
         text(

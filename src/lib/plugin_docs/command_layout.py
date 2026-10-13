@@ -1,4 +1,4 @@
-"""Command layout helpers extracted from plugin docs rendering."""
+"""命令布局辅助，从插件文档渲染中拆出。"""
 
 from __future__ import annotations
 

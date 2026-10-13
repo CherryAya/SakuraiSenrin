@@ -1,5 +1,5 @@
-"""Repair wordbank rows where legacy face segments became literal text."""
-# 测试/脚本需直接验证内部不变量，故关闭跨模块私有符号告警
+"""修复遗留表情段被存成文本的词库记录。"""
+# 脚本直验模块内部符号：pyright 私有访问豁免
 # pyright: reportPrivateUsage=false
 
 from __future__ import annotations

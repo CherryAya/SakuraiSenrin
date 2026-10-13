@@ -141,10 +141,7 @@ class BackupService:
             BackupStarted(run_id=run_id, plan_id=plan.id, started_at=started_at)
         )
 
-        # 授权判定必须排在 _ensure_restic_repository 之前：后者会探测 restic
-        # 可执行文件并对远端仓库执行 init/snapshots，属于有副作用的环境操作。
-        # 先做「这个 profile 是否允许在本环境备份」的纯策略判定，越权请求就不会
-        # 先碰到远端仓库；同时也避免环境缺少 restic 时把授权错误掩盖成环境错误。
+        # 授权判定先于 restic 探测：越权请求零副作用
         app_env = resolve_app_env()
         if not self.restic.allow_backup:
             raise RuntimeError(
@@ -690,16 +687,12 @@ def resolve_backup_profile(
 
 
 def _as_optional_str(value: object) -> str | None:
-    """把运行期取值收窄成 ``str | None``；非字符串一律视为未配置。"""
+    """把运行期取值收窄成 ``str | None``；非字符串回落 None。"""
     return value if isinstance(value, str) else None
 
 
 def _profile_payload(profile: object) -> dict[str, object]:
-    """把配置里的 profile 对象摊平成 ``dict[str, object]``。
-
-    兼容 pydantic 模型的 ``model_dump()``、普通对象的 ``__dict__``，以及本就是
-    ``Mapping`` 的字典。字段级收窄由下游 ``_coerce_backup_profile`` 负责。
-    """
+    """把配置里的 profile 对象摊平成 ``dict[str, object]``；字段收窄交由下游。"""
     dump = getattr(profile, "model_dump", None)
     if callable(dump):
         dumped = dump()
@@ -734,12 +727,7 @@ def _profile_bool(payload: Mapping[str, object], key: str, default: bool) -> boo
 
 
 def _coerce_backup_profile(name: str, profile: object) -> BackupRemoteProfile:
-    """把配置里的备份 profile 收窄成 ``BackupRemoteProfile``。
-
-    字段级校验在运行期逐条收口：必填的 ``repository`` / ``password`` 缺失或非
-    字符串时抛 ``RuntimeError``（与旧实现的 pydantic 校验保持一致），可选字段
-    则回落默认值。
-    """
+    """把配置收窄成 ``BackupRemoteProfile``：必填项缺失即抛 RuntimeError。"""
     if isinstance(profile, BackupRemoteProfile):
         return profile
     payload = _profile_payload(profile)

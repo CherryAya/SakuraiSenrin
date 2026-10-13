@@ -1,4 +1,4 @@
-# 测试/脚本需直接验证内部不变量，故关闭跨模块私有符号告警
+# 测试直取内部符号：pyright 私有访问豁免
 # pyright: reportPrivateUsage=false
 from __future__ import annotations
 
@@ -356,14 +356,11 @@ async def test_segment_store_treats_current_month_as_active_at_cst_month_start(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """回归：月初 00:30 CST 时 UTC 仍在上个月，当月分片必须被判为 active。
-
-    历史故障：active 判定用 UTC，导致 1 号凌晨当月分片被判为冷分片并被归档删除。
-    """
+    """月初 00:30 CST（UTC 尚属上月）时当月分片判为 active。"""
     from src.lib.db import connectors as connectors_module
 
     monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
-    # 2026-09-01 00:30 +08:00 == 2026-08-31 16:30 UTC
+    # 2026-09-01 00:30 +08:00 落在 UTC 的前一日 16:30
     monkeypatch.setattr(
         connectors_module,
         "get_current_time",
@@ -383,7 +380,7 @@ async def test_segment_store_archiver_skips_current_month_shard(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """回归：1 号凌晨跑归档任务，不得归档当月分片。"""
+    """1 号凌晨归档任务跳过当月分片。"""
     from src.lib.db import connectors as connectors_module
 
     monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
@@ -418,11 +415,7 @@ async def test_segment_store_archiver_does_not_drop_inflight_write(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """回归：归档不得丢弃在途写事务的数据。
-
-    历史故障：归档任务在写事务飞行途中 unlink 分片文件，导致写入落到已删除的
-    inode，数据静默丢失；或重连到新建空库报 "no such table"。
-    """
+    """归档保留在途写事务的数据。"""
     from src.lib.db import connectors as connectors_module
 
     monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
@@ -457,7 +450,7 @@ async def test_segment_store_archiver_does_not_drop_inflight_write(
     await db.run_archiver_task()
     await task
 
-    # 无论落在在线分片还是归档里，两条数据都必须可读回。
+    # 两处数据落到在线分片或归档里都可读回。
     async with db.read_session(
         time_ctx=september,
         cold_policy=ColdPolicy.HYDRATE,
@@ -475,11 +468,7 @@ async def test_segment_store_reinitializes_schema_after_shard_file_deleted(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """回归：分片文件被删除后必须重建 schema 并可继续写入。
-
-    历史故障：_initialized_shards 只记路径不记文件身份，文件重建后不再执行
-    create_all，导致该分片整月 "no such table" 写不进去且不自愈。
-    """
+    """分片文件删除后重建 schema 并恢复写入。"""
     from src.lib.db import connectors as connectors_module
 
     monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
@@ -500,9 +489,9 @@ async def test_segment_store_reinitializes_schema_after_shard_file_deleted(
     await db.flush_manifest()
 
     db_path = tmp_path / "framework_heal" / "events_2026_09.db"
-    # 模拟「分片文件被外部删除」：必须先释放连接池里的引擎，否则 Windows 下
-    # 引擎持有的句柄会钉住文件，unlink 报 WinError 32。产品代码在
-    # _retire_shard_file / 分片重建路径上同样先 dispose 再动文件。
+    # 模拟「分片文件被外部删除」：先释放连接池里的引擎，Windows 下引擎
+    # 句柄钉住文件、挡住 unlink。产品代码的 retire 与分片重建路径
+    # 同样先 dispose 再动文件。
     await db_manager.dispose(str(db_path))
     db_path.unlink()
 
@@ -554,11 +543,7 @@ async def test_segment_store_map_reduce_includes_current_month_shard(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """回归：CST 月初窗口扫描必须包含当月分片。
-
-    历史故障：map_reduce 用 UTC floor 取月，导致 9/1 00:00-08:00 CST 期间
-    漏掉当月分片，wordbank 触发计数漏算、限流规则失效 8 小时。
-    """
+    """CST 月初窗口扫描包含当月分片。"""
     from src.lib.db import connectors as connectors_module
 
     monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
@@ -616,7 +601,7 @@ async def test_segment_store_seals_oversized_active_shard(
         "get_current_time",
         lambda: arrow.get("2026-09-15 12:00:00+08:00").int_timestamp,
     )
-    # 阈值设成 0 MB，使任何非空分片都算超限，无需真的造大数据
+    # 阈值设成 0 MB，任何非空分片都算超限，省去造大数据
     monkeypatch.setattr(connectors_module, "SEGMENT_SIZE_ROLLOVER_MB", 0)
 
     db = EventStore(namespace="framework_rollover", prefix="events", fmt="%Y_%m")
@@ -626,7 +611,7 @@ async def test_segment_store_seals_oversized_active_shard(
     async with db.write_session(time_ctx=september) as session:
         session.add(_ShardModel(value="row-0"))
 
-    # 2026_09 仍在活跃窗口内，但体积已超阈值
+    # 2026_09 在活跃窗口内，体积超阈值触发 seal
     db_dir = tmp_path / "framework_rollover"
     assert db._is_active_shard("2026_09") is True
     await db.run_archiver_task()
@@ -647,7 +632,7 @@ async def test_segment_store_retention_removes_archived_shards_only(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """对齐 ES ILM delete 阶段：只删超期归档，绝不碰在线分片。"""
+    """对齐 ES ILM delete 阶段：只删超期归档，在线分片原样保留。"""
     from src.lib.db import connectors as connectors_module
 
     monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
@@ -670,12 +655,12 @@ async def test_segment_store_retention_removes_archived_shards_only(
     async with db.write_session(time_ctx=january) as session:
         session.add(_ShardModel(value="old"))
 
-    # 4 月：1 月已出活跃窗口 -> 归档；保留期 3 个月，1 月仍在保留期内
+    # 4 月：1 月已出活跃窗口 -> 归档；保留期 3 个月，1 月尚在保留期内
     await db.run_archiver_task()
     db_dir = tmp_path / "framework_retention"
     assert (db_dir / "events_2026_01.db.zst").is_file()
 
-    # 推进到 5 月：保留期边界退到 2 月，1 月超出保留期应被回收
+    # 推进到 5 月：保留期边界退到 2 月，1 月超期被回收
     monkeypatch.setattr(
         connectors_module,
         "get_current_time",
@@ -685,7 +670,7 @@ async def test_segment_store_retention_removes_archived_shards_only(
     assert not (db_dir / "events_2026_01.db.zst").exists()
     assert not (db_dir / "events_2026_01.db").exists()
 
-    # 在线分片不受影响
+    # 在线分片原样保留
     april = arrow.get("2026-04-05").datetime
     async with db.write_session(time_ctx=april) as session:
         session.add(_ShardModel(value="current"))
@@ -697,7 +682,7 @@ async def test_segment_store_health_reports_shard_states(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """分片健康快照（对应 _cat/indices）应能反映在线/归档/活跃状态。"""
+    """health 快照（对应 _cat/indices）反映在线/归档/活跃三态。"""
     from src.lib.db import connectors as connectors_module
 
     monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
@@ -738,7 +723,7 @@ async def test_alias_store_routes_by_payload_timestamp(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """alias 只需 payload 的时间字段，业务侧不再手算分片键。"""
+    """alias 只需 payload 的时间字段，业务侧省去手算分片键。"""
     from src.lib.db import connectors as connectors_module
     from src.lib.db.alias import AliasStore
 
@@ -757,7 +742,7 @@ async def test_alias_store_routes_by_payload_timestamp(
         time_field="created_at",
     )
 
-    # 时间戳 / record_date 字符串 / record_date 整数 / 分片键，四种形态一致
+    # 时间戳 / record_date 字符串 / 整数 / 分片键，四形态等价
     ts = arrow.get("2026-08-15 10:00:00+08:00").int_timestamp
     assert alias.shard_key_for(ts) == "2026_08"
     assert alias.shard_key_for("20260815") == "2026_08"
@@ -791,7 +776,7 @@ async def test_alias_store_write_batch_uses_store_timezone(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """回归：CST 月初 8 小时内写入必须落在当月分片。"""
+    """CST 月初 8 小时内写入落在当月分片。"""
     from src.lib.db import connectors as connectors_module
     from src.lib.db.alias import AliasStore
 
@@ -828,7 +813,7 @@ async def test_alias_store_scan_shards_bounds_concurrency(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """scan_shards 应限制并发度，取代原先无上限的裸 gather。"""
+    """scan_shards 限制并发度，替代原先裸 gather。"""
     from src.lib.db import connectors as connectors_module
     from src.lib.db.alias import AliasStore
 
@@ -875,7 +860,7 @@ async def test_alias_store_scan_shards_bounds_concurrency(
 
 @pytest.mark.asyncio
 async def test_batch_writer_health_tracks_flush_and_dead_letters() -> None:
-    """health 必须反映落盘量、失败量与死信批次，否则死信仍是不可见的静默丢数据。"""
+    """health 覆盖落盘量、失败量与死信批次（死信此前属于静默丢数据）。"""
     flushed: list[list[int]] = []
 
     async def _ok(batch: list[int]) -> None:
@@ -918,7 +903,7 @@ async def test_batch_writer_health_tracks_flush_and_dead_letters() -> None:
 
 @pytest.mark.asyncio
 async def test_batch_writer_pop_dead_letters_clears_queue() -> None:
-    """pop_dead_letters 供上报/补偿使用，取出后必须清空避免重复上报。"""
+    """pop_dead_letters 供上报/补偿使用，取出即清空。"""
 
     async def _boom(_batch: list[int]) -> None:
         raise RuntimeError("nope")
@@ -942,7 +927,7 @@ async def test_batch_writer_pop_dead_letters_clears_queue() -> None:
 
 @pytest.mark.asyncio
 async def test_batch_writer_dead_letter_queue_is_bounded() -> None:
-    """回归：内存死信队列必须有上界，持续失败不能无限占用内存。"""
+    """内存死信队列有上界，持续失败时占用可控。"""
 
     async def _boom(_batch: list[int]) -> None:
         raise RuntimeError("down")
@@ -961,7 +946,7 @@ async def test_batch_writer_dead_letter_queue_is_bounded() -> None:
             await writer.drain()
 
     assert len(writer.dead_letters) == 3
-    # 保留最新的 3 条，丢弃最旧的 3 条
+    # 保留最新 3 条，丢弃最旧 3 条
     assert writer.health.dropped_dead_letters == 3
     assert writer.dead_letters[-1].batch == (5,)
     await writer.close()
@@ -969,18 +954,10 @@ async def test_batch_writer_dead_letter_queue_is_bounded() -> None:
 
 @pytest.mark.asyncio
 async def test_batch_writer_watchdog_unwedges_stuck_flush_callback() -> None:
-    """回归（M4）：flush 回调永不返回时，看门狗必须让 writer 继续服务。
+    """flush 回调永久挂起时，看门狗让 writer 继续服务。
 
-    旧行为：worker 永久卡在回调上（`_flush_lock` 永久持有、worker 未结束
-    不会被重建），队列无界积压、flush_now/drain 一并挂起，只有重启能恢复。
-    现在超时被取消 -> 直接死信（不重试），内存有界、后续写入正常。
-
-    超时【不重试】是刻意的：回调内部按分片逐个独立提交，取消时无法得知已
-    提交到哪一步，重试会对已提交分片双写（累加型 upsert 会静默多计）。
-
-    所有等待都套 asyncio.wait_for 上限：看门狗失效时本用例必须以断言失败
-    收场，而不是把测试进程挂死（挂死本身就是旧行为，无法作为回归信号）。
-    """
+    旧行为：worker 卡死在回调上，队列持续积压；现行契约：超时取消回调
+    并将整批转入死信。等待都套 wait_for 上限。"""
     stuck = asyncio.Event()
 
     async def _stuck(batch: list[int]) -> None:
@@ -997,18 +974,18 @@ async def test_batch_writer_watchdog_unwedges_stuck_flush_callback() -> None:
     )
 
     await writer.add(1)
-    # 首次尝试即被看门狗取消 -> 整批进入死信；drain 重抛该 TimeoutError。
-    # wait_for 5s 是测试自身的兜底：看门狗失效时 drain 永不返回。
+    # 首次尝试即被看门狗取消 -> 整批进入死信；drain 重抛 TimeoutError
+    # wait_for 5s 是测试兜底：看门狗失效时 drain 会挂起。
     with pytest.raises(TimeoutError):
         await asyncio.wait_for(writer.drain(), timeout=5)
 
     health = writer.health
-    # 只看门狗触发一次：超时后不再重试（防双写），因此不随 max_retries 放大。
+    # 看门狗只触发一次：超时即死信防双写。
     assert health.flush_timeouts == 1
     assert health.dead_letter_batches == 1
     assert writer.dead_letters[0].batch == (1,)
 
-    # writer 未被楔死：放行后后续写入正常落盘。
+    # 放行后写入恢复正常：writer 照常服务。
     stuck.set()
     await writer.add(2)
     await asyncio.wait_for(writer.drain(), timeout=5)
@@ -1041,11 +1018,10 @@ async def test_batch_writer_flush_timeout_none_disables_watchdog() -> None:
 
 @pytest.mark.asyncio
 async def test_batch_writer_health_exposes_pending_depth() -> None:
-    """health.pending_items 必须覆盖队列、缓冲与在飞批次三个阶段。
+    """health.pending_items 覆盖队列、缓冲与在飞批次三个阶段。
 
-    在飞计数是刻意补上的：回调卡住时（最需要观察积压的时刻）批次已离开
-    缓冲、尚未入账，只算 queue+buffer 会显示为 0，运维会误判为「没有积压」。
-    """
+    在飞计数刻意补上：回调卡住时批次已离开缓冲、账目挂起，只算
+    queue+buffer 会显示为 0，运维容易误判。"""
     block = asyncio.Event()
     started = asyncio.Event()
 
@@ -1070,8 +1046,7 @@ async def test_batch_writer_health_exposes_pending_depth() -> None:
         await asyncio.wait_for(writer.drain(), timeout=5)
         assert writer.health.pending_items == 0
     finally:
-        # 无论断言在哪里失败都要放行回调并关停 worker，
-        # 否则残留的卡死 worker 会把测试进程拖到永久挂起。
+        # 断言失败也要放行回调并关停 worker，避免残留 worker 拖住进程。
         block.set()
         await writer.close()
 
@@ -1080,11 +1055,10 @@ async def test_batch_writer_health_exposes_pending_depth() -> None:
 async def test_batch_writer_is_flushing_resets_when_trace_logging_raises(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """回归：`_is_flushing` 置位必须在 try 内，异常不得让它永久为 True。
+    """`_is_flushing` 置位在 try 内，异常时该标志照常复位。
 
-    旧实现把置位放在 try 之前，中间还夹着 log_trace_event；一旦该调用抛错，
-    finally 不执行，后续所有 flush_now 永久楔死（实测复现）。
-    """
+    旧实现把置位放在 try 之前，中间夹着 log_trace_event；该调用抛错时
+    finally 失效，后续所有 flush_now 永久楔死。"""
 
     async def _ok(batch: list[int]) -> None:
         _ = batch
@@ -1102,7 +1076,7 @@ async def test_batch_writer_is_flushing_resets_when_trace_logging_raises(
     fired = {"count": 0}
 
     def _flaky_log(*args: object, **kwargs: object) -> str:
-        # 只让 flush_started 这一次抛错：它正是在旧实现里位于「置位之后、
+        # 只让 flush_started 这一次抛错：它正是旧实现里位于「置位之后、
         # try 之前」的那次调用。
         if kwargs.get("event_name") == "flush_started" and fired["count"] == 0:
             fired["count"] += 1
@@ -1112,11 +1086,11 @@ async def test_batch_writer_is_flushing_resets_when_trace_logging_raises(
     monkeypatch.setattr(batch_module, "log_trace_event", _flaky_log)
 
     await writer.add(1)
-    # wait_for 兜底：旧行为下楔死表现为挂起，这里必须以失败收场。
+    # wait_for 兜底：旧行为下楔死表现为挂起，这里以断言失败收场。
     with pytest.raises(RuntimeError, match="trace sink exploded"):
         await asyncio.wait_for(writer.flush_now(), timeout=5)
 
-    # 关键断言：标志位已复位，writer 未楔死。
+    # 关键断言：标志位已复位，writer 照常服务。
     assert writer._is_flushing is False
     await writer.add(2)
     await asyncio.wait_for(writer.drain(), timeout=5)
@@ -1129,7 +1103,7 @@ async def test_dead_letter_persists_and_replays(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """死信须落库以支持关机后回溯，并可用原 flush 回调重放后标记 resolved。"""
+    """死信落库以支持关机后回溯，并可用原 flush 回调重放后标记 resolved。"""
     from src.lib.db import connectors as connectors_module
     from src.services.dead_letter_store import (
         DeadLetterOps,
@@ -1199,7 +1173,7 @@ async def test_dead_letter_persists_and_replays(
 
 @pytest.mark.asyncio
 async def test_writer_health_report_aggregates_registered_writers() -> None:
-    """writer_health 必须能汇总 core/water/wordbank 三处注册的 writer。"""
+    """writer_health 汇总 core/water/wordbank 三处注册的 writer。"""
     import src.plugins.water.database.writers
     import src.plugins.wordbank.database.writers
     from src.services.writer_health import build_health_report
@@ -1228,11 +1202,7 @@ async def test_atomic_session_rolls_back_all_attached_files(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """回归：跨库事务失败时 core / log / snapshot 三个物理文件必须全部回滚。
-
-    历史故障：_save_immediate 开三个独立会话，snapshot 写入失败时 core 行已提交，
-    留下「已改主库但缺审计/快照」的中间态。
-    """
+    """跨库事务失败时 core / log / snapshot 三个物理文件全部回滚。"""
     from src.lib.db import connectors as connectors_module
     from src.services.db import bind_cross_store_schemas
 
@@ -1290,7 +1260,7 @@ async def test_atomic_session_commits_across_all_attached_files(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """正向路径：一次原子事务把三张表分别写进三个物理文件，且单库会话可读。"""
+    """一次原子事务把三张表分别写进三个物理文件，且单库会话可读。"""
     from src.lib.db import connectors as connectors_module
     from src.services.db import bind_cross_store_schemas
 
@@ -1354,12 +1324,10 @@ async def test_atomic_session_uses_rollback_journal_for_cross_file_atomicity(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """参与跨库事务的文件必须是 rollback journal。
+    """参与跨库事务的文件走 rollback journal。
 
-    应用层错误回滚在 WAL 下也成立，但 SQLite 官方明确 WAL 模式下跨 attached
-    database 的 commit **不原子**（进程/电源故障会撕裂）；只有 rollback journal
-    的 super-journal 才提供跨文件原子提交。因此这里锁定 journal_mode。
-    """
+    应用层错误回滚在 WAL 下同样成立，但 SQLite 官方明确 WAL 模式下跨
+    attached database 的 commit 会撕裂；原子提交靠 super-journal。"""
     from src.lib.db import connectors as connectors_module
     from src.services.db import bind_cross_store_schemas
 
@@ -1375,9 +1343,8 @@ async def test_atomic_session_uses_rollback_journal_for_cross_file_atomicity(
     from src.database.instances import core_db, log_db, snapshot_db
     from src.lib.db.atomic import system_atomic_session
 
-    # 真实启动会先登记跨库事务参与者必须用 rollback journal（见
-    # services.db.register_cross_store_journal_modes）。分片一旦被管理器以
-    # WAL 打开过就再也切不回 DELETE，因此这一步不能省。
+    # 真实启动先经 services.db 登记跨库事务参与者走 rollback
+    # journal。分片被管理器以 WAL 打开过后，journal 模式就此定型。
     from src.lib.db.manager import db_manager
 
     monkeypatch.setattr(db_manager, "_rollback_journal_dirs", [])
@@ -1440,14 +1407,14 @@ def test_database_manager_sql_echo_falls_back_when_nonebot_uninitialized(
 
 
 class _RowcountStub:
-    """鸭子类型的 rowcount 提供者：证明契约不绑定具体类。"""
+    """鸭子类型的 rowcount 提供者：契约与具体类解耦。"""
 
     def __init__(self, rowcount: object) -> None:
         self.rowcount = rowcount
 
 
 def test_affected_rows_accepts_cursor_result() -> None:
-    """affected_rows 对单参 execute 的 DML 返回值必须正常取到 rowcount。"""
+    """affected_rows 对单参 execute 的 DML 返回值正常取到 rowcount。"""
     from sqlalchemy import CursorResult
 
     result = CursorResult.__new__(CursorResult)
@@ -1457,19 +1424,17 @@ def test_affected_rows_accepts_cursor_result() -> None:
 
 
 def test_affected_rows_accepts_duck_typed_result() -> None:
-    """契约是「有 rowcount 的结果对象」，不是具体类——代理/桩实现必须可用。"""
+    """契约是「有 rowcount 的结果对象」：代理/桩实现照常可用。"""
     result = cast("Result[object]", _RowcountStub(1))
 
     assert affected_rows(result) == 1
 
 
 def test_affected_rows_rejects_iterator_result_loudly() -> None:
-    """回归：executemany 返回的 IteratorResult 无 rowcount，必须 fail-fast。
+    """executemany 的 IteratorResult 缺失 rowcount 时当场报错。
 
-    旧实现用 cast 断言成 CursorResult，会在下游打开 rowcount 时抛
-    AttributeError——该异常沿 write_batch → BatchWriter 被重试后进死信，
-    整批写入静默中止。改为显式 TypeError 后，故障点前置且带指引。
-    """
+    旧实现用 cast 断言成 CursorResult，下游打开 rowcount 时抛
+    AttributeError，整批写入沿重试路径静默中止。"""
     from sqlalchemy.engine import IteratorResult
 
     result = IteratorResult.__new__(IteratorResult)
@@ -1480,16 +1445,16 @@ def test_affected_rows_rejects_iterator_result_loudly() -> None:
 
 @pytest.mark.parametrize("bad_rowcount", [True, False, "3", 3.5, None])
 def test_affected_rows_rejects_non_integer_rowcount(bad_rowcount: object) -> None:
-    """rowcount 必须是真整数：bool 会伪装成 1/0，字符串与浮点属异常形态。"""
+    """rowcount 取真整数：bool 会伪装成 1/0，字符串与浮点属异常形态。"""
     result = cast("Result[object]", _RowcountStub(bad_rowcount))
 
     with pytest.raises(TypeError, match="int"):
         affected_rows(result)
 
 
-# ---------------------------------------------------------------------------
-# 归档健壮性回归：引擎键归一化 / staging 残留 / 原子落地 / 诚实上报
-# ---------------------------------------------------------------------------
+# --------------------------------------------
+# 归档健壮性：引擎键归一化 / staging 残留 / 原子落地 / 诚实上报
+# --------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -1497,13 +1462,10 @@ async def test_database_manager_dispose_matches_relative_open_path(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """回归：相对路径 open 的引擎，用 resolve 后的绝对路径 dispose 必须命中。
+    """相对路径 open 的引擎，用绝对路径 dispose 照样命中缓存。
 
-    生产 GLOBAL_DB_ROOT 是相对路径（"./data/db"），归档却用 _safe_resolve 的
-    绝对路径调 dispose；缓存键按原始字符串时二者不匹配，dispose 静默空转、
-    连接池句柄永不释放，Windows 上分片 rename 永远 WinError 32。测试过去全用
-    绝对 tmp_path，键恰好一致，掩盖了该缺陷。
-    """
+    生产 GLOBAL_DB_ROOT 是相对路径，归档却用绝对路径调 dispose；
+    缓存键按原始字符串时二者错开，dispose 静默空转。"""
     monkeypatch.chdir(tmp_path)
     db_manager_local = type(db_manager)()
     relative_path = Path("probe") / "store" / "shard.db"
@@ -1512,10 +1474,10 @@ async def test_database_manager_dispose_matches_relative_open_path(
     async with db_manager_local.open(str(relative_path), commit=True) as session:
         await session.execute(text("CREATE TABLE probe (id INTEGER PRIMARY KEY)"))
 
-    # 用绝对路径 dispose——等价于归档路径 _safe_resolve 后的形态。
+    # 绝对路径 dispose，等价于归档路径 _safe_resolve 后的形态。
     await db_manager_local.dispose(str(relative_path.resolve()))
 
-    # 句柄已释放：Windows 上此时 rename 才可能成功。
+    # 句柄已释放：Windows 上此时 rename 才能成功。
     renamed = relative_path.with_suffix(".renamed")
     os.replace(relative_path, renamed)
     assert renamed.is_file()
@@ -1526,12 +1488,10 @@ async def test_archiver_completes_with_relative_db_root(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """回归（M1 主用例）：相对 GLOBAL_DB_ROOT 下同一进程也能完成归档。
+    """相对 GLOBAL_DB_ROOT 下同一进程可完成归档（生产配置端到端）。
 
-    这是生产配置下的端到端路径：写入非活跃月分片 -> 推进时钟 -> 归档巡检，
-    必须产出 .zst、移走在线库、manifest 转 cold。修复前（键不匹配）归档被
-    WinError 32 挡住，且失败被吞、job 依旧报成功。
-    """
+    写入非活跃月分片 -> 推进时钟 -> 归档巡检，产出 .zst、移走在线库、
+    manifest 转 cold。修复前该路径被 WinError 32 挡住且失败被吞。"""
     from src.lib.db import connectors as connectors_module
 
     monkeypatch.chdir(tmp_path)
@@ -1570,11 +1530,10 @@ async def test_run_archiver_task_recovers_staging_residue_when_db_missing(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """回归（M2 自愈）：归档中断留下的 .archiving 残留在巡检时被归位。
+    """归档中断留下的 .archiving 残留在巡检时归位。
 
-    复刻 kill 点：retire 完成（db 已改名成 .archiving）、压缩尚未完成。
-    巡检必须把残留归位成在线分片并记入 healed，而不是无视它。
-    """
+    复刻 kill 点：retire 完成（db 已改名成 .archiving）、压缩进行中。
+    巡检把残留归位成在线分片并记入 healed。"""
     from src.lib.db import connectors as connectors_module
 
     monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
@@ -1598,7 +1557,7 @@ async def test_run_archiver_task_recovers_staging_residue_when_db_missing(
 
     db_path = tmp_path / "framework_heal_staging" / "events_2026_04.db"
     staging_path = db_path.with_suffix(".archiving")
-    # 复刻 kill 点：retire 前缀（dispose + sidecar 清理 + rename）已全部完成。
+    # 复刻 kill 点：retire 前缀已完成。
     await db._retire_shard_file("2026_04", db_path)
     assert staging_path.is_file()
     assert not db_path.exists()
@@ -1607,7 +1566,7 @@ async def test_run_archiver_task_recovers_staging_residue_when_db_missing(
 
     assert report.healed == ["2026_04"]
     assert not staging_path.exists()
-    # 归位后的分片随即按正常流程归档；数据必须完整可读（hydrate 读回全部行）。
+    # 归位后的分片随即按正常流程归档；数据完整可读（hydrate 读回全部行）。
     async with db.read_session(time_ctx=april, cold_policy=ColdPolicy.HYDRATE) as s:
         values = (await s.execute(select(_ShardModel.value))).scalars().all()
     assert list(values) == ["residue"]
@@ -1618,12 +1577,10 @@ async def test_retire_shard_file_refuses_to_overwrite_staging_residue(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """回归（M2 覆盖守卫）：staging 残留与在线分片并存时，绝不覆盖，宁可拒绝上报。
+    """staging 残留与在线分片并存时拒绝覆盖，冲突显式上报。
 
-    这是旧版本遗留的磁盘状态（残留由旧版归档中断产生，在线库由旧版写路径
-    重建）。旧实现会在下一次归档时把新库 os.replace 到同名 staging，残留里
-    尚未压缩的真实行被静默销毁；现在必须保留两者并把冲突显式上报。
-    """
+    旧实现会把新库 os.replace 到同名 staging，残留里的真实行被静默
+    销毁；现在两者都保留并把冲突显式上报。"""
     from src.lib.db import connectors as connectors_module
     from src.lib.db.connectors import ArchiveStagingConflictError
 
@@ -1651,8 +1608,8 @@ async def test_retire_shard_file_refuses_to_overwrite_staging_residue(
     await db._retire_shard_file("2026_04", db_path)
 
     def _read_values(path: Path) -> list[str]:
-        # 显式关闭连接：`with sqlite3.connect(...)` 只提交不关闭，Windows 下
-        # 残留句柄会钉住文件，使后续 rename 抛 WinError 32。
+        # 显式关闭连接：with sqlite3.connect(...) 退出时只提交，句柄交由
+        # GC 释放；Windows 下残留句柄会钉住文件、阻挡后续 rename。
         conn = sqlite3.connect(path)
         try:
             return [row[0] for row in conn.execute("SELECT value FROM sample_shard")]
@@ -1675,7 +1632,7 @@ async def test_retire_shard_file_refuses_to_overwrite_staging_residue(
     with pytest.raises(ArchiveStagingConflictError):
         await db._retire_shard_file("2026_04", db_path)
 
-    # 巡检路径：不覆盖、不归档，冲突进入报告，两侧数据原样保留。
+    # 巡检路径：冲突进入报告，两侧数据原样保留。
     report = await db.run_archiver_task()
 
     assert [f.shard_key for f in report.failures] == ["2026_04"]
@@ -1692,11 +1649,10 @@ async def test_compress_failure_leaves_no_partial_archive(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """回归（M2 原子落地）：压缩中途失败不留下半截 .zst，在线库回滚。
+    """压缩中途失败只留下在线库回滚，磁盘上只余完整归档。
 
-    旧实现 destination.open("wb") 直写：崩在中间会留下「看起来像归档、实际
-    被截断」的 .zst；它被 hydrate 后是损坏库，会让该分片写入永久卡死。
-    """
+    旧实现 destination.open("wb") 直写：崩在中间留下「像归档、实为
+    截断」的 .zst；它被 hydrate 后是损坏库，该分片写入永久卡死。"""
     from src.lib.db import connectors as connectors_module
 
     monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
@@ -1747,11 +1703,9 @@ async def test_read_session_heals_staging_residue_before_creating_empty_shard(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """回归（M2 读路径自愈）：db 缺失 + 残留存在时，读路径先把残留归位。
+    """db 缺失 + 残留存在时，读路径先把残留归位再建空分片。
 
-    修复前读到的是「分片不存在」：活跃月的读会静默新建空库，残留里的行
-    随即不可见（数据孤儿化）。
-    """
+    修复前活跃月的读直接建空库，残留里的行沦为孤儿数据。"""
     from src.lib.db import connectors as connectors_module
 
     monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
@@ -1788,11 +1742,9 @@ async def test_ensure_budget_skips_eviction_without_archive(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """回归：WARM 分片没有可用归档时跳过逐出，绝不删唯一副本。
+    """WARM 分片缺失可用归档时跳过逐出，保住唯一副本。
 
-    逐出 = 删除在线文件；此前不检查归档是否存在，一旦归档缺失/被删，
-    唯一的完整数据就被销毁。
-    """
+    逐出 = 删除在线文件；此前于归档缺失时照删，唯一完整数据被销毁。"""
     from src.lib.db import connectors as connectors_module
 
     monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
@@ -1817,7 +1769,7 @@ async def test_ensure_budget_skips_eviction_without_archive(
 
     db_path = tmp_path / "framework_budget" / "events_2026_04.db"
     archive_path = db_path.with_suffix(".db.zst")
-    # WARM 状态但归档缺失（模拟归档从未产出/被外部删除）。
+    # WARM 状态但归档缺失（模拟归档停产/被外部删除）。
     entry = db._manifest_entry("2026_04", db_path, archive_path)
     entry.state = connectors_module.SegmentState.WARM
     assert not archive_path.exists()
@@ -1830,9 +1782,9 @@ async def test_ensure_budget_skips_eviction_without_archive(
     assert list(values) == ["only-copy"]
 
 
-# ---------------------------------------------------------------------------
-# 分片生命周期残留缺陷回归：读路径锁 / 归档完整性 / manifest 容错
-# ---------------------------------------------------------------------------
+# --------------------------------------------
+# 分片生命周期：读路径锁 / 归档完整性 / manifest 容错
+# --------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -1840,13 +1792,10 @@ async def test_map_reduce_holds_shard_lock_against_archiver(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """回归（K1）：扫描读路径必须持分片锁，归档不得在读的中间态搬走文件。
+    """扫描读路径持分片锁，归档在读的中间态原地等待。
 
-    旧行为：map_reduce 检查「分片在线」后不持锁就 open；若此时归档把文件
-    rename 走，SQLite 会把「打开不存在的路径」直接建出空库，查询静默返回
-    0 行——空库还会被后续归档固化成空归档，整月数据在查询侧永久消失。
-    持锁后归档必须等读事务结束。
-    """
+    旧行为：map_reduce 核对「分片在线」后径直 open；归档在这间隙把
+    文件 rename 走，查询静默返回 0 行。"""
     from src.lib.db import connectors as connectors_module
 
     monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
@@ -1873,8 +1822,7 @@ async def test_map_reduce_holds_shard_lock_against_archiver(
     archiver_task: asyncio.Task[object] | None = None
 
     async def _query(session: AsyncSession) -> int:
-        # 查询「飞行中」时启动归档：读路径不持锁则归档会立刻把文件搬走，
-        # 本次查询要么读到 0 行、要么直接撞上 no such table。
+        # 查询「飞行中」时启动归档：读路径缺锁则归档立即搬走文件
         nonlocal archiver_task
         archiver_task = asyncio.create_task(db.run_archiver_task())
         # 给归档一个到达分片锁的窗口；有锁时它会停在这里等查询结束。
@@ -1892,7 +1840,7 @@ async def test_map_reduce_holds_shard_lock_against_archiver(
         _query,
     )
 
-    # 查询期间归档被分片锁挡住（不是提前完成），且读到完整数据。
+    # 查询期间归档被分片锁挡住（此时仍属进行中），查询读到完整数据。
     assert blocked_mid_query == [True]
     assert observed == [1]
     assert results == [1]
@@ -1907,12 +1855,10 @@ async def test_hydrate_rejects_truncated_archive_and_quarantines_it(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """回归（K3）：截断归档必须显式报错并隔离，绝不冒充正常库。
+    """截断归档显式报错并隔离，照常库处理只允许完整归档。
 
-    旧行为：copy_stream 对截断的 zstd 帧静默返回已解出字节，半截库被当成
-    正常结果——查询返回 0 行、写入还「成功」，整月数据被当空月处理且无人
-    知晓（实测复现）。
-    """
+    旧行为：copy_stream 对截断的 zstd 帧静默返回已解出字节，半截库被
+    当成正常结果——查询返回 0 行、写入还「成功」，整月数据当空月处理。"""
     from src.lib.db import connectors as connectors_module
     from src.lib.db.connectors import ArchiveIntegrityError
 
@@ -1949,7 +1895,7 @@ async def test_hydrate_rejects_truncated_archive_and_quarantines_it(
         ) as _session:
             pass
 
-    # 坏档被隔离留证，且没有冒充成功的半截在线库。
+    # 坏档进入隔离区留证，在线库保持空白。
     quarantined = list(
         (tmp_path / "framework_integrity").glob("events_2026_04.db.zst.corrupt.*")
     )
@@ -1963,12 +1909,10 @@ async def test_manifest_flush_failure_does_not_block_writes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """回归（K4）：manifest 落盘失败不得阻断业务写入。
+    """manifest 落盘失败止步于旁路，业务写入照常完成。
 
-    manifest 是旁路加速状态（真实数据在分片文件里）；旧实现让它沿
-    write_session -> create_shard_placeholder 把一次磁盘/权限问题放大成
-    「整批写入失败」。
-    """
+    manifest 是旁路加速状态（真实数据在分片文件里）；旧实现把一次
+    磁盘/权限问题放大成整批写入失败。"""
     from src.lib.db import connectors as connectors_module
 
     monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
@@ -1995,8 +1939,8 @@ async def test_manifest_flush_failure_does_not_block_writes(
         _always_fail,
     )
 
-    # 必须用一个「尚不存在」的月份：只有 create_if_missing 的建分片占位分支
-    # 会真正调用 flush_manifest()。用已存在的月份会绕过该分支，测试将空转。
+    # 用一个「全新」月份：只有 create_if_missing 的建分片占位分支
+    # 会真正调用 flush_manifest()。已存在的月份会绕过该分支，测试将空转。
     fresh = arrow.get("2027-01-08").datetime
     async with db.write_session(time_ctx=fresh) as session:
         session.add(_ShardModel(value="written-without-manifest"))
@@ -2011,12 +1955,10 @@ async def test_ensure_budget_rechecks_warm_state_under_lock(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """回归：逐出前必须在锁内复检状态，防「快照 WARM、实际已 HOT」误删新数据。
+    """逐出前在锁内复检状态，防「快照 WARM、实际已 HOT」误删新数据。
 
-    逐出候选列表来自快照，循环里每个 await 都会让出事件循环；期间若有写入把
-    该分片提升回 HOT（在线库含新行、归档还是旧的），仍按快照逐出就会删除唯一
-    持有新写入的副本——整批写入随归档回灌被旧数据覆盖。
-    """
+    逐出候选列表来自快照，循环里每个 await 都会让出事件循环；期间若有
+    写入把该分片提升回 HOT，仍按快照逐出就会删掉唯一持有新写入的副本。"""
     from src.lib.db import connectors as connectors_module
     from src.lib.db.connectors import SegmentState
 
@@ -2046,8 +1988,7 @@ async def test_ensure_budget_rechecks_warm_state_under_lock(
     archive_path = db_path.with_suffix(".db.zst")
     assert archive_path.is_file()
 
-    # 复刻 hydrate 之后的 WARM 在线库（跳过 hydrate 自身的 budget 调用，
-    # 以便手动控制逐出时机）。
+    # 复刻 hydrate 之后的 WARM 在线库（手动控制逐出时机）。
     await asyncio.to_thread(db._decompress_file, archive_path, db_path)
     await db._touch_segment("2026_04", state=SegmentState.WARM)
     assert db_path.is_file()
@@ -2065,7 +2006,7 @@ async def test_ensure_budget_rechecks_warm_state_under_lock(
 
     await db._ensure_budget()
 
-    # 已在锁内复检为 HOT：不得逐出，新数据仍在线。
+    # 锁内复检为 HOT：逐出就此跳过，新数据留在在线库。
     assert db_path.is_file()
     async with db.read_session(time_ctx=april) as session:
         values = (await session.execute(select(_ShardModel.value))).scalars().all()
@@ -2077,16 +2018,10 @@ async def test_atomic_write_works_after_production_init_sequence(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """回归：走完生产启动顺序后，跨库原子写必须仍然可用。
+    """走完生产启动顺序后，跨库原子写照常可用。
 
-    生产启动是 `init_db()`（把 core/log/snapshot 打开并常驻连接池），此后
-    封禁/改名/审批等走 `system_atomic_session`。SQLite 不允许在存在其它连接时
-    改变 journal_mode，因此若 init_db 先把这些库开成 WAL，原子路径再切 DELETE
-    必然 `database is locked`——此前所有跨库原子写静默失败。
-
-    既有测试没抓到，是因为各自用独立临时目录且很少在同一目录上先 init_db
-    再原子写。本用例刻意复刻「同一目录、先 init_db、后原子写」的顺序。
-    """
+    生产启动先 init_db() 并常驻连接池，此后封号/改名/审批走原子会话；
+    SQLite 缺其它连接时才允许改 journal_mode，先开 WAL 再切 DELETE 会锁。"""
     from src.lib.db import connectors as connectors_module
     from src.lib.db import manager as manager_module
 
@@ -2097,17 +2032,17 @@ async def test_atomic_write_works_after_production_init_sequence(
         lambda: arrow.get("2026-10-07 12:00:00+08:00").int_timestamp,
     )
 
-    # 干净的登记状态（其他用例可能已登记过别的根目录）。
+    # 干净的登记状态（其他用例可能登记过别的根目录）。
     manager = manager_module.db_manager
     monkeypatch.setattr(manager, "_rollback_journal_dirs", [])
-    # 全新根目录对应全新引擎；确保池里没有旧根目录的引擎。
+    # 全新根目录对应全新引擎；清空池里旧根目录的引擎。
     await manager.dispose_all()
 
     from src.services.db import init_db
 
     await init_db()
 
-    # init_db 之后三个库就必须已经是 DELETE（不是等到原子时才切）。
+    # init_db 之后三个库已经是 DELETE，原子路径只是沿用。
     for name in ("core_db/core.db",):
         conn = sqlite3.connect(tmp_path / name)
         try:
@@ -2116,7 +2051,7 @@ async def test_atomic_write_works_after_production_init_sequence(
             conn.close()
         assert mode == "delete", f"{name} 应为 delete，实际 {mode}"
 
-    # 关键断言：生产顺序下的原子写必须成功（此前这里是 database is locked）。
+    # 关键断言：生产顺序下原子写恢复可用（此处曾是 database is locked）。
     from src.database.core.consts import Permission
     from src.database.core.ops import UserOps
     from src.lib.db.atomic import system_atomic_session
@@ -2133,13 +2068,10 @@ async def test_atomic_write_works_after_production_init_sequence(
 
 @pytest.mark.asyncio
 async def test_watchdog_timeout_does_not_retry_callback() -> None:
-    """回归：看门狗超时后回调不得被重试——重试会对已提交分片双写。
+    """看门狗超时后回调只被调用一次，重试会对已提交分片双写。
 
-    回调（write_batch）按分片逐个独立提交；取消发生时无法得知已提交到哪一步，
-    重试整批会把已提交部分再写一遍。water 的计数是累加型 upsert
-    （msg_count = msg_count + excluded.msg_count），会静默多计；快照类是普通
-    insert，会产生重复行。因此超时后必须直接进死信，且回调只被调用一次。
-    """
+    回调（write_batch）按分片逐个独立提交；取消发生后难以得知提交到
+    哪一步，重试整批会把已提交部分再写一遍。"""
     calls: list[list[int]] = []
     stuck = asyncio.Event()
 
@@ -2151,7 +2083,7 @@ async def test_watchdog_timeout_does_not_retry_callback() -> None:
         flush_callback=_stuck,
         batch_size=10,
         flush_interval=0.05,
-        max_retries=3,  # 故意给多次重试预算
+        max_retries=3,  # 预留多次重试预算，确认超时路径绕开重试
         retry_backoff=0.0,
         flush_timeout=0.1,
     )
@@ -2160,7 +2092,7 @@ async def test_watchdog_timeout_does_not_retry_callback() -> None:
     with pytest.raises(TimeoutError):
         await asyncio.wait_for(writer.drain(), timeout=5)
 
-    # 关键断言：回调只被调用一次，未走重试。
+    # 关键断言：回调只被调用一次，重试通道关闭。
     assert len(calls) == 1
     assert writer.health.flush_timeouts == 1
     assert writer.dead_letters[0].attempts == 1
@@ -2177,13 +2109,10 @@ async def test_atomic_session_revives_sealed_shard_before_attach(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """回归：当月分片被 seal 后，跨库原子写必须先唤醒它再 ATTACH。
+    """当月分片被 seal 后，跨库原子写先唤醒它再 ATTACH。
 
-    旧行为：`system_atomic_session` 直接拿 `shard_file_for()` 的路径 ATTACH。
-    分片被体积闸门 force seal（只剩 .zst）时，SQLite 会**凭空建出空库**并在
-    其中完成本次事务——审计/快照从此写进影子库，与归档里的旧行分裂；换月
-    归档时影子空壳还会覆盖该月 .zst，旧数据永久丢失。
-    """
+    旧行为：直接拿分片路径 ATTACH。分片被 force seal（只剩 .zst）时，
+    SQLite 凭空建出空库并在其中完成事务，审计/快照与归档里的旧行分裂。"""
     from src.lib.db import connectors as connectors_module
 
     monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
@@ -2196,7 +2125,7 @@ async def test_atomic_session_revives_sealed_shard_before_attach(
     from src.database.core.consts import Permission
     from src.database.core.ops import UserOps
 
-    # 生产启动会登记参与者库用 rollback journal（见 services.db）。
+    # 生产启动会经 services.db 登记参与者库走 rollback journal。
     from src.database.instances import core_db, log_db, snapshot_db
     from src.database.log.consts import AuditAction, AuditCategory, AuditContext
     from src.database.log.ops import AuditLogOps
@@ -2232,7 +2161,7 @@ async def test_atomic_session_revives_sealed_shard_before_attach(
     assert outcome == SegmentArchiveOutcome.ARCHIVED
     assert not log_shard.exists()
 
-    # 3) 再走一次原子写：必须把归档唤醒回来，而不是建空影子库。
+    # 3) 再走一次原子写：归档被唤醒并复用，影子空库就此绝迹。
     async with system_atomic_session() as session:
         await AuditLogOps(session).create_audit_log(
             target_id="t2",
@@ -2248,7 +2177,7 @@ async def test_atomic_session_revives_sealed_shard_before_attach(
         )
     finally:
         conn.close()
-    # 关键断言：旧行（t1）与新行（t2）在同一分片里，没有影子库分裂。
+    # 关键断言：旧行（t1）与新行（t2）同处一个分片，影子库分裂绝迹。
     assert rows == ["t1", "t2"]
 
 
@@ -2257,12 +2186,10 @@ async def test_manifest_tmp_path_is_unique_per_writer(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """回归：manifest 落盘的临时文件名必须按写者唯一。
+    """manifest 落盘的临时文件名按写者唯一。
 
-    主进程与 cron 子进程（以及线程池里的多个写者）可能同时落盘；固定名
-    ".json.tmp" 会让两边互踩——A 写完 B 截断，A 的 os.replace 再把 B 的半截
-    内容搬到正式路径，manifest 从此损坏（读回抛 JSON 异常，旁路状态失效）。
-    """
+    主进程与 cron 子进程（以及线程池里的多个写者）可能同时落盘；固定
+    名 ".json.tmp" 会让两边互踩，manifest 从此损坏。"""
     from src.lib.db import connectors as connectors_module
 
     monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
@@ -2288,7 +2215,7 @@ async def test_manifest_tmp_path_is_unique_per_writer(
     await asyncio.to_thread(db._write_manifest_atomic)
 
     assert len(recorded) == 2
-    # 两次写入（不同线程）必须使用不同的临时路径。
+    # 两次写入（两线程）各自使用独立临时路径。
     assert recorded[0] != recorded[1], f"临时名冲突: {recorded}"
     assert all(path.endswith(".tmp") for path in recorded)
 
@@ -2298,12 +2225,10 @@ async def test_restore_reset_clears_shard_caches_for_in_place_overwrite(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """回归：备份恢复（就地覆盖、inode 不变）后必须复位分片库内存态。
+    """备份恢复（就地覆盖、inode 保持）后复位分片库内存态。
 
-    `_initialized_shards` 按 (st_dev, st_ino) 判断「schema 已建」；`copy2` 就地
-    覆盖保留 inode，身份不变即误命中缓存——补丁不会在恢复出的旧内容上重放，
-    manifest 也停留在恢复前。公共层通过备份注册表统一复位所有已注册库。
-    """
+    _initialized_shards 按 (st_dev, st_ino) 判「schema 已建」；copy2
+    就地覆盖保留 inode，身份相同即误命中缓存，补丁照旧跳过重放。"""
     from src.lib.backup.registry import (
         register_backup_database,
         reset_registered_database_runtime_states,
@@ -2337,7 +2262,7 @@ async def test_restore_reset_clears_shard_caches_for_in_place_overwrite(
     register_backup_database(db)
     reset_registered_database_runtime_states()
 
-    # 关键断言：schema 标记与 manifest 缓存都已复位，下次访问重新校验/重放补丁。
+    # 关键断言：schema 标记与 manifest 缓存都已复位，下次访问重放补丁。
     assert db._initialized_shards == {}
     assert db._manifest is None
     assert db._manifest_dirty is False

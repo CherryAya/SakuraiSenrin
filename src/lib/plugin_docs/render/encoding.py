@@ -1,4 +1,4 @@
-"""Image encoding helpers for docs renderers."""
+"""文档渲染器的图片编码辅助。"""
 
 from __future__ import annotations
 

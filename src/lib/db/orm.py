@@ -26,7 +26,7 @@ class IntFlagType[T: IntFlag](TypeDecorator[T]):
             return None
         if isinstance(value, self._enum_class):
             return value.value
-        # T 以 IntFlag 为约束，排除枚举成员后 value 只可能是 int。
+        # 排除枚举分支后 value 必为 int
         return value
 
     def process_result_value(self, value: int | None, dialect: Dialect) -> T | None:

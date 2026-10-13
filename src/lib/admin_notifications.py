@@ -47,8 +47,7 @@ def parse_admin_notification_group_ids(raw: object) -> tuple[str, ...]:
     if not isinstance(raw, (list, tuple, set, frozenset)):
         raise ValueError("ADMIN_NOTIFY_GROUP_IDS must be an array-like value")
 
-    # isinstance 只把 object 收窄成「若干未知元素集合」；这里把元素类型写实为
-    # object（下列 str() 已能接受任意形态），不引入 Any 也不放松校验分支。
+    # 元素类型写实为 object：str() 接受任意形态，收窄走 cast
     payload = cast("Collection[object]", raw)
 
     group_ids: list[str] = []

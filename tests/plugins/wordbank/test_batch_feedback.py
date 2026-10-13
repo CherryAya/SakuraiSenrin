@@ -129,7 +129,7 @@ async def test_send_batch_add_feedback_emits_long_task_prompt_for_slow_detail(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     build_message = AsyncMock(return_value=MessagePlanEntry.from_message("详情节点"))
-    # 等价 mock：把长任务阈值睡眠换成单次让出事件循环，避免真等 800ms。
+    # 阈值睡眠换成单次让出事件循环。
     real_sleep = asyncio.sleep
 
     async def _fake_sleep(_seconds: float) -> None:
@@ -143,7 +143,7 @@ async def test_send_batch_add_feedback_emits_long_task_prompt_for_slow_detail(
         assert isinstance(plan, batch_feedback_module.DeliveryPlan)
         if str(plan.messages[0]).startswith("已完成合并转发响应导入，正在整理详情"):
             return SimpleNamespace(results=({"message_id": 1},))
-        # 多让出几轮事件循环，模拟详情投递比阈值更"慢"，触发长任务提示。
+        # 多让出几轮，模拟详情投递更慢触发长任务提示。
         for _ in range(5):
             await real_sleep(0)
         return SimpleNamespace(results=({"message_id": 2},))

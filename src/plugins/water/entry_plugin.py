@@ -224,9 +224,7 @@ async def _abort_water_on_revoke(
     event: MessageEvent,
     locale: LocaleCode,
 ) -> None:
-    # nonebot Matcher 的 finish 消息参数类型比 SupportsFinish 协议更窄
-    # （协议含 MessagePlanEntry），pyright 判其不满足协议；此处仅在动态分发
-    # 边界收口这一静态不可表达的事实，实际传入的始终是 str。
+    # 协议位点静态收口：运行时恒为 str
     await abort_if_revoke_signal(
         event,
         cast("SupportsFinish", matcher),
@@ -402,7 +400,7 @@ async def initialize_water_plugin() -> None:
 
 
 def reset_water_plugin_initialized() -> None:
-    """复位初始化标记与运行时缓存，供备份恢复后的重载流程强制重新初始化。"""
+    """复位初始化标记与运行时缓存，供备份恢复后的重载流程。"""
     global _water_plugin_initialized
     _water_plugin_initialized = False
     clear_water_query_cooldowns()
@@ -475,8 +473,7 @@ async def _(bot: Bot, matcher: Matcher, event: NoticeEvent) -> None:
     if session is None:
         return
 
-    # _default_state 是 nonebot Matcher 的内部字段，直接访问触发
-    # reportPrivateUsage；沿用仓库既有做法用 getattr 取原始值，不做类型欺骗。
+    # _default_state 为 nonebot 内部字段，getattr 取原值
     default_state = cast("T_State", getattr(session.matcher_cls, "_default_state", {}))
     locale = _water_rank_locale(default_state)
     checkpoint = session.checkpoint
@@ -643,15 +640,9 @@ type _GuidedStepHandler = Callable[..., Coroutine[object, object, None]]
 
 
 class _GuidedMatcher(Protocol):
-    """``Matcher.got`` 的结构化视图：返回一个能装饰步骤处理函数的装饰器。
+    """``Matcher.got`` 的结构化视图：能装饰步骤处理函数的装饰器。
 
-    nonebot 的 ``got`` 参数/返回在实现里大量使用 ``Any``，strict 下整条装饰器
-    调用被判为部分未知。类方法形态与真实 ``Matcher.got`` 一致；此处只声明调用
-    点真正用到的形态，把未知收口在装饰器注册处。
-
-    ``prompt`` 必须照实写成真实联合类型（对齐 ``Matcher.got`` 的签名）：
-    早期写成 ``object`` 等于单方面关掉 pyright 对该参数的检查，
-    传 ``prompt=12345`` 也能通过——那正是被审计点名的一处「让渡检查」。
+    prompt 按真实联合类型声明，静态检查覆盖调用点。
     """
 
     @classmethod

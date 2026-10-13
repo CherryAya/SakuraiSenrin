@@ -1,14 +1,8 @@
-"""Inspect buffered writer runtime state and dead-letter queues.
+"""列出 BatchWriter 运行态与死信队列。
 
-对标 Elasticsearch 的 _cluster/health：列出所有 BatchWriter 的落盘量、失败量、
-死信批次与连续失败次数。死信此前只存在内存里，任何持续性写入失败都会静默丢
-数据直到进程重启；本脚本让这种情况可见。
-
-退出码：有降级 writer 时返回 1，可直接用于监控探针。
-
-用法:
-    uv run python scripts/writer_health.py
-    uv run python scripts/writer_health.py --json
+对标 ES 的 _cluster/health：覆盖落盘量、失败量、死信批次与连续失败次数，
+让持续写入失败可见。退出码：有降级 writer 时返回 1，可作监控探针。
+用法：uv run python scripts/writer_health.py [--json]
 """
 
 from __future__ import annotations
@@ -28,7 +22,7 @@ from src.lib.types import JsonValue
 
 
 def _stub_plugin_packages() -> None:
-    """避免触发插件 bootstrap 的 NoneBot 副作用。"""
+    """绕开插件 bootstrap 的 NoneBot 副作用。"""
     project_root = Path(__file__).resolve().parents[1]
     for name, path in (
         ("src.plugins.water", project_root / "src" / "plugins" / "water"),

@@ -29,13 +29,7 @@ class UserCache(BaseCache[UserCacheItem]):
         user_name: str | Unset = UNSET,
         permission: Permission | Unset = UNSET,
     ) -> None:
-        """更新或创建用户缓存。
-
-        如果用户不存在，则使用默认值创建:
-
-        - status: 用户状态，默认为 NORMAL
-        - permission: 用户权限，默认为 NORMAL
-        """
+        """更新或创建用户缓存；新建时 status 与 permission 取默认值。"""
         user = self.get(user_id)
         name_hash = hash(user_name)
         if not user:
@@ -57,7 +51,7 @@ class UserCache(BaseCache[UserCacheItem]):
         self.set(user_id, user)
 
     def is_available(self, user_id: str) -> bool:
-        """检查用户是否可用（未被封禁、未开启自我忽略、或是超级用户）"""
+        """用户可用性：超级用户放行，其余按自我忽略开关判定。"""
         item = self.get(user_id)
         if not item:
             return False
@@ -209,10 +203,7 @@ class BlacklistCache(BaseCache[BlacklistCacheItem]):
         return self.get(key)
 
     def is_banned(self, user_id: str, group_id: str) -> bool:
-        """
-        检查用户是否被封禁。
-        优先级：全局封禁 -> 群内封禁
-        """
+        """拉黑判定顺序：全局 -> 群内。"""
         if self._check_and_clean(self.gen_key(user_id, GLOBAL_GROUP_FLAG)):
             return True
         if self._check_and_clean(self.gen_key(user_id, group_id)):

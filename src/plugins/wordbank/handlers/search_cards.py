@@ -1,4 +1,4 @@
-"""Pillow search card rendering for wordbank search results."""
+"""wordbank 搜索结果的 Pillow 卡片渲染。"""
 
 from __future__ import annotations
 
@@ -1352,8 +1352,6 @@ class SearchResultCardRenderer:
                 return prepared.copy()
         except Exception:
             return None
-
-    # Compatibility helpers kept for tests and local renderer inspection.
 
 
 def render_search_results_card_bytes(

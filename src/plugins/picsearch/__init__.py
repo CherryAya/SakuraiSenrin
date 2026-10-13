@@ -470,12 +470,7 @@ type _PicsearchHandler = Callable[..., Awaitable[object]]
 
 
 class _GotFactory(Protocol):
-    """``Matcher.got`` 的最小形态。
-
-    ``got`` 的返回装饰器签名引出了未参数化的 ``MessageSegment``/``MessageTemplate``
-    与裸 ``Any``，strict 下会报 partially unknown。本插件只用到「纯文本 prompt 的
-    got」，按此收口后调用点干净，且不影响运行时行为。
-    """
+    """``Matcher.got`` 的最小形态，收窄 strict 模式类型。"""
 
     def __call__(
         self,

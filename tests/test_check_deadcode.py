@@ -1,7 +1,7 @@
-"""``scripts/check_deadcode.py`` 的门禁行为测试。
+"""``scripts/check_deadcode.py`` 的行为测试。
 
-门禁的价值在于「能失败」——因此这里重点验证它真的会拦下零引用代码，
-以及标记机制确实能豁免（而不是一个永远绿灯的摆设）。
+零引用代码要真的被拦下：该脚本的价值在于「能失败」；
+标记机制确实能豁免。
 """
 
 from __future__ import annotations
@@ -45,13 +45,13 @@ def test_keep_kinds_are_non_empty_and_kebab_case(gate: ModuleType) -> None:
 
 
 def test_extract_marker_requires_line_start(gate: ModuleType) -> None:
-    """标记必须独占行首：行内提及（散文、示例）不算，否则会自我匹配。"""
+    """标记独占行首：行内提及被视为散文。"""
     assert gate._extract_marker("# deadcode-keep: test-double | 理由") == (
         "test-double | 理由"
     )
     # 缩进仍算个数
     assert gate._extract_marker("    # deadcode-keep: orm-contract | 理由")
-    # 行内提及不算
+    # 行内提及被忽略
     assert gate._extract_marker("- 说明里提到 # deadcode-keep: 的用法") is None
     assert gate._extract_marker("# 普通注释") is None
 
@@ -61,7 +61,7 @@ def test_marker_before_finds_marker_on_preceding_line(gate: ModuleType) -> None:
         "def f() -> None:",
         "    ...",
     ]
-    # lineno=2 表示定义在第 2 行；其上一行没有标记
+    # lineno=2 即定义行；上一行是代码
     assert gate._marker_before(lines, 2) is None
 
     lines = [
@@ -72,7 +72,7 @@ def test_marker_before_finds_marker_on_preceding_line(gate: ModuleType) -> None:
 
 
 def test_marker_before_stops_at_non_comment_line(gate: ModuleType) -> None:
-    """中间隔着代码则不算（避免「远端注释」误豁免）。"""
+    """标记与定义之间隔着代码即失效，防远端注释误豁免。"""
     lines = [
         "# deadcode-keep: public-api | 理由",
         "x = 1",
@@ -91,7 +91,7 @@ def test_marker_before_stops_at_blank_line(gate: ModuleType) -> None:
 
 
 def test_marker_before_allows_multi_line_comment_block(gate: ModuleType) -> None:
-    """标记允许位于多行注释块的任一行（不隔空行）。"""
+    """标记可落在多行注释块的任一行（隔空行即断）。"""
     lines = [
         "# deadcode-keep: test-binding | 仅被 tests 引用",
         "# 补充说明：删除需同步迁移测试",
@@ -117,7 +117,7 @@ def test_validate_kind_accepts_known(gate: ModuleType) -> None:
 
 
 def test_orphan_scan_excludes_nonebot_dynamic_dirs(gate: ModuleType) -> None:
-    """plugins/hooks 由 nonebot 按目录加载，模块级不参与入站 import 判定。"""
+    """plugins/hooks 由 nonebot 按目录加载，跳过入站 import 判定。"""
     orphans = gate.find_orphan_modules()
 
     assert not [p for p in orphans if "/plugins/" in p or "/hooks/" in p]
@@ -133,7 +133,7 @@ def test_gate_reports_dead_package_and_its_members(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """整包无人引用时，包与其中的模块都应被报出（都要么删、要么标记）。"""
+    """整包零引用时，包与成员模块都要报出。"""
     monkeypatch.setattr(gate, "ROOT", tmp_path)
     (tmp_path / "src" / "lib").mkdir(parents=True)
     (tmp_path / "src" / "__init__.py").write_text("", encoding="utf-8")
@@ -152,7 +152,7 @@ def test_package_init_not_orphan_when_sibling_imported(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """包的任一子模块被引用时，包自身不应被误报（导入子模块会执行它）。"""
+    """子模块被引用时包自身照常通过（导入子模块会执行它）。"""
     monkeypatch.setattr(gate, "ROOT", tmp_path)
     (tmp_path / "src" / "lib").mkdir(parents=True)
     (tmp_path / "src" / "__init__.py").write_text("", encoding="utf-8")
@@ -176,7 +176,7 @@ def test_referenced_module_is_not_an_orphan(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """被 import 的模块不得进孤儿名单（避免误报淹没真实信号）。"""
+    """被 import 的模块跳过孤儿判定，防误报噪声。"""
     monkeypatch.setattr(gate, "ROOT", tmp_path)
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "__init__.py").write_text("", encoding="utf-8")
@@ -188,7 +188,7 @@ def test_referenced_module_is_not_an_orphan(
     orphans = gate.find_orphan_modules()
 
     assert "src/used.py" not in orphans
-    assert "src/main.py" in orphans  # 无人引用 main.py 本身
+    assert "src/main.py" in orphans  # main.py 自身零引用
 
 
 def test_gate_accepts_module_marked_in_docstring(
@@ -196,7 +196,7 @@ def test_gate_accepts_module_marked_in_docstring(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """模块 docstring 内的标记应能豁免整模块（CLI 入口的用法）。"""
+    """模块 docstring 内的标记豁免整模块（CLI 入口的用法）。"""
     monkeypatch.setattr(gate, "ROOT", tmp_path)
     (tmp_path / "src" / "tools").mkdir(parents=True)
     (tmp_path / "src" / "__init__.py").write_text("", encoding="utf-8")

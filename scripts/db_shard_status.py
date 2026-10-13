@@ -1,11 +1,7 @@
-"""Inspect sharedDB shard lifecycle state across all registered databases.
+"""列出已注册分片库的生命周期状态。
 
-对标 Elasticsearch 的 _cat/indices 与 _cluster/health：一次性列出所有分片库
-的分片状态、是否在线、是否已归档、体积与最近访问时间。
-
-用法:
-    uv run python scripts/db_shard_status.py
-    uv run python scripts/db_shard_status.py --json
+对标 ES 的 _cat/indices 与 _cluster/health：列出分片状态、在线、归档、
+体积与最近访问时间。用法：uv run python scripts/db_shard_status.py [--json]
 """
 
 from __future__ import annotations
@@ -32,7 +28,7 @@ from src.lib.types import JsonValue
 
 
 class _NoopOps(BaseOps[DeclarativeBase]):
-    """运维脚本只读健康快照，不需要真实 ops。"""
+    """运维脚本只读健康快照，ops 保持空实现。"""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -78,7 +74,7 @@ def _load_stores() -> dict[str, AliasStore[_NoopOps]]:
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
 
-    # 避免触发插件 bootstrap 的 NoneBot 副作用
+    # 用空壳包绕开插件 bootstrap 的 NoneBot 副作用
     for name, path in (
         ("src.plugins.water", project_root / "src" / "plugins" / "water"),
         ("src.plugins.wordbank", project_root / "src" / "plugins" / "wordbank"),

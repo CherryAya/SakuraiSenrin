@@ -1,4 +1,4 @@
-"""Wordbank command handlers."""
+"""wordbank 命令 handler。"""
 
 from __future__ import annotations
 
@@ -105,7 +105,7 @@ WEIGHT_ALIASES = {"weight", "权重"}
 
 
 def default_i18n_text(key: MessageKey, **params: object) -> str:
-    """按 zh-CN 兜底取文案；供跨模块（guided_flow / study）复用。"""
+    """按 zh-CN 兜底取文案，guided_flow / study 共用。"""
     return tr("zh-CN", key, **params)
 
 

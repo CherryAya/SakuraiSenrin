@@ -1,8 +1,4 @@
-"""i18n package exports.
-
-Keep this module light so generated-key scripts can import `src.lib.i18n.types`
-without pulling in NoneBot runtime dependencies.
-"""
+"""i18n 包导出：保持轻量，生成 keys 的脚本直接 import types。"""
 
 from __future__ import annotations
 

@@ -1,10 +1,4 @@
-"""Inspect and replay buffered-writer dead letters.
-
-死信此前只存在内存，重启即丢且无法补偿。本脚本提供三件事：
-
-* ``--list``   列出 sys_dead_letter 中未处理的死信（回溯）
-* ``--replay`` 用原 flush 回调重放，成功后标记 resolved（补偿）
-* ``--prune``  清理已处理的历史记录
+"""死信回溯与重放：按 worker 列出、重放、裁剪 sys_dead_letter。
 
 用法:
     uv run python scripts/dead_letter.py --list
@@ -63,8 +57,7 @@ def _build_handlers() -> dict[str, object]:
         for value in vars(module).values():
             if isinstance(value, BatchWriter):
                 handlers[value.worker_name] = value.flush_callback
-    # trace writer 是懒建的模块私有实例，上面按模块扫描收不到它；不显式补进来
-    # 会导致 trace 死信永远"无 handler 跳过"、无法重放。
+    # trace writer 懒建在模块私有变量里，模块级扫描缺席；显式补上
     trace_writer = get_trace_writer()
     handlers[trace_writer.worker_name] = trace_writer.flush_callback
     return handlers
@@ -103,7 +96,7 @@ async def main() -> int:
     args = parser.parse_args()
     _stub_plugin_packages()
 
-    # 独立脚本不走 on_startup，需自行应用建表/补丁
+    # 独立脚本绕开 on_startup，须自行应用建表/补丁
     from src.database.core.tables import CoreBase
     from src.database.instances import core_db
     from src.services.dead_letter_store import (

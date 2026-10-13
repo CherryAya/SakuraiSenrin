@@ -36,26 +36,10 @@ class DatabaseManager:
         self._engines: dict[str, AsyncEngine] = {}
         self._session_factories: dict[str, async_sessionmaker[AsyncSession]] = {}
         self._lock = asyncio.Lock()
-        # 与跨库原子事务（atomic.py）的协调，见 register_rollback_journal_dir。
         self._rollback_journal_dirs: list[Path] = []
 
     def register_rollback_journal_dir(self, directory: Path) -> None:
-        """登记「必须保持 rollback journal」的库目录（跨库事务参与者）。
-
-        参与跨库原子事务的库必须常驻 rollback journal（DELETE）：SQLite 只在
-        rollback journal 下用 super-journal 提供跨 attached database 的原子
-        提交，WAL 模式下跨文件 commit 在崩溃时会撕裂。而 journal_mode 是文件
-        属性，**存在其它连接时不允许切换**——所以「先用 WAL 打开、等 ATTACH
-        时再切 DELETE」必然失败：本管理器的连接池常驻句柄，原子路径的
-        `PRAGMA journal_mode=DELETE` 每次都得到 `database is locked`，全部跨库
-        原子写（封禁/改名/审批……）静默失败。
-
-        因此这些库从第一次打开起就必须按本登记选择 DELETE。必须在任何连接
-        建立之前调用（生产唯一入口是 services.db.init_db）；重复登记幂等。
-
-        按目录（而非单文件）登记：log/snapshot 是按月分片的，每月新分片都会
-        经由本管理器打开。
-        """
+        """登记跨库事务参与者目录：首次连接前调用，journal 固定 DELETE。"""
         resolved = Path(directory).resolve()
         if resolved not in self._rollback_journal_dirs:
             self._rollback_journal_dirs.append(resolved)
@@ -69,25 +53,14 @@ class DatabaseManager:
 
     @staticmethod
     def _engine_key(full_path: str) -> str:
-        """引擎缓存键：把库文件路径归一化成绝对形式。
-
-        调用方可能用相对路径 open（GLOBAL_DB_ROOT 是相对路径），却用 resolve 后
-        的绝对路径 dispose（归档路径传 _safe_resolve 的结果）。若按原始字符串做
-        键，同一个文件会被注册成两个条目，dispose 静默空转、连接池句柄永不释放；
-        Windows 上表现为分片 rename 永远 WinError 32——这正是生产归档长期失败的
-        根因（测试全用绝对 tmp_path，恰好掩盖了键不匹配）。
-        """
+        """引擎缓存键：路径归一化为绝对形式。"""
         return f"sqlite+aiosqlite:///{Path(full_path).resolve()}"
 
     def _make_pragma_listener(
         self,
         full_path: str,
     ) -> Callable[[DBAPIConnection, ConnectionPoolEntry], None]:
-        """生成本引擎的连接初始化钩子（journal 模式按库决定）。
-
-        钩子按引擎闭包捕获库路径：连接池按库复用连接，PRAGMA 必须在每条连接
-        建立时设置，且只对当前库生效。
-        """
+        """生成连接初始化钩子：按库选 journal 模式。"""
 
         def _listener(
             dbapi_connection: DBAPIConnection,
@@ -122,8 +95,7 @@ class DatabaseManager:
 
             echo = self._resolve_sql_echo()
             engine = create_async_engine(url, echo=echo)
-            # 单库会话把 attached schema 前缀映射回 main（SQLite 默认 schema）。
-            # 这样同一批 ORM 类既能用于单库写入，也能用于跨库原子写入。
+            # 单库会话：attached schema 前缀映射回 main
             engine = engine.execution_options(
                 schema_translate_map=_standalone_schema_map(),
             )

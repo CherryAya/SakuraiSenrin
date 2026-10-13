@@ -1,4 +1,4 @@
-"""Migrate legacy PostgreSQL senrin_system records into current core.db."""
+"""迁移遗留 PG senrin_system 记录到 core.db。"""
 
 from __future__ import annotations
 

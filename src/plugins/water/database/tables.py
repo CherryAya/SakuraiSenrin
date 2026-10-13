@@ -77,7 +77,7 @@ class WaterDailySummary(WaterCoreBase, WaterDailySummaryMixin):
             "user_id",
             "record_date",
         ),
-        # 全局 scope 查询（不带 group_id / user_id）此前只能全表扫描 90 天热表
+        # 全局 scope 查询的日期索引
         Index(
             "idx_water_summary_date",
             "record_date",
@@ -166,7 +166,7 @@ class WaterGroupTotal(WaterCoreBase, TimeMixin):
 
 class WaterPenaltyLog(WaterCoreBase, TimeMixin):
     __tablename__ = "water_penalty_log"
-    # get_user_penalties_by_date 按 (user_id, record_date) 过滤，此前全表扫描
+    # (user_id, record_date) 过滤索引
     __table_args__ = (Index("idx_water_penalty_user_date", "user_id", "record_date"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -195,7 +195,7 @@ class WaterMatrixMergeState(WaterCoreBase, TimeMixin):
     __tablename__ = "water_matrix_merge_state"
     __table_args__ = (
         Index("idx_water_merge_ignored", "is_ignored"),
-        # get_first_seen_groups 按 first_seen_at IS NOT NULL 过滤，此前全表扫描
+        # first_seen_at 非空的过滤索引
         Index("idx_water_merge_first_seen", "first_seen_at"),
     )
 

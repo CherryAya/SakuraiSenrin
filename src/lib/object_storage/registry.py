@@ -1,4 +1,4 @@
-"""Object storage provider registry."""
+"""对象存储提供方注册表。"""
 
 from __future__ import annotations
 

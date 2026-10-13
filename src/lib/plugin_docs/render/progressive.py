@@ -1,4 +1,4 @@
-"""Progressive disclosure renderers for docs."""
+"""文档的渐进式渲染器。"""
 
 from __future__ import annotations
 
@@ -2314,7 +2314,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         return f"{candidate}{ellipsis}" if candidate else ellipsis
 
     def _pixel_text_width(self, text: str, font: DocsFont) -> int:
-        """逐字符测量用的宽度：getlength 免去构造 bbox，避免换行循环里重复开销。"""
+        """逐字符测量宽度：getlength 免去构造 bbox 开销。"""
         if not text:
             return 0
         if not contains_emoji(text) and hasattr(font, "getlength"):

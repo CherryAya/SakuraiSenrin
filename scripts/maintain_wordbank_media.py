@@ -1,4 +1,4 @@
-"""Run one-shot maintenance for wordbank remote media sync and cache metadata."""
+"""词库远端媒体同步与缓存元数据的一次性维护。"""
 
 from __future__ import annotations
 

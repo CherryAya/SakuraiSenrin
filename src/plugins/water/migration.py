@@ -15,12 +15,12 @@ from src.database.system_migration import LegacyPgConfig
 
 @dataclass(slots=True, frozen=True)
 class _BatchStreamFailure:
-    """生产者线程把异常回传主线程的包装（仅本模块内部使用）。"""
+    """生产者线程把异常回传主线程的包装（模块内部使用）。"""
 
     error: BaseException
 
 
-# 队列结束哨兵；仅在 iter_legacy_water_row_batches_prefetched 内部流转。
+# 队列结束哨兵：预取迭代器内部流转
 _BATCH_STREAM_END = object()
 
 LegacyWaterMigrationProgressCallback = _impl.LegacyWaterMigrationProgressCallback

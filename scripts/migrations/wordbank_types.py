@@ -1,4 +1,4 @@
-"""Shared data structures for wordbank migration scripts."""
+"""wordbank 迁移脚本的共享数据结构。"""
 
 from __future__ import annotations
 

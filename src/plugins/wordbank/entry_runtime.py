@@ -1,4 +1,4 @@
-"""Reply, passive, and notice handler registration for the wordbank plugin."""
+"""词库插件：回复/被动/通知 handler 注册。"""
 
 from __future__ import annotations
 
@@ -77,23 +77,13 @@ from .services.rules import RuleError
 
 
 async def _finish_without_message(matcher: Matcher) -> None:
-    """结束当前 matcher，且不发送任何消息。
-
-    直接调用 ``matcher.finish()`` 会让 pyright 尝试推导 nonebot 泛型
-    ``Message[Unknown]`` 的默认参数，进而报 reportUnknownMemberType；经
-    ``getattr`` 取出后调用，语义与 ``finish()`` 无消息分支完全一致。
-    """
+    """结束当前 matcher（空 finish）：getattr 规避 nonebot 泛型报错。"""
     finish = getattr(matcher, "finish")
     await finish()
 
 
 def _as_plan_input(raw: object) -> MessagePlanInput | None:
-    """把 ``dispatch_reply_route`` 的 ``object`` 结果收窄成消息计划输入。
-
-    ``ReplyRouteHandler`` 的返回类型是 ``Awaitable[object]``，实际类型取决于
-    具体路由；这里按 ``MessagePlanInput`` 的真实成员做运行期判定，不做无校验
-    的强制转换。
-    """
+    """把 dispatch_reply_route 的 object 结果收窄成消息计划输入（运行期判定）。"""
     if raw is None or isinstance(raw, Message | str | MessagePlanEntry):
         return raw
     raise TypeError(f"unexpected reply handler result: {type(raw).__name__}")
@@ -114,11 +104,7 @@ def _as_message_ref(raw: object) -> WordbankMessageRefRecord | None:
 
 
 def _matcher_default_state(matcher_cls: type[Matcher]) -> dict[str, object] | None:
-    """读取 matcher 的默认 state。
-
-    ``_default_state`` 是 nonebot 内部字段（直接访问触发 reportPrivateUsage），
-    这里走 ``getattr`` 取原始对象再做运行期收窄；非映射返回 None 由调用方跳过。
-    """
+    """读取 matcher 默认 state：getattr 取 nonebot 内部字段后收窄。"""
     raw: object = getattr(matcher_cls, "_default_state", None)
     if not isinstance(raw, dict):
         return None

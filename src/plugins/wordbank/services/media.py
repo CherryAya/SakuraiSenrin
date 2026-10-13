@@ -1,4 +1,4 @@
-"""Wordbank media service and compatibility exports."""
+"""wordbank 媒体服务与兼容导出。"""
 
 from __future__ import annotations
 

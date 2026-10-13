@@ -1,4 +1,4 @@
-"""Wordbank database payload and record types."""
+"""wordbank 数据库载荷与记录类型。"""
 
 from __future__ import annotations
 

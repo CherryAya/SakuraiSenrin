@@ -135,12 +135,7 @@ REJECT_REPLY_ALIASES = {"n", "reject", "拒绝", "驳回", "反对"}
 
 
 class _MatcherFinisher(Protocol):
-    """只暴露无参 ``finish`` 的最小协议。
-
-    nonebot 的 ``Matcher.finish`` 签名嵌套了 ``Message[Unknown]`` 等未绑定泛型，
-    strict 模式下直接调用点会被判为 partially unknown。此处只用到「结束当前事件」
-    语义，用协议收窄即可，无需改动 nonebot 类型定义。
-    """
+    """零参 ``finish`` 的最小协议，收窄 strict 模式类型。"""
 
     async def finish(self) -> NoReturn: ...
 
@@ -150,12 +145,7 @@ async def _finish_event(matcher: _MatcherFinisher) -> NoReturn:
 
 
 class _ArgvParser(Protocol):
-    """``ArgumentParser.parse_args`` 的纯字符串重载。
-
-    nonebot 的 ``ArgumentParser`` 把重载签名写在 ``TYPE_CHECKING`` 分支里，
-    strict 模式下无法从实例推导，返回类型退化为 partially unknown。这里按本插件
-    实际用法（只传 ``list[str]``）声明最小协议。
-    """
+    """``ArgumentParser.parse_args`` 的纯字符串重载，收窄 strict 模式类型。"""
 
     def parse_args(self, args: Sequence[str]) -> Namespace: ...
 
@@ -563,14 +553,7 @@ async def generate_invitation_image_bytes(
     *,
     task: LongTaskRunner | None = None,
 ) -> bytes:
-    """
-    提供给外部调用的异步门面函数。
-    负责并发拉取所有头像，并调用渲染器生成最终图片的 Bytes。
-
-    Note: Gemini 写的，AI 神力！
-
-    有股味我也懒得改了你就说他能不能用，能用的代码就是好代码对吧！
-    """
+    """异步门面：并发拉取头像后交渲染器出图。"""
     invitation_avatar_concurrency = 8
     avatar_limiter = asyncio.Semaphore(invitation_avatar_concurrency)
     avatar_tasks = [

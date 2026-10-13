@@ -1,12 +1,6 @@
 """多步骤引导式会话（guided session）的共享状态内核。
 
-NoneBot 的 ``T_State`` 只是一个裸 dict，插件靠约定在其中存放流程状态。多个插件
-（``wordbank`` 引导添加 / ``study`` 学习词库）实现了同一套机制：按步骤推进、每步
-确认后写入 state、通过 recall 检查点在撤回时重建会话。两者的差异仅在于 **state
-键前缀** 与 **各步骤的提示文案**，因此把与前缀无关的部分收敛到本模块。
-
-本模块只依赖 nonebot 与 src.lib，不反向依赖任何插件，故 MessageShape 等插件类型
-由调用方传入（见 ``state_value``）。
+各插件给出 state 键前缀与步骤提示文案，公共部分收敛到本模块。
 """
 
 from __future__ import annotations
@@ -36,11 +30,7 @@ def state_value[T](
     key: str,
     expected: type[T],
 ) -> T | None:
-    """按声明类型收窄读取 state。
-
-    T_State 经由 recall 快照（见 ``src.lib.interactive_recall.rebuild_temp_matcher``）
-    在 matcher 之间重建，键存在不等于值类型可信，因此非 bool 状态一律走本函数收窄。
-    """
+    """按声明类型收窄读取 state；recall 快照重建后，类型校验走本函数。"""
     value = state.get(key)
     return value if isinstance(value, expected) else None
 
@@ -51,7 +41,7 @@ def state_keys_with_prefix(state: Mapping[str, object], prefix: str) -> list[str
 
 
 def guided_locale(state: Mapping[str, object], *, locale_key: str) -> LocaleCode:
-    """读取会话语言，不受支持时回落到默认语言。"""
+    """读取会话语言，缺失时回落到默认语言。"""
     return normalize_locale_code(state.get(locale_key))
 
 
@@ -62,11 +52,7 @@ def copy_guided_state_snapshot(
     source_event_key: str,
     keep_keys: tuple[str, ...],
 ) -> dict[str, object]:
-    """构造 recall 检查点快照：只保留会话身份与已确认的流程状态。
-
-    ``keep_keys`` 由调用方给出，因为「走到第几步该保留哪些键」属于各插件自身的
-    流程语义；本函数只负责搬运，不做判断。
-    """
+    """构造 recall 检查点快照：会话身份 + 调用方 keep_keys。"""
     snapshot: dict[str, object] = {}
     for key, value in state.items():
         if key.startswith("__nonebug"):

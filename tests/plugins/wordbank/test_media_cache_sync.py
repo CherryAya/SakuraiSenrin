@@ -163,7 +163,7 @@ async def test_media_cache_singleflight_prevents_duplicate_remote_download(
 
         async def get_bytes(self, key: str) -> bytes:
             self.calls += 1
-            # 让出事件循环制造并发窗口，等价于慢速远端但不真睡。
+            # 让出事件循环制造并发窗口，等价慢速远端。
             await asyncio.sleep(0)
             return await super().get_bytes(key)
 
@@ -463,7 +463,7 @@ async def test_retry_remote_sync_processes_batch_with_controlled_concurrency(
         _ = verify_remote
         active += 1
         max_active = max(max_active, active)
-        # 让出事件循环制造并发窗口，等价于慢速同步但不真睡。
+        # 让出事件循环制造并发窗口，等价慢速同步。
         await asyncio.sleep(0)
         active -= 1
         return replace(

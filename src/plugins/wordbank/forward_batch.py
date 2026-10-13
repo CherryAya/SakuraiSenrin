@@ -298,7 +298,7 @@ def _coerce_forward_input(raw: object) -> MessageInput | None:
         items = tuple(
             item for item in cast("Sequence[object]", raw) if item is not None
         )
-        # 列表元素未逐个校验，整体按消息输入序列返回
+        # 列表元素走整体转换，按消息输入序列返回
         return cast("MessageInput", items) if items else None
     if isinstance(raw, dict):
         segment = _coerce_forward_segment(cast("object", raw))
@@ -421,7 +421,7 @@ async def _fetch_forward_message_detail(
     for index, candidate in enumerate(candidates, start=1):
         try:
             detail = await bot.call_api("get_forward_msg", message_id=candidate)
-        except Exception as exc:  # pragma: no cover - adapter specific
+        except Exception as exc:  # pragma: no cover - 适配器差异
             last_exc = exc
             logger.debug(
                 "[Wordbank][forward] payload fetch failed | "

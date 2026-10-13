@@ -1,7 +1,7 @@
 """``src.lib.types`` 收窄 helper 的边界测试。
 
-重点覆盖本次新增的两个 JSON 形态校验器：它们取代了此前在跨进程 JSON 边界上
-「直接 cast 成 TypedDict」的写法，因此必须能真正识别非法形态，而不是只做断言。
+重点覆盖两个 JSON 形态校验器：它们取代了此前在跨进程 JSON 边界上
+「cast 成 TypedDict」的写法，须能识别非法形态。
 """
 
 from __future__ import annotations
@@ -72,7 +72,7 @@ def test_is_json_value_handles_deep_nesting() -> None:
 
 @pytest.mark.parametrize("bad", [True, False])
 def test_as_int_rejects_bool(bad: bool) -> None:
-    """bool 是 int 子类，若不排除会把 JSON true 静默当作 1。"""
+    """bool 是 int 子类，显式排除以免 JSON true 当作 1。"""
     assert as_int(bad, 0) == 0
 
 

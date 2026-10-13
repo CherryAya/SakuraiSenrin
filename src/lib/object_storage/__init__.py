@@ -1,4 +1,4 @@
-"""Reusable object storage clients."""
+"""对象存储客户端入口。"""
 
 from .factory import build_object_storage_registry
 from .github import GitHubObjectStorageClient

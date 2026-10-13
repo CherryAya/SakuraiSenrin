@@ -35,7 +35,7 @@ def _install(
     baseline: dict[str, int],
     current: dict[str, int],
 ) -> None:
-    """把 collect() 与基线路径都替换掉，避免真的跑一遍 pyright。"""
+    """替换 collect() 与基线路径，跳过真实 pyright 调用。"""
     baseline_path = tmp_path / "baseline.json"
     baseline_path.write_text(
         json.dumps({"total": sum(baseline.values()), "counts": baseline}),
@@ -105,7 +105,7 @@ def test_ratchet_ignores_line_number_shifts(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """基线按 file::rule 聚合，插入代码导致的行号漂移不应算作新增。"""
+    """基线按 file::rule 聚合，行号漂移照常通过。"""
     _install(
         monkeypatch,
         tmp_path,
@@ -145,13 +145,13 @@ def test_missing_baseline_is_an_error(
 
 
 def test_shipped_baseline_matches_repository_layout() -> None:
-    """仓库自带的基线必须存在、可解析，且 total 与明细自洽。"""
+    """仓库自带的基线存在、可解析，且 total 与明细自洽。"""
     assert gate.BASELINE_PATH.is_file()
 
     raw = json.loads(gate.BASELINE_PATH.read_text(encoding="utf-8"))
     assert raw["total"] == sum(raw["counts"].values())
     assert raw["counts"]
-    # 键统一使用仓库相对的 POSIX 路径，避免平台差异导致基线失效。
+    # 键统一用仓库相对的 POSIX 路径，抹平平台差异。
     for key in raw["counts"]:
         path_part = key.split("::", 1)[0]
         assert "\\" not in path_part, key

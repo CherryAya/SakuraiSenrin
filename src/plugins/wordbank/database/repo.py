@@ -1,4 +1,4 @@
-"""Wordbank repository."""
+"""wordbank 仓库：聚合各 mixin 并管理建表。"""
 
 from __future__ import annotations
 
@@ -47,7 +47,7 @@ class WordbankRepository(
     WordbankRepositoryEntriesMixin,
     WordbankRepositoryMediaMixin,
 ):
-    """Repository for wordbank trigger groups, responses, media and logs."""
+    """wordbank 触发组 / 响应 / 媒体 / 日志的仓库门面。"""
 
     @classmethod
     async def init_all_tables(cls) -> None:
@@ -194,7 +194,7 @@ class WordbankRepository(
         self,
         spec: WordbankResponseSpec,
     ) -> WordbankCreatedResponse:
-        """语义化的迁移入口：与 create_or_append_response 同义。"""
+        """语义化迁移入口，与 create_or_append_response 同义。"""
         return await self.create_or_append_response(spec)
 
     async def _upsert_message_route(

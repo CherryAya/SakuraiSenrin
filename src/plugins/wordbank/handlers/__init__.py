@@ -1,4 +1,4 @@
-"""Wordbank handler exports."""
+"""wordbank handler 导出。"""
 
 from .approval import (
     APPROVAL_REPLY_ALIASES,

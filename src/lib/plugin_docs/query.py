@@ -1,4 +1,4 @@
-"""Doc tree and feature matching helpers."""
+"""文档树与功能匹配辅助。"""
 
 from __future__ import annotations
 

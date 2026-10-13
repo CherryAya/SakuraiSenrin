@@ -1,4 +1,4 @@
-"""Typed backup lifecycle events."""
+"""备份生命周期事件。"""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Backfill wordbank local cache metadata from files already present in media_cache."""
+"""从 media_cache 存量文件回填词库本地缓存元数据。"""
 
 from __future__ import annotations
 
@@ -39,13 +39,7 @@ class _WordbankMediaServiceLike(Protocol):
 
 
 class BackfillPayload(TypedDict):
-    """``backfill_wordbank_media_cache`` 的最终报告（service 报告 + 本次入参）。
-
-    结构上等价于 ``MediaBackfillReport`` 再补上 ``generated_at`` 与
-    ``include_existing``。
-    这里刻意不写成继承：该脚本被测试直接 import，而 ``MediaBackfillReport`` 所在的
-    wordbank 包入口会在导入期调用 ``on_command``，因此只能在 ``TYPE_CHECKING`` 下引用。
-    """
+    """回填脚本的最终报告：service 报告 + 本次入参（扁平结构，避开包导入）。"""
 
     generated_at: int
     dry_run: bool

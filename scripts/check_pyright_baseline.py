@@ -1,16 +1,7 @@
 """pyright 类型债基线校验（ratchet / 只允许下降）。
 
-背景：commit 7bad8f8 把 typeCheckingMode 提到 strict 后，pyright 从「必过门禁」
-变成长期红灯，此后 254 个 commit 期间无人拦截——可执行的门禁一旦不可满足，
-就会退化成无人执行的摆设。
-
-本脚本把当前诊断数固化成基线：允许减少、禁止增加。这样 strict 的收敛可以按
-批次推进，而新增类型债会在本地/CI 立刻被拦下，不会再有整仓门禁长期失败。
-
-用法：
-    uv run python scripts/check_pyright_baseline.py            # 校验
-    uv run python scripts/check_pyright_baseline.py --update   # 收敛后刷新基线
-
+诊断数固化成基线：允许减少、拦下增加，strict 收敛按批次推进。
+用法：uv run python scripts/check_pyright_baseline.py [--update]
 基线文件：pyright-baseline.json（按 file::rule 记录计数，忽略行号漂移）。
 """
 

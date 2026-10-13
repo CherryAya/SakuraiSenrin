@@ -4,7 +4,6 @@ Date: 2026-02-12 20:48:16
 LastEditors: SakuraiCora<1479559098@qq.com>
 LastEditTime: 2026-03-02 19:49:22
 Description: 批量写入逻辑
-注：所有的 update / create 操作均为 **带 log / snapshot** 的操作。
 """
 
 from src.database.core.consts import GroupStatus, Permission

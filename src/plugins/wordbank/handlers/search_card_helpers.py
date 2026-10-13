@@ -1,4 +1,4 @@
-"""Shared helpers for wordbank search card rendering."""
+"""wordbank 搜索卡片渲染共享辅助。"""
 
 from __future__ import annotations
 
@@ -255,11 +255,7 @@ def weight_chip_text(weight: int) -> str:
 
 
 def _rule_int(value: object) -> int:
-    """把规则 dict 中的数值字段收窄成 int。
-
-    ``call_count`` 来自 JSON 规则，可能是 int 也可能是数字字符串；``bool`` 是
-    ``int`` 子类需显式排除，其余非法值回落 0（渲染层不因脏数据抛错）。
-    """
+    """把规则 dict 中的数值字段收窄成 int：bool 与脏数据回落 0。"""
     if isinstance(value, bool):
         return 0
     if isinstance(value, int):

@@ -122,7 +122,7 @@ async def test_registers_and_runs_archive_for_both_stores(
 async def test_archive_failures_are_reported_as_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """归档报告含失败时必须记 ERROR，不得打 success（与 water 的契约一致）。"""
+    """归档报告含失败时记 ERROR，success 日志照旧缺席。"""
     scheduler = _Scheduler()
     _install_scheduler(monkeypatch, scheduler)
 
@@ -179,11 +179,10 @@ async def test_archive_failures_are_reported_as_error(
 async def test_job_archives_real_old_shards_end_to_end(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """端到端：真实 EventStore 写入非活跃月分片后，job 必须产出 .zst。
+    """端到端：真实 EventStore 写入非活跃月分片后，job 产出 .zst。
 
-    这是「归档真的生效」的直接证据：单元层的 mock 契约再全，也不能替代
-    一次真实的两阶段归档（rename -> 压缩 -> 删 staging）。
-    """
+    单元层 mock 契约照旧靠这次真实两阶段归档
+    （rename -> 压缩 -> 删 staging）坐实。"""
     import arrow
 
     from src.database.log.tables import LogBase, TraceEventLog

@@ -1,4 +1,4 @@
-"""Docs metadata and source identity helpers."""
+"""文档元数据与来源标识辅助。"""
 
 from __future__ import annotations
 
@@ -182,12 +182,7 @@ def read_docs_metas(metadata: PluginMetadata) -> tuple[DocsMeta, ...]:
 
 
 def _normalize_doc_node_kind(value: object) -> DocNodeKind:
-    """把插件手写的 ``extra.docs["kind"]`` 收窄成白名单字面量。
-
-    该字段来自插件作者的元数据，未经校验；旧实现直接 ``cast`` 成 DocNodeKind，
-    大小写写错（``Overview``）会静默通过并让入口形态判定走错分支。
-    与 ``scripts/build_docs.py`` 的既有白名单回落保持一致，非法值回落 plugin。
-    """
+    """把插件手写的 ``extra.docs["kind"]`` 收窄成白名单字面量，其余值回落 plugin。"""
     doc_node_kinds: tuple[DocNodeKind, ...] = (
         "plugin",
         "overview",

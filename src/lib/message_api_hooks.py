@@ -37,10 +37,7 @@ def _resolve_send_target(
 
 
 def _as_sender_id(value: JsonValue) -> int | str | None:
-    """把 JSON 值收窄成 ``at`` 可接受的发送者 ID。
-
-    ``bool`` 是 ``int`` 子类，需显式排除，避免 ``True`` 被当作 ID 1。
-    """
+    """把 JSON 值收窄成 ``at`` 可接受的发送者 ID；bool 显式排除。"""
     if isinstance(value, bool):
         return None
     return value if isinstance(value, (int, str)) else None

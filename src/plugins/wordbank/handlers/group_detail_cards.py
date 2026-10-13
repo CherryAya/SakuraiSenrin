@@ -1,4 +1,4 @@
-"""Pillow rendering for wordbank group detail pages."""
+"""wordbank 群详情页的 Pillow 渲染。"""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""High-level wordbank service."""
+"""wordbank 高层服务。"""
 
 from __future__ import annotations
 
@@ -78,12 +78,7 @@ class _CallCountCacheEntry:
 
 
 def _rule_to_json(rule: RuleSchema) -> JsonObject:
-    """把规则 schema 转成可存储的 JSON 对象。
-
-    ``dict(RuleSchema)`` 在 strict 下退化成 ``dict[str, object]``，无法赋给
-    ``JsonObject``；逐字段拷贝可让每个值的类型真实成立（roles 是 str，
-    call_count 是 JSON 对象）。
-    """
+    """把规则 schema 转成可存储的 JSON 对象：逐字段拷贝保住值类型。"""
     data: JsonObject = {}
     if "roles" in rule:
         data["roles"] = rule["roles"]

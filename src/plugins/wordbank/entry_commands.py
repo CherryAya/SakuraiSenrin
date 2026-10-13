@@ -1,4 +1,4 @@
-"""Command and guided-flow handler registration for the wordbank plugin."""
+"""wordbank 命令与引导流程的 matcher 注册。"""
 
 from __future__ import annotations
 

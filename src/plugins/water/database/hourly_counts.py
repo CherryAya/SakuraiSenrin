@@ -1,4 +1,4 @@
-"""Compact codecs for water daily summary hourly counts."""
+"""日汇总小时计数的紧凑编解码。"""
 
 from __future__ import annotations
 
@@ -19,12 +19,12 @@ _SPARSE_HEADER = bytes([_FORMAT_SPARSE_U16])
 
 
 def _is_list_payload(value: object) -> TypeGuard[list[object]]:
-    """收窄成 ``list[object]``；元素形态交由 ``_coerce_int_list`` 逐项校验。"""
+    """收窄成 ``list[object]``；元素形态交给 ``_coerce_int_list``。"""
     return isinstance(value, list)
 
 
 def _coerce_int_list(values: Iterable[object]) -> list[int]:
-    """把运行期列表逐项转成 int，非数值元素照旧抛 TypeError。"""
+    """把运行期列表逐项转成 int；非数值元素走 TypeError。"""
     coerced: list[int] = []
     for item in values:
         if isinstance(item, (int, float, str)):

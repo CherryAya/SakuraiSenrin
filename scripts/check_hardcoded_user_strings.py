@@ -1,11 +1,8 @@
-"""Guard against raw user-facing literals that bypass the i18n catalog.
+"""i18n 硬编码文案守卫：盯住绕开 catalog 的用户可见 CJK 字面量。
 
-Scope is deliberately narrow. This gate flags CJK literals that reach a
-user-visible emitter (message delivery, plan text blocks, alert templates).
-Command aliases, matcher routing tokens, parsing tokens, README structural
-keys, docs search aliases and logger output are intentionally NOT flagged:
-those belong to matcher registration / request parsing / logs, not to
-locale-aware display.
+只报流向用户可见出口（消息投递、计划文本块、告警模板）的字面量；命令别名、
+匹配路由 token、解析 token、README 结构键与日志输出走注册/解析/日志路径，
+逐条放行。
 """
 
 from __future__ import annotations
@@ -17,7 +14,7 @@ import sys
 
 CJK_PATTERN = re.compile(r"[\u4e00-\u9fff]")
 
-# Calls whose string arguments become a message body.
+# 字符串实参流向消息体的调用
 TEXT_EMITTERS = frozenset(
     {
         "AlertTemplate",
@@ -40,14 +37,14 @@ TEXT_EMITTERS = frozenset(
     }
 )
 
-# Plan / block constructors whose text-bearing keywords must be localized.
+# 携带文案的构造关键字，须走 i18n
 TEXT_BLOCK_TYPES = frozenset({"MessagePlanEntry", "TextBlock", "MessagePlanText"})
 TEXT_FIELD_NAMES = frozenset({"text"})
 
-# Keys whose *second positional* argument is the message key, not display copy.
+# 第二位置实参为 message key（走目录）的出口
 KEYED_EMITTERS = frozenset({"tr", "tr_template"})
 
-# Literal collections that are display copy rather than routing tokens.
+# 属展示文案（而非路由 token）的字面量集合名
 DISPLAY_COLLECTION_NAMES = frozenset({"messages"})
 
 LOGGER_NAMES = frozenset(
@@ -64,7 +61,7 @@ SKIPPED_PATH_PREFIXES = (
     "scripts/",
 )
 
-# Helper names that construct a plan/text node from already-localized copy.
+# 用已本地化文案组装 plan/text 节点的辅助函数名
 LOCALIZED_BUILDER_NAMES = frozenset(
     {
         "append_image_plan_entry",
@@ -164,7 +161,7 @@ def _iter_violations(path: Path) -> list[tuple[int, int, str]]:
         return bool(CJK_PATTERN.search(value))
 
     def check_expr(node: ast.AST) -> None:
-        """Report every CJK literal inside a display-copy expression."""
+        """把展示文案表达式里的 CJK 字面量逐条报出。"""
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
             if id(node) not in docstrings and has_cjk(node.value):
                 report(node, node.value)

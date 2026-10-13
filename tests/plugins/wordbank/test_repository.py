@@ -1,1 +1,1 @@
-"""Split into focused wordbank repository test modules."""
+"""词库仓库测试拆分为聚焦模块。"""

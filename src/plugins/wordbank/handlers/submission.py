@@ -1,4 +1,4 @@
-"""Unified submission lifecycle for wordbank/study entry creation."""
+"""词库/学习条目创建的统一提交生命周期。"""
 
 from __future__ import annotations
 
@@ -55,12 +55,7 @@ class SubmissionHandler(Protocol):
 
 
 class _MatcherFinisher(Protocol):
-    """只暴露无参 ``finish`` 的最小协议。
-
-    nonebot 的 ``Matcher.finish`` 签名嵌套了 ``Message[Unknown]`` 等未绑定泛型，
-    strict 模式下直接调用点会被判为 partially unknown。这里只用到「结束当前事件」
-    语义，用协议收窄即可，无需改动 nonebot 类型定义。
-    """
+    """收窄为仅含 finish() 的最小协议，规避 nonebot 泛型签名。"""
 
     async def finish(self) -> NoReturn: ...
 

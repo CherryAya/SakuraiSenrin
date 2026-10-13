@@ -1,4 +1,4 @@
-"""Export offline wordbank trigger-response analysis for selected triggers."""
+"""导出指定触发词的离线词库触发-响应分析。"""
 
 from __future__ import annotations
 

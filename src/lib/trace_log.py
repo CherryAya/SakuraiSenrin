@@ -11,7 +11,7 @@ from src.lib.utils.time_utils import get_current_time
 from src.logger import logger
 
 if TYPE_CHECKING:
-    # loguru 的 Record 只存在于 __init__.pyi，运行时不可导入。
+    # Record 仅在 loguru __init__.pyi 中可导入
     from loguru import Record
 
     from src.lib.db.batch import BatchWriter
@@ -60,13 +60,7 @@ def _get_trace_writer() -> "BatchWriter[TraceEventLogPayload]":
 
 
 def get_trace_writer() -> "BatchWriter[TraceEventLogPayload]":
-    """返回 trace writer（不存在则创建）。
-
-    供死信重放脚本枚举全部 writer：trace writer 是懒建且此前只存在于模块私有
-    变量里，``vars(module)`` 扫描收不到它，导致 trace 死信永远匹配不到 handler
-    （重放时显示"无重放 handler，暂跳过"）。创建 writer 只构造缓冲器，不会启动
-    后台 worker（那要等首次 add）。
-    """
+    """返回 trace writer，首次调用时懒建。"""
     return _get_trace_writer()
 
 

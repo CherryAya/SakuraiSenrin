@@ -30,5 +30,5 @@ def test_parse_duration_rejects_invalid_or_zero(raw: str) -> None:
 
 
 def test_parse_duration_ignores_sign_prefix() -> None:
-    """正则只取数字片段，负号被忽略 —— 修正符号需在调用方处理。"""
+    """正则只取数字片段，负号由调用方处理。"""
     assert parse_duration("-5m") == timedelta(minutes=5)

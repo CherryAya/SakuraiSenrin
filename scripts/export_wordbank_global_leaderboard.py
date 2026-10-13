@@ -1,4 +1,4 @@
-"""Export and render offline wordbank global creator leaderboard."""
+"""导出并渲染离线词库全局创作者榜。"""
 
 from __future__ import annotations
 

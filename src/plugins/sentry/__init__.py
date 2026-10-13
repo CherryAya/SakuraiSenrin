@@ -60,13 +60,7 @@ background_tasks: set[asyncio.Task[None]] = set()
 
 
 def _sentry_notify_disabled() -> bool:
-    """测试环境不派发管理员告警。
-
-    `sentry_sdk.init()` 在模块导入时全局生效，会拦截**所有**未捕获异常。
-    测试里一条用例失败即触发告警派发，而派发是 `loop.create_task` 异步的，
-    task 会落到后续用例的 event loop 上并调用 send_private_msg，
-    导致「一条失败污染同 worker 的后续用例」（并行执行时尤其明显）。
-    """
+    """测试环境关停管理员告警派发（`sentry_sdk.init()` 全局拦截异常）。"""
     return os.getenv("SAKURAI_DISABLE_SENTRY_NOTIFY") == "1"
 
 
@@ -95,24 +89,12 @@ def _should_drop_event(hint: Hint) -> bool:
 
 
 def _should_downgrade_level(exc_value: BaseException | None) -> bool:
-    """是否需要在 Sentry 侧降级为 warning。
-
-    仅依据异常类型判定，不做文案匹配：文案会随平台版本变化，
-    且任何新增的业务异常都不应被静默归类。
-    注意这只影响 Sentry 的 level，管理员通报不受影响，仍然全量发送。
-    """
+    """ActionFailed 在 Sentry 侧降级为 warning（仅限 level，通报照旧）。"""
     return isinstance(exc_value, ActionFailed)
 
 
 def _set_tags(event: Event, tags: Mapping[str, str]) -> None:
-    """整体替换 event tags。
-
-    形状必须是 ``Mapping[str, str]``：Sentry SDK 自身用
-    ``event.setdefault("tags", {}).update(...)`` 写入（见
-    ``Scope._apply_tags_to_event``）。若这里写成 list[dict] 会与 SDK 冲突：
-    轻则本插件的规范化逻辑丢弃既有标签，重则 SDK 侧 ``list.update`` 抛
-    AttributeError。
-    """
+    """整体替换 event tags：与 SDK 的 ``Mapping[str, str]`` 形状保持一致。"""
     event["tags"] = dict(tags)
 
 
@@ -148,11 +130,7 @@ def _describe_context() -> str:
 
 
 def _downgrade_level_to_warning(event: Event) -> None:
-    """把 ActionFailed 在 Sentry 侧降级为 warning，避免污染 error 列表。
-
-    ActionFailed 代表平台侧拒绝了本次调用（限流、重复处理、非好友、权限不足
-    等）；这类异常同样要通报管理员，但通常不是代码缺陷，故降级并打标。
-    """
+    """ActionFailed 降级为 warning 并打标；平台拒绝同样通报管理员。"""
     event["level"] = "warning"
     contexts = dict(event.get("contexts") or {})
     default = dict(contexts.get("default") or {})
@@ -181,8 +159,7 @@ def _attach_context_to_event(event: Event) -> None:
 
 
 async def notify_admin(error_message: str) -> None:
-    # get_bot 在 bot 尚未连接时会抛异常，这里必须自行吞掉，
-    # 否则告警失败本身会再次触发 Sentry 上报，形成自激循环。
+    # get_bot 离线时抛异常，须吞掉：告警失败会上报，成自激循环。
     try:
         bot = get_bot()
     except Exception as e:
@@ -190,9 +167,7 @@ async def notify_admin(error_message: str) -> None:
         return
     try:
         await deliver_admin_notification_i18n(
-            # get_bot() 无参调用时静态返回基类 nonebot.adapter.Bot，而通报层要求
-            # OneBot V11 的 Bot。本仓库 bot.py 只注册 V11 适配器，故该收窄成立；
-            # 这里不做 isinstance 守卫——失败路径与现状等价，只会让告警更静默。
+            # get_bot() 静态返回基类 Bot；本仓库 bot.py 只注册 V11 适配器。
             cast(Bot, bot),
             locale="zh-CN",
             key="sentry.alert",
@@ -204,8 +179,7 @@ async def notify_admin(error_message: str) -> None:
 
 
 def before_send_handler(event: Event, hint: Hint) -> Event | None:
-    # 仅丢弃三方库心跳噪声（websockets keepalive 的空 AssertionError）。
-    # 业务异常一律不丢弃：平台拒绝、限流、重复处理等同样需要管理员知情。
+    # 仅丢弃 websockets keepalive 噪声；业务异常全量通报。
     if _should_drop_event(hint):
         logger.debug("Skip reporting websocket keepalive AssertionError noise.")
         return None
@@ -215,7 +189,7 @@ def before_send_handler(event: Event, hint: Hint) -> Event | None:
         if not isinstance(exc_type, type):  # pragma: no cover - 防御
             return event
 
-        # 顺序有讲究：先补上下文，再按类型决定 Sentry level，最后无条件通报管理员。
+        # 顺序有讲究：先补上下文，再定 Sentry level，最后通报管理员。
         _attach_context_to_event(event)
 
         if _should_downgrade_level(exc_value):
@@ -231,7 +205,7 @@ def before_send_handler(event: Event, hint: Hint) -> Event | None:
 
 
 def _schedule_admin_notify(error_msg: str) -> None:
-    """把管理员通报投递出去；没有运行中的事件循环时跳过。"""
+    """把管理员通报投递出去；事件循环缺席时跳过。"""
     if _sentry_notify_disabled():
         return
     try:

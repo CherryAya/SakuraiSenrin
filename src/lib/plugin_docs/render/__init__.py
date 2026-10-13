@@ -1,4 +1,4 @@
-"""Plugin docs rendering package."""
+"""插件文档渲染包。"""
 
 from .demo import DemoImageRenderer as DemoImageRenderer
 from .demo import ShowcaseLayout as ShowcaseLayout

@@ -1,17 +1,7 @@
-"""对外统一的逻辑 db 名，内部按月分片。
+"""对外统一的逻辑 db 名，内部按月分片，对位 ES 的 alias -> index。
 
-对位 Elasticsearch 的 alias -> index 关系：业务侧只认一个逻辑名（alias），
-底层物理存储按月分片（index）。调用方不再需要自己把业务时间戳换算成分片键，
-也不需要「先算出 ``2026_09`` 再反解回 datetime」——这两步绕圈正是历史时区
-错位 bug 的温床。
-
-设计约束：
-
-* alias **不持有任何状态**，只持有对 SegmentStore 的引用与两个元信息
-  （ops_class / time_field），因此上一轮的锁、inode 标记、ILM 全部复用。
-* 时区口径只在 SegmentStore._to_local 一处实现，alias 不重复推导。
-* 生命周期与运维方法（init / run_archiver_task / iter_backup_sources /
-  shard_health）全部透传，alias 层完全隐形。
+alias 只持有对 SegmentStore 的引用与 ops_class / time_field 元信息；
+时区归一与生命周期方法全部透传物理 store。
 """
 
 from __future__ import annotations
@@ -42,52 +32,25 @@ from src.lib.types import JsonValue
 
 
 class OpsFactory(Protocol):
-    """「能用 ``AsyncSession`` 构造的 ops」结构化视图。
-
-    用作 ``AliasStore`` / ``build_alias`` / ``execute_batch_write`` 的 OpsT 上界：
-    这几处的真实契约就是「``ops_class`` 能被 ``AsyncSession`` 构造、实例可交给
-    ``method``」，此前该事实只存在于运行时注释里，靠一处 ``cast`` + 无条件的
-    ``# type: ignore[arg-type]`` 才通过检查。改成 bound 后契约由类型系统强制，
-    传错 ops 类会在静态期报错，而不是等到后台 flush 时抛 TypeError。
-
-    这不是 ``BaseOps[DeclarativeBase]``：``BaseOps`` 的模型参数不变，
-    ``BaseOps[TraceEventLog]`` 判不进 ``BaseOps[DeclarativeBase]``，用它会成片
-    触发 reportInvalidTypeArguments。结构化 Protocol 只约束构造签名，对具体
-    ops 类的模型参数保持透明。
-
-    真实实现是 ``BaseOps.__init__(self, session: AsyncSession)``。
-    """
+    """「能用 AsyncSession 构造的 ops」结构化视图，作 OpsT 上界。"""
 
     def __init__(self, session: AsyncSession) -> None: ...
 
 
-# 时间窗口边界的可选形态；比 MomentLike 少一档：窗口端点不接受分片键 / record_date
-# 字符串。
+# 时间窗口边界的可选形态，比 MomentLike 少字符串两档
 type WindowBound = datetime | arrow.Arrow | int
 
 
 def _payload_field(payload: object, field: str) -> object:
-    """从批次元素按字段名取值（元素形态由调用方保证，见 write_batch）。
-
-    批次元素在调用点是 TypedDict（运行时即 dict），但 ``write_batch`` 的
-    PayloadT 不能绑 ``Mapping``——那样会排除 TypedDict；不绑则静态期看不到
-    下标操作。这里用 ``Mapping`` 收口这一处动态取值，非映射形态直接抛
-    TypeError，与原先 ``item[field]`` 的失败语义一致。
-    """
+    """从批次元素按字段名取值；非映射形态抛 TypeError。"""
     if not isinstance(payload, Mapping):
         raise TypeError(f"batch payload must be a mapping, got {type(payload)!r}")
-    # isinstance 只把 object 收窄成 Mapping[Unknown, Unknown]；批次字段名恒为
-    # str，此处把「键为 str、值为 object」写实，值仍保持未知，不放松到 Any。
     fields = cast("Mapping[str, object]", payload)
     return fields[field]
 
 
 def _as_datetime(moment: object) -> datetime:
-    """窗口边界转 datetime；不做取月（map_reduce 内部负责枚举分片）。
-
-    与 ``_route_ctx`` 同理：入参声明为 ``object``，形态校验由下面逐条 isinstance
-    收口，不合法的值照旧抛 TypeError。
-    """
+    """窗口边界转 datetime；取月由 map_reduce 负责。"""
     if isinstance(moment, datetime):
         return moment
     if isinstance(moment, arrow.Arrow):
@@ -98,15 +61,7 @@ def _as_datetime(moment: object) -> datetime:
 
 
 class AliasStore[OpsT: OpsFactory]:
-    """按时间维度自动路由的逻辑 db。
-
-    ``store`` 是物理分片库；本类只负责把「业务时间」翻译成「目标分片」。
-
-    约束 ``OpsT: OpsFactory``（结构化 Protocol，只要求「能被 AsyncSession 构造」）。
-    不能用 ``BaseOps[DeclarativeBase]``：具体 ops 都是 ``BaseOps[具体模型]``，而
-    ``BaseOps`` 的模型参数不变，``BaseOps[TraceEventLog]`` 判不进
-    ``BaseOps[DeclarativeBase]``，会成片报 reportInvalidTypeArguments。
-    """
+    """按时间维度自动路由的逻辑 db：业务时间 -> 目标分片。"""
 
     def __init__(
         self,
@@ -119,9 +74,7 @@ class AliasStore[OpsT: OpsFactory]:
         self._ops_class = ops_class
         self._time_field = time_field
 
-    # ------------------------------------------------------------------
-    # 身份与配置（透传，便于 instances.py / 运维脚本统一处理）
-    # ------------------------------------------------------------------
+    # --- 身份与配置（透传）---
 
     @property
     def namespace(self) -> str:
@@ -180,11 +133,7 @@ class AliasStore[OpsT: OpsFactory]:
         return self._store.warm_ttl_seconds
 
     def get_shard_key(self, moment: datetime) -> str:
-        """按 store 的分片格式解析分片键。
-
-        与 SegmentStore._get_shard_key 同语义：直接对给定时刻按 fmt 格式化，
-        不做时区换算（调用方传入的已是目标时区的墙钟时间）。
-        """
+        """按 store 的分片格式解析分片键，时刻按目标时区墙钟处理。"""
         return moment.strftime(self.fmt)
 
     def to_local(self, moment: datetime | arrow.Arrow) -> arrow.Arrow:
@@ -192,11 +141,7 @@ class AliasStore[OpsT: OpsFactory]:
         return self._to_local(moment)
 
     def _to_local(self, moment: datetime | arrow.Arrow) -> arrow.Arrow:
-        """store 时区归一化，与 SegmentStore._to_local 口径一致。
-
-        ``arrow.get`` 对 naive datetime 也按 UTC 解释，返回的 Arrow 恒带 tzinfo，
-        因此「无时区则就地打标」的分支不可达；等价于直接换算到 store 时区。
-        """
+        """store 时区归一化，与 SegmentStore._to_local 口径一致。"""
         return arrow.get(moment).to(self.tz)
 
     def __repr__(self) -> str:
@@ -205,21 +150,14 @@ class AliasStore[OpsT: OpsFactory]:
             f"time_field={self._time_field!r}, tz={self.tz!r})"
         )
 
-    # ------------------------------------------------------------------
-    # 路由：业务时间 -> 分片
-    # ------------------------------------------------------------------
+    # --- 路由：业务时间 -> 分片 ---
 
     def shard_key_for(self, moment: MomentLike) -> str:
         """把任意形式的时间（时间戳 / datetime / record_date）解析成分片键。"""
         return self._floor_month(self._route_ctx_arrow(moment)).strftime(self.fmt)
 
     def _route_ctx(self, moment: object) -> datetime:
-        """归一化到「本分片月首零点」，交由 SegmentStore 统一处理时区。
-
-        入参声明为 ``object``：调用方可能是分片键/record_date 字符串、时间戳，也
-        可能直接把 payload dict 里取出的原始 JSON 值丢进来（见 ``write_batch``）。
-        真正的形态校验由下面逐条 isinstance 收口，不合法的值照旧抛 TypeError。
-        """
+        """归一化到「本分片月首零点」，形态校验由 isinstance 逐条收口。"""
         return self._floor_month(self._route_ctx_arrow(moment)).datetime
 
     def _route_ctx_arrow(self, moment: object) -> arrow.Arrow:
@@ -253,19 +191,16 @@ class AliasStore[OpsT: OpsFactory]:
         )
 
     def _parse_shard_key(self, raw: str) -> arrow.Arrow | None:
-        """把分片键字符串反解为该月的月初；不是分片键则返回 None。
+        """把分片键字符串反解为该月的月初；其余形态返回 None。
 
-        用 strptime 而非 arrow.get：arrow 的 ISO 解析器无法处理 ``%Y_%m``
-        这类含自定义分隔符的格式。
+        用 strptime：arrow 的 ISO 解析器认 %Y_%m 这类自定义分隔符。
         """
         try:
             return arrow.get(datetime.strptime(raw, self.fmt))
         except ValueError:
             return None
 
-    # ------------------------------------------------------------------
-    # 写入
-    # ------------------------------------------------------------------
+    # --- 写入 ---
 
     def write_session_for(
         self,
@@ -296,13 +231,7 @@ class AliasStore[OpsT: OpsFactory]:
     ) -> int:
         """批量写入，内部按月分组路由（对应 ES 的 _bulk）。
 
-        取代原先散落在各 repo 的「先按月分组、再把 route_key 反解回 datetime」
-        两步走；分片口径只在这里与 SegmentStore 各实现一次。
-
-        ``method`` 第二参声明为 ``list``（而非 ``Sequence``）：实现按分片把批次
-        以 ``list`` 形态交给 ops，且实际的 ops 方法签名就是 ``list[...]``；
-        ``Callable`` 参数逆变，声明成 ``Sequence`` 会拒绝真实方法，也会放过
-        与调用形态不符的签名。
+        method 第二参取 list 形态，与 ops 方法签名一致。
         """
         if not payloads:
             return 0
@@ -338,8 +267,6 @@ class AliasStore[OpsT: OpsFactory]:
                 async with self._store.write_session(
                     time_ctx=route_ctx_map[shard_key],
                 ) as session:
-                    # OpsT: OpsFactory 已保证「能用 session 构造」，契约由类型
-                    # 系统强制，无需 cast 或 type: ignore。
                     result = await method(self._ops_class(session), grouped)
                 total += int(result) if isinstance(result, int) else 0
             except Exception as exc:
@@ -396,9 +323,7 @@ class AliasStore[OpsT: OpsFactory]:
             emit_trace=emit_trace,
         )
 
-    # ------------------------------------------------------------------
-    # 读取
-    # ------------------------------------------------------------------
+    # --- 读取 ---
 
     async def scan[T](
         self,
@@ -424,11 +349,7 @@ class AliasStore[OpsT: OpsFactory]:
         cold_policy: ColdPolicy | None = None,
         concurrency: int = 4,
     ) -> list[T]:
-        """并发执行多次窗口扫描。
-
-        取代原先 water 侧 ``asyncio.gather`` 直接打所有分片的裸并发写法：
-        并发度在此收口，且每个窗口各自受 SegmentStore 的跨度上限保护。
-        """
+        """并发执行多次窗口扫描，并发度在此收口。"""
         if not windows:
             return []
         semaphore = asyncio.Semaphore(concurrency)
@@ -448,11 +369,7 @@ class AliasStore[OpsT: OpsFactory]:
         cold_policy: ColdPolicy | None = None,
         concurrency: int | None = None,
     ) -> list[T]:
-        """按显式分片键集合并发扫描。
-
-        适用于「分片来自文件清单而非时间窗口」的场景（如 water 只扫已存在的
-        归档分片）；并发度在此收口，取代原先的裸 asyncio.gather。
-        """
+        """按显式分片键集合并发扫描，适用于分片来自文件清单的场景。"""
         if not shard_keys:
             return []
         limit = concurrency or self._store.map_reduce_concurrency
@@ -485,11 +402,7 @@ class AliasStore[OpsT: OpsFactory]:
         *,
         cold_policy: ColdPolicy | None = None,
     ) -> tuple[list[T1], list[T2]]:
-        """同一窗口并发跑两个查询，只枚举并 hydrate 一遍分片。
-
-        对应 ES 在一次 search 里取多个聚合；原先是两个独立的 map_reduce，
-        各自枚举分片并各 hydrate 一遍，冷分片会被解压两次。
-        """
+        """同一窗口并发跑两个查询，只枚举并 hydrate 一遍分片。"""
 
         async def _both(session: AsyncSession) -> tuple[T1, T2]:
             return await first(session), await second(session)
@@ -500,10 +413,7 @@ class AliasStore[OpsT: OpsFactory]:
             [item[1] for item in results],
         )
 
-        # ------------------------------------------------------------------
-
-    # 生命周期与运维（透传，alias 层无状态）
-    # ------------------------------------------------------------------
+    # --- 生命周期与运维（透传）---
 
     async def init(self, base: type[DeclarativeBase]) -> None:
         await self._store.init(base)
@@ -515,11 +425,7 @@ class AliasStore[OpsT: OpsFactory]:
         await self._store.flush_manifest()
 
     def reset_runtime_state(self) -> None:
-        """清空内存态（schema 初始化标记、manifest 缓存、flush 任务）。
-
-        分片文件被物理替换/删除后必须调用，否则会沿用指向已失效内容的标记。
-        实现在物理 store 上（SegmentStore.reset_runtime_state），alias 只转发。
-        """
+        """清空内存态（schema 标记、manifest 缓存、flush 任务），实现在物理 store。"""
         self._store.reset_runtime_state()
 
     def shard_health(self) -> list[dict[str, JsonValue]]:
@@ -535,12 +441,7 @@ class AliasStore[OpsT: OpsFactory]:
 
     @property
     def ops_class_ref(self) -> type[BaseOps[DeclarativeBase]]:
-        """物理 store 上 ops 类的公开视图，供 RoutableStore 协议结构匹配。
-
-        ops 类在运行时就是 BaseOps 的某个参数化子类；``BaseOps`` 的模型参数
-        不变，无法用类型系统表达「上转型到具体模型」，故这里 cast 成基类参数化
-        形态。该 cast 只用于跨层协议匹配，不参与任何业务判断。
-        """
+        """物理 store 上 ops 类的公开视图，供 RoutableStore 协议结构匹配。"""
         return cast("type[BaseOps[DeclarativeBase]]", self._ops_class)
 
     @property
@@ -548,12 +449,9 @@ class AliasStore[OpsT: OpsFactory]:
         return self._time_field
 
     def __getattr__(self, item: str) -> object:
-        """不做隐式代理：私有成员与拼错的名字都直接报错。
+        """拒绝隐式代理：私有成员与拼错的名字都直接报错。
 
-        迁移期曾对全部属性无条件转发（``getattr(self._store, item)``），那会让
-        ``_manifest`` / ``_initialized_shards`` 之类的实现细节被业务层静默穿透，
-        拼错属性名也不会在开发期暴露。需要访问 store 时请显式用 ``.store``；
-        需要跨层读取的只读属性已在上面逐个显式代理。
+        需要访问 store 时请显式用 .store。
         """
         raise AttributeError(
             f"AliasStore 不做隐式代理（{item!r}）；如需访问物理 store 请用 .store",
@@ -566,7 +464,7 @@ def build_alias[OpsT: OpsFactory](
     *,
     time_field: str,
 ) -> AliasStore[OpsT]:
-    """便捷构造（保留给不使用类型推导的调用点）。"""
+    """便捷构造：给手写类型参数的调用点用。"""
     return AliasStore(store, ops_class=ops_class, time_field=time_field)
 
 

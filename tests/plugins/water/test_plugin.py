@@ -932,8 +932,8 @@ async def test_water_today_report_group_shared_cooldown(
 ) -> None:
     water_plugin.clear_water_query_cooldowns()
     water_report_service.clear_today_report_cooldowns()
-    # 剩余秒数是 int(expires_at - now) 截断值，真实时钟的快慢直接决定展示数字
-    # （同一秒内重放得到 60，跨过 1 秒才是 59），固定字面量断言因此天然不稳。
+    # 剩余秒数是 int(expires_at - now) 的截断值，时钟快慢决定展示数字
+    # （同一秒内重放得到 60，跨过 1 秒才是 59），固定字面量断言随秒漂移。
     # 接管 monotonic 让两次请求之间恰好推进 1 秒，使断言确定。
     from src.lib import cooldown as cooldown_module
 
@@ -965,7 +965,7 @@ async def test_water_today_report_group_shared_cooldown(
         ctx.should_call_send(first, text_message("REPORT_OK"), bot=bot)
         ctx.should_finished()
 
-    # 推进 1 秒：剩余冷却时间恰为 60 - 1 = 59 秒。
+    # 推进 1 秒：剩余冷却时间恰为 60 - 1 = 59 秒
     clock[0] += 1.0
 
     async with app.test_matcher(water_plugin.water_query) as ctx:

@@ -1,5 +1,5 @@
-"""Verify that a wordbank trigger-fix plan has been fully applied to SQLite."""
-# 测试/脚本需直接验证内部不变量，故关闭跨模块私有符号告警
+"""核验词库触发词修复计划已在 SQLite 完整落地。"""
+# 脚本直验模块内部符号：pyright 私有访问豁免
 # pyright: reportPrivateUsage=false
 
 from __future__ import annotations

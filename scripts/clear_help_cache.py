@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
-"""清理 help 插件的消息缓存
+"""清理 help 插件的消息缓存。
 
-使用场景：
-- help 插件的文案或配置发生变更（如群号修改）
-- 需要强制重新生成 help 消息
-
-只清理 source_kind='help' 的缓存，不影响其他插件的 8k+ 条缓存。
+沿用场景：help 文案或配置变更（如群号修改）后强制重新生成。
+只清 source_kind='help' 的条目，其他插件缓存照旧。
 """
 
 from __future__ import annotations
@@ -14,7 +11,6 @@ import asyncio
 from pathlib import Path
 import sys
 
-# Add project root to path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
@@ -26,9 +22,7 @@ from src.logger import logger
 
 
 async def clear_help_cache() -> None:
-    """清理所有 source_kind='help' 的消息缓存"""
-
-    # 先统计数量
+    """清理所有 source_kind='help' 的消息缓存。"""
     async with message_asset_db.read_session() as session:
         count_result = await session.execute(
             select(MessageAsset).where(MessageAsset.source_kind == "help")
@@ -43,7 +37,6 @@ async def clear_help_cache() -> None:
         f"[ClearCache] Found {total_count} help cache records, preparing to delete..."
     )
 
-    # 执行删除
     async with message_asset_db.write_session() as session:
         result = await session.execute(
             delete(MessageAsset).where(MessageAsset.source_kind == "help")
@@ -53,7 +46,6 @@ async def clear_help_cache() -> None:
 
     logger.info(f"[ClearCache] Successfully deleted {deleted_count} help cache records")
 
-    # 验证删除
     async with message_asset_db.read_session() as session:
         verify_result = await session.execute(
             select(MessageAsset).where(MessageAsset.source_kind == "help")
@@ -67,9 +59,8 @@ async def clear_help_cache() -> None:
 
 
 async def count_all_cache() -> None:
-    """统计所有缓存数量"""
+    """统计所有缓存数量。"""
     async with message_asset_db.read_session() as session:
-        # 按 source_kind 分组统计
         result = await session.execute(
             select(MessageAsset.source_kind, MessageAsset.id)
         )
@@ -89,14 +80,11 @@ async def count_all_cache() -> None:
 async def main() -> None:
     logger.info("=== Clear Help Cache ===")
 
-    # 统计清理前的状态
     logger.info("[Before] Cache statistics:")
     await count_all_cache()
 
-    # 清理 help 缓存
     await clear_help_cache()
 
-    # 统计清理后的状态
     logger.info("[After] Cache statistics:")
     await count_all_cache()
 

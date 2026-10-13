@@ -23,11 +23,7 @@ if TYPE_CHECKING:
 
 from .alias import AliasStore, OpsFactory
 
-# flush 回调的单次执行上限（秒）。回调链路上任一 await 永不返回（锁泄漏、
-# 阻塞 IO 卡死、外部依赖无超时）都会让 worker 永久楔死：此后队列无界积压、
-# 查询路径的 flush_now/drain 一并挂起、关机 drain 也卡住——只有重启能恢复。
-# 有看门狗后，超时被取消并走「失败重试 -> 死信」的既有降级路径：内存有界、
-# 状态可见、无需重启。
+# flush 回调单次执行上限（秒），超时走「失败重试 -> 死信」降级路径
 DEFAULT_FLUSH_TIMEOUT_SECONDS = 30.0
 
 
@@ -54,20 +50,16 @@ class BatchWriterHealth:
     last_flush_items: int = 0
     total_flushed_items: int = 0
     total_failed_items: int = 0
-    # 因内存队列上界被丢弃的条数（已落库的记录不受影响）
+    # 因内存队列上界被丢弃的条数（已落库的记录照常）
     dropped_dead_letters: int = 0
-    # flush 回调超时（看门狗触发）的次数。持续增长说明回调链路卡死，
-    # 需要排查被调方为何不返回。
+    # flush 回调看门狗超时次数，持续增长说明回调链路卡死
     flush_timeouts: int = 0
     # 当前待落盘条目数（队列 + 内存缓冲），供运维观察积压趋势
     pending_items: int = 0
 
     @property
     def is_degraded(self) -> bool:
-        """存在未处理的死信即视为降级。
-
-        死信当前只进内存，不落盘；因此只要发生就必须有人看见，否则等于静默丢数据。
-        """
+        """死信积压即视为降级；死信只进内存，需有人看见。"""
         return self.dead_letter_batches > 0
 
 
@@ -85,15 +77,15 @@ class BufferedWriterConfig[T]:
     max_retries: int = 3
     retry_backoff: float = 0.2
     dedupe_key: Callable[[T], str] | None = None
-    # 单次 flush 回调的执行上限（秒）。None 表示不设看门狗（仅用于测试或
-    # 明确接受永久楔死风险的场景）；生产 writer 一律保留默认值。
+    # 单次 flush 回调的执行上限（秒）。None 表示关闭看门狗（仅测试用）；
+    # 生产 writer 一律保留默认值。
     flush_timeout: float | None = DEFAULT_FLUSH_TIMEOUT_SECONDS
 
 
 class BatchWriter[T]:
-    """通用内存缓冲写入器。
+    """通用内存缓冲写入器，构造时自注册。
 
-    实例在构造时自注册，`iter_registered_writers` 供运行态巡检与关机落盘使用。
+    iter_registered_writers 供运行态巡检与关机落盘使用。
     """
 
     _registry: ClassVar[list["BatchWriter[object]"]] = []
@@ -297,14 +289,7 @@ class BatchWriter[T]:
     async def _invoke_flush_callback(self, batch: list[T]) -> None:
         """调用 flush 回调，带可选看门狗超时。
 
-        回调链路上任一 await 永不返回都会让 worker 永久楔死（`_flush_lock`
-        被永久持有、`_ensure_worker_running` 见任务未结束而不重建），此后队列
-        无界积压、查询侧 flush_now/drain 一并挂起，只有重启才能恢复。超时后
-        wait_for 会取消回调协程并抛 TimeoutError，走既有「重试 -> 死信」降级
-        路径：内存有界、状态可见、worker 继续服务。
-
-        已知边界：若回调内部是同步阻塞（占满事件循环），wait_for 的定时器
-        也发不出去——那种情况需要调用方自己把阻塞操作挪进线程池。
+        超时后 wait_for 取消回调协程并抛 TimeoutError，走「重试 -> 死信」降级路径。
         """
         timeout = self.config.flush_timeout
         if timeout is None:
@@ -342,18 +327,14 @@ class BatchWriter[T]:
             batch = self._normalize_batch(self._buffer)
             self._buffer = []
             last_error: Exception | None = None
-            # 真实尝试次数：看门狗超时会提前 break，死信记录若照抄 max_retries
-            # 会误导排查（实际只试了一次）。
+            # 真实尝试次数：看门狗超时会提前 break
             attempts_made = 0
             trace_id = new_trace_id(self.worker_name)
 
-            # 在飞批次计数：pending_items 必须覆盖「已出缓冲、尚未入账」的这段，
-            # 否则回调卡住时（最需要观察积压的时刻）计数反而归零。
+            # 在飞批次计数：覆盖「已出缓冲、等待入账」这段
             self._inflight_items = len(batch)
 
-            # _is_flushing 的置位与复位必须同在 try 内：此前置位在 try 之前，
-            # 且中间还夹着 log_trace_event——一旦该调用抛错，finally 不执行，
-            # _is_flushing 永久为 True，后续 flush_now 全部楔死。
+            # _is_flushing 的置位与复位同在 try 内，异常时由 finally 兜底
             try:
                 self._is_flushing = True
                 log_trace_event(
@@ -391,12 +372,7 @@ class BatchWriter[T]:
                             batch=tuple(batch),
                         )
                     except TimeoutError as e:
-                        # 看门狗超时：回调被卡过 timeout，**不重试**直接进死信。
-                        # 回调内部多为「按分片逐个独立提交」（write_batch），取消
-                        # 发生时无法得知已提交到哪一步：可能第一个分片已落库、第二
-                        # 个卡住。重试会把已提交部分再写一遍——water 的计数是累加
-                        # 型 upsert（msg_count + excluded），会静默双计。
-                        # 死信保留整批（关机落库、可人工重放），比冒双计风险更稳。
+                        # 看门狗超时：整批直接进死信，重试会双写已提交分片
                         last_error = e
                         attempts_made = attempts
                         logger.error(
@@ -443,7 +419,7 @@ class BatchWriter[T]:
                     attempts=recorded_attempts,
                 )
                 self._dead_letters.append(dead_letter)
-                # 有上界：持续失败时不能让内存无限增长（旧实现是裸 list.append）
+                # 死信有上界：持续失败时内存占用固定
                 if len(self._dead_letters) > self._max_dead_letters:
                     dropped = len(self._dead_letters) - self._max_dead_letters
                     del self._dead_letters[:dropped]
@@ -491,14 +467,7 @@ class BatchWriter[T]:
 
 
 class RoutableStore(Protocol):
-    """``execute_batch_write`` 需要的全部能力：一个物理分片库与一个默认时间字段。
-
-    刻意只声明这两项，而不是直接写 ``AliasStore[OpsT]``：``AliasStore`` 在 ops
-    参数上不变（``ops_class`` 落在 ``__init__`` 输入位），而调用点需要「同一物理
-    分片上换一套 ops」（log_db 是 ``AliasStore[TraceEventLogOps]``，却要写
-    ``AuditLogOps``）。ops 由 ``execute_batch_write`` 的 ``ops_class`` 独立携带，
-    因此本协议不需要描述写入方法，任何具体 ``AliasStore`` 都能结构匹配。
-    """
+    """``execute_batch_write`` 需要的全部能力：物理分片库 + 默认时间字段。"""
 
     @property
     def store(self) -> SegmentStore: ...
@@ -518,9 +487,7 @@ async def execute_batch_write[PayloadT, OpsT: OpsFactory](
 ) -> None:
     """按时间戳分组路由并写入对应分片（转发到 AliasStore.write_batch）。
 
-    ``ops_class`` 必须显式给出，因为调用点常常要用「与 db 自带的 ops 不同的 ops」
-    写同一物理分片（例如 log_db 既写审计日志也写 trace 日志）；``time_field``
-    省略时沿用 db_instance 自带的时间字段。
+    ops_class 显式给出：调用点常以另一套 ops 写同一物理分片。
     """
     if not batch:
         return

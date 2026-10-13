@@ -600,8 +600,7 @@ async def _(
     await _deliver_help_plan(bot, matcher, event, docs_plan, locale=locale)
 
 
-# 这两个 forward 辅助被外部测试直接引用（校验登录昵称解析与群/私聊转发分支），
-# 显式导出可让 pyright 认可其被引用，而不是误判为死代码。
+# forward 辅助被外部测试直接引用，显式导出供 pyright 识别。
 __all__ = [
     "_resolve_forward_sender",
     "_send_help_forward",

@@ -3,7 +3,7 @@ Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-22 16:55:55
 LastEditors: SakuraiCora<1479559098@qq.com>
 LastEditTime: 2026-02-27 20:20:24
-Description: 平台相关信息获取
+Description: 平台信息获取
 """
 
 from nonebot.adapters.onebot.v11.bot import Bot

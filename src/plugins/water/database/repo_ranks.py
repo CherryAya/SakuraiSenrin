@@ -1,7 +1,4 @@
-# 本文件的 mixin 方法把 self 显式 cast 成组合后的宿主类（如 WaterRepository），
-# 再调用同一次实例上的内部辅助方法。这些方法是该仓库层的实现细节，刻意不公开；
-# 但它们与调用方是同一个对象，不构成越权访问。pyright 无法表达「同一实例上的
-# mixin 内部协作」，故在此显式豁免。
+# 同实例 mixin 内部协作：pyright 私有访问豁免
 # pyright: reportPrivateUsage=false
 """Water repository rank and report helpers."""
 
@@ -96,8 +93,7 @@ class WaterRepositoryRanksMixin:
             _fetch_today(), _fetch_yesterday()
         )
 
-        # get_top_users 返回 Row[tuple[str, int]]；解包遍历会退化成 tuple 元素，
-        # 这里按位置取列，user_id 统一转 str 后使用。
+        # 行按位置取列，user_id 统一转 str
         ranked_items: list[RankItem] = []
         for current_rank, row in enumerate(today_data, 1):
             user_id = str(row[0])
@@ -158,9 +154,7 @@ class WaterRepositoryRanksMixin:
     def _extract_hourly_counts(row: Sequence[object], start_idx: int) -> list[int]:
         """从行内偏移 start_idx 起取连续 24 个小时计数值。
 
-        行是按位置索引的聚合结果（无列名），元素类型无法在静态期确定，
-        这里显式收窄为 int；非数值一律按 0 处理，与原先 ``int(x or 0)`` 的
-        空值语义保持一致。
+        行按位置索引（列名为空），这里显式收窄为 int；空值按 0 处理。
         """
         counts: list[int] = []
         for idx in range(start_idx, start_idx + 24):

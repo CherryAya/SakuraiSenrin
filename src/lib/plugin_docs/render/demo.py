@@ -1,4 +1,4 @@
-"""Feature showcase demo renderer."""
+"""功能演示渲染器。"""
 
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ DEMO_ASSETS_DIR = Path(__file__).resolve().parents[2] / "assets"
 DEMO_AVATAR_PATH = DEMO_ASSETS_DIR / "senrin-demo-avatar.png"
 DEMO_STANDEE_PATH = DEMO_ASSETS_DIR / "senrin-demo-standee.png"
 
-# PIL 的 truetype / load_default 返回的是两个互不继承的字体类，这里统一收口。
+# PIL 两个字体类收口为一个别名
 type DocsFont = ImageFont.FreeTypeFont | ImageFont.ImageFont
 
 
@@ -74,11 +74,7 @@ def _blurred_shape_patch(
     fill: tuple[int, int, int, int],
     radius: int = 0,
 ) -> tuple[Image.Image, tuple[int, int]]:
-    """在局部图上绘制并高斯模糊形状，返回待合成补丁与其左上角原点。
-
-    形状模糊半径之外的像素本就全透明，故局部模糊与整图逐字节一致；超长画布
-    上重复整图模糊代价极高，这里只处理形状包围盒（外扩 ``2 * radius``）。
-    """
+    """在局部图上绘制并高斯模糊形状，返回补丁与左上角原点。"""
     shadow_patch_margin_factor = 2
     margin = max(0, shadow_blur) * shadow_patch_margin_factor
     canvas_width, canvas_height = canvas_size
@@ -191,7 +187,7 @@ class ShowcaseLayout:
 
 @dataclass(slots=True, frozen=True)
 class DemoRenderParams:
-    """一次演示渲染的全部内容字段。"""
+    """一次演示渲染的内容字段。"""
 
     plugin_title: str
     feature_title: str
@@ -339,7 +335,7 @@ def turn_rects(
             return [("system bubble", placement.bubble_rect)]
         return [("system text", placement.text_rect)]
     rects: list[tuple[str, tuple[int, int, int, int]]] = []
-    # avatar_rect 为 None 的早退分支在上面，这里 avatar_rect 必定非空。
+    # 上面早退分支已排除 avatar_rect 为 None 的情形
     rects.append(("avatar", placement.avatar_rect))
     if placement.bubble_rect is not None:
         rects.append(("bubble", placement.bubble_rect))
@@ -479,8 +475,7 @@ def draw_shadowed_rect(
         rect[2],
         rect[3] + shadow_offset_y,
     )
-    # 只在阴影包围盒的局部图上做高斯模糊：整画布模糊在长图下代价极高，而
-    # 模糊半径外的像素本就是全透明，局部结果与整图逐字节一致。
+    # 高斯模糊只做阴影包围盒局部：长图整画布模糊代价极高
     patch, origin = _blurred_shape_patch(
         canvas_size=image.size,
         shape_rect=shadow_rect,
@@ -512,7 +507,7 @@ def _ensure_no_overlap(
 
 
 class DemoImageRenderer:
-    """Render plugin docs feature demos as a single-canvas showcase infographic."""
+    """把插件文档功能演示渲染为单画布长图。"""
 
     WIDTH = DEFAULT_DEMO_THEME.canvas_width
     OUTER_MARGIN = DEFAULT_DEMO_THEME.outer_margin
@@ -547,7 +542,7 @@ class DemoImageRenderer:
             theme_name=self.theme_name,
             impression_color=self.impression_color,
         )
-        # 文本测量缓存：同一渲染器内相同 (字体, 文本) 的 bbox 结果一致。
+        # 文本测量缓存：同一渲染器内 (字体, 文本) 的 bbox 结果一致
         self._text_bbox_cache: dict[tuple[int, str], tuple[int, int, int, int]] = {}
         try:
             self.kicker_font = ImageFont.truetype(MAPLE_FONT_PATH, 24)
@@ -678,8 +673,7 @@ class DemoImageRenderer:
         render_image: bool = True,
     ) -> DemoRenderAuditResult:
         layout = self._measure_layout(params)
-        # 仅审计布局时跳过绘制与编码：返回与正式渲染同尺寸的空白画布，
-        # 让上层合成路径行为一致，但不付出绘制/编码超长画布的代价。
+        # 仅审计布局时跳过绘制与编码，返回同尺寸空白画布
         image = Image.new("RGBA", (self.WIDTH, layout.total_height), self.theme.page_bg)
         data = b""
         if render_image:
@@ -2479,16 +2473,14 @@ class DemoImageRenderer:
             font_families=self.FONT_FAMILIES,
             stroke_ratio=0,
         )
-        # ImageDraw 没有公开的「取回底层 Image」接口，只能直接 paste；
-        # 用 draw.im（公开的 ImagingCore）无法走 Image.paste 的 mask 语义。
-        # 保持 _image 直取，但在此显式豁免私有访问告警。
+        # ImageDraw 底层 Image 直取 _image，保住 mask 语义
         draw._image.paste(text_layer, (int(x), int(y)), text_layer)  # pyright: ignore[reportPrivateUsage]
 
     def _text_size(self, text: str, font: DocsFont) -> tuple[int, int, int, int]:
         if not text:
             return (0, 0, 0, self._font_line_height(font))
         if not contains_emoji(text):
-            # font.getbbox 按单行处理换行，与 textbbox 的换行语义不同，需排除。
+            # font.getbbox 按单行处理换行，与 textbbox 语义有别
             key = (id(font), text)
             cached = self._text_bbox_cache.get(key)
             if cached is None:

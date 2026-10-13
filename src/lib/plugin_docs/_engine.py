@@ -1,4 +1,4 @@
-"""Project-wide plugin docs engine, README parser, and demo rendering helpers."""
+"""插件文档引擎：README 解析、演示渲染与帮助文案。"""
 
 from __future__ import annotations
 
@@ -204,9 +204,7 @@ from .static_assets import (
     summary_target_key,
 )
 
-# ``_support_note`` 前缀虽为下划线，但它是包门面 ``plugin_docs.__init__`` 与
-# 测试显式再导出的公共对象（见 tests/test_plugin_docs_readme_bundle.py）。
-# 显式列入 __all__ 以声明该跨模块导出意图，而非私有实现细节。
+# ``_support_note`` 由包门面与测试显式再导出，故列入 __all__
 __all__ = ["_support_note"]
 
 
@@ -220,8 +218,7 @@ def _support_text_block(locale: LocaleCode) -> str:
 
 type HelpHomeSectionKind = Literal["system", "developer", "community"]
 
-# 归入帮助首页「系统」分组的插件文档 category。
-# 插件通过 metadata 的 docs.tree.category 声明，新增系统级插件无需改本模块。
+# 帮助首页「系统」分组的插件文档 category，经 metadata 声明
 HELP_HOME_SYSTEM_CATEGORIES: frozenset[str] = frozenset({"core", "system", "admin"})
 
 HELP_HOME_SECTION_TITLE_KEYS: dict[HelpHomeSectionKind, MessageKey] = {
@@ -1056,12 +1053,12 @@ def load_representative_demo_bytes(
     actor_permission: Permission = Permission.NORMAL,
     prefer_collection: bool = True,
 ) -> bytes | None:
-    """加载代表性 demo 图片，优先使用集合图片，否则使用第一个有权限的功能 demo"""
+    """加载代表性 demo 图片：优先集合图，其次有权限的功能图。"""
     if prefer_collection:
         collection_demo = load_collection_demo_bytes(bundle)
         if collection_demo is not None:
             return collection_demo
-    # 按权限过滤功能，只加载用户有权限查看的 demo
+    # 按权限过滤功能，只加载可见范围内的 demo
     visible_features = filter_features_by_permission(bundle.index, actor_permission)
     for feature in visible_features:
         demo_bytes = load_demo_bytes(bundle, feature)

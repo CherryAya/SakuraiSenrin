@@ -1,4 +1,4 @@
-"""Unified senrinV3 theme tokens for plugin docs demo renderers."""
+"""senrinV3 主题令牌，供插件文档演示渲染器共用。"""
 
 from __future__ import annotations
 
@@ -11,12 +11,12 @@ SENRIN_V3_THEME_NAME = "senrinV3"
 
 @dataclass(frozen=True)
 class DemoTheme:
-    """Resolved theme tokens shared by plugin docs renderers."""
+    """插件文档渲染器共用的已解析主题令牌。"""
 
     theme_name: str
     impression_color: str
 
-    # Core colors
+    # 核心色
     page_bg: str
     panel_bg: str
     panel_soft_bg: str
@@ -26,7 +26,7 @@ class DemoTheme:
     hint: str
     line: str
 
-    # Demo / card colors
+    # 演示/卡片色
     shell_bg: str
     shell_border: str
     user_bubble: str
@@ -44,13 +44,13 @@ class DemoTheme:
     bot_avatar_bg: str
     bot_avatar_border: str
 
-    # Supporting palette
+    # 辅助色板
     indigo: str
     indigo_soft: str
     indigo_text: str
     muted_light: str
 
-    # Showcase-specific colors
+    # 展示页专用色
     grid_color: str
     decor_color: str
     footer_divider: str
@@ -78,7 +78,7 @@ class DemoTheme:
     bubble_shadow: tuple[int, int, int, int]
     card_shadow: tuple[int, int, int, int]
 
-    # Shared radii / spacing
+    # 圆角/间距
     outer_margin: int
     shell_radius: int
     panel_radius: int
@@ -89,7 +89,7 @@ class DemoTheme:
     inline_code_pad_y: int
     grid_spacing: int
 
-    # Showcase layout tokens
+    # 展示页布局
     canvas_width: int
     hero_top: int
     hero_side_padding: int
@@ -130,7 +130,7 @@ class DemoTheme:
 
 @dataclass(frozen=True)
 class DemoThemeDefinition:
-    """Named theme definition with a default impression color."""
+    """具名主题定义与默认印象色。"""
 
     name: str
     default_impression_color: str
@@ -734,7 +734,7 @@ def get_demo_theme(
 
 
 def build_demo_theme(impression_color: str | None = None) -> DemoTheme:
-    """Backward-compatible alias for resolving the default demo theme."""
+    """解析默认演示主题的兼容别名。"""
 
     return get_demo_theme(impression_color=impression_color)
 

@@ -1,8 +1,4 @@
-"""wordbank 引导流程与视图的装配层。
-
-把 guided_flow 的纯逻辑与 services / 单例绑定为可直接调用的入口。
-纯转发包装已移除：注入型参数在 guided_flow 顶层直接依赖 services，入口直接调用。
-"""
+"""wordbank 引导流程与视图的装配层：把 guided_flow 纯逻辑与 services 单例绑定。"""
 
 from __future__ import annotations
 
@@ -114,8 +110,7 @@ def _build_wordbank_command_progress_spec(
     return None
 
 
-# 这三个符号是「装配层导出」：由 entry_commands 以包级名导入，供长任务审计
-# 按名定位本轮装配。显式导出可让 pyright 认可其被外部引用。
+# entry_commands 按包级名导入，长任务审计据此定位本轮装配
 __all__ = [
     "_build_wordbank_command_progress_spec",
     "_finish_guided_add",

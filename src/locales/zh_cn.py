@@ -869,35 +869,20 @@ CATALOG: Final[dict[str, str]] = {
     ),
     ("wordbank.reply.info_header"): (
         "词条详情 #{entry_id}\n"
-        # "状态: {status}\n"
-        # "启用: {enabled}\n"
-        # "删除时间: {deleted_at}\n"
         "范围: {scope}\n"
-        # "群: {group_id}\n"
         "创建者: {created_by}\n"
         "触发概率: {probability}\n"
         "响应权重: {weight}\n"
-        # "来源消息: {message_id} ({message_type})"
     ),
     ("wordbank.reply.info"): (
         "词条详情 #{entry_id}\n"
-        # "状态: {status}\n"
-        # "启用: {enabled}\n"
-        # "删除时间: {deleted_at}\n"
         "范围: {scope}\n"
-        # "群: {group_id}\n"
         "创建者: {created_by}\n"
-        # "触发: {trigger_text}\n"
-        # "响应: {response_text}\n"
         "触发概率: {probability}\n"
         "响应权重: {weight}\n"
-        # "来源消息: {message_id} ({message_type})"
     ),
     ("wordbank.reply.history"): (
         "词条 #{entry_id} 状态摘要\n"
-        # "状态: {status}\n"
-        # "启用: {enabled}\n"
-        # "删除时间: {deleted_at}\n"
         "范围: {scope}\n"
         "触发概率: {probability}\n"
         "响应权重: {weight}\n"

@@ -142,8 +142,7 @@ def _format_run_result(
             tr(locale, "admin.backup.run.completed"),
             tr(locale, "admin.backup.profile", profile=profile_name),
             tr(locale, "admin.backup.run.run_id", run_id=result.run_id),
-            # manifest_path 会直接展示给用户；Path 在 Windows 上渲染为反斜杠，
-            # 这里统一按 POSIX 形式输出，保证跨平台文案一致。
+            # manifest_path 对外展示；统一按 POSIX 形式输出，跨平台文案一致。
             tr(
                 locale,
                 "admin.backup.run.manifest",

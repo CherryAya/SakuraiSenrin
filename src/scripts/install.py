@@ -3,7 +3,7 @@ Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-25 16:44:54
 LastEditors: SakuraiCora<1479559098@qq.com>
 LastEditTime: 2026-02-26 17:27:03
-Description: 安装脚本，Gemini 写的
+Description: 字体安装脚本
 """
 
 import os
@@ -184,7 +184,7 @@ def init_fonts() -> None:
         logger.warning("⚠️ 安装流程未完成，下次启动将自动重试。")
         return
 
-    # 核心：交由 Skia 进行最终死刑核准
+    # Skia 验证通过才落锁
     if _verify_with_skia(fonts):
         LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
         LOCK_FILE.touch()

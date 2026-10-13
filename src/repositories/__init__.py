@@ -3,9 +3,7 @@ Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-13 19:41:15
 LastEditors: SakuraiCora<1479559098@qq.com>
 LastEditTime: 2026-02-22 17:31:44
-Description: repo 实现
-
-`get_xxx` cache -> db -> 回填
+Description: repo 实现，get_xxx 走 cache -> db -> 回填
 """
 
 from src.lib.cache import blacklist_cache, group_cache, member_cache, user_cache

@@ -1,8 +1,7 @@
 """渲染质量断言（与可行性测试分离）。
 
-可行性（管线能否跑通各类输入）见 test_rank.py；
-本文件只回答「画出来的东西对不对」，因此必须真实渲染并提供像素级断言。
-单个用例较慢（约 5-20s/次），改动渲染器时运行。
+可行性（各输入跑通到渲染调用）见 test_rank.py；本文件看真实渲染
+效果并做像素级断言。单个用例较慢（约 5-20s/次），改动渲染器时运行。
 """
 
 from __future__ import annotations
@@ -88,7 +87,7 @@ async def test_report_image_is_scaled_two_x_with_expected_width() -> None:
 
 @pytest.mark.asyncio
 async def test_report_image_grows_with_group_rank_rows() -> None:
-    """群排名行数增加时画布应变高（否则说明布局漏算）。"""
+    """群排名行数增加时画布随之变高（防布局漏算）。"""
     short = await _render(_report_data(group_rank_count=2))
     tall = await _render(_report_data(group_rank_count=6))
 
@@ -97,7 +96,7 @@ async def test_report_image_grows_with_group_rank_rows() -> None:
 
 @pytest.mark.asyncio
 async def test_report_image_long_group_names_do_not_widen_canvas() -> None:
-    """超长群名应被截断，不得撑宽画布。"""
+    """超长群名走截断，画布宽度保持稳定。"""
     normal = await _render(_report_data(group_rank_count=2))
     long_name = await _render(
         _report_data(group_rank_count=2, name="这是一个非常非常非常非常长的群聊名称")

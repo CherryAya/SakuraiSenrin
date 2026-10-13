@@ -1,4 +1,4 @@
-"""User-facing wordbank errors with i18n metadata."""
+"""wordbank 面向用户的错误，带 i18n 元数据。"""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from src.lib.i18n.types import LocaleCode
 
 
 class WordbankUserError(ValueError):
-    """Error safe to show to users after localization."""
+    """本地化后可安全展示给用户的错误。"""
 
     def __init__(
         self,

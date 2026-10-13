@@ -1,4 +1,4 @@
-"""Approval-message helpers for wordbank additions."""
+"""wordbank 添加流程的审核消息辅助。"""
 
 from __future__ import annotations
 
@@ -1062,7 +1062,5 @@ async def record_batch_submission_approval_message(
         logger.warning(f"[Wordbank] batch submission approval record skipped: {exc}")
 
 
-# ``_build_wordbank_approval_reply_context_spec`` 前缀虽为下划线，但它是同包
-# ``pending_batch`` 复用的内部构造器（与 _engine._support_note 同类）。
-# 显式列入 __all__ 以声明该跨模块复用意图，而非纯私有细节。
+# pending_batch 同包复用，故列入 __all__
 __all__ = ["_build_wordbank_approval_reply_context_spec"]

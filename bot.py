@@ -44,8 +44,7 @@ async def _on_shutdown() -> None:
         report_writer_health,
     )
 
-    # 顺序要紧：先落盘内存缓冲，再把死信写入 sys_dead_letter 以便关机后回溯，
-    # 然后巡检告警，最后关日志（否则告警写不出去）
+    # 关机顺序固定：日志最后关
     await drain_all_writers()
     await flush_dead_letters()
     await report_writer_health()
@@ -67,7 +66,6 @@ async def _on_bot_connect(bot: Bot) -> None:
 
     await sync_users_from_api(bot)
     await sync_groups_from_api(bot)
-    # await sync_members_from_api(bot, "1107576103")
 
 
 nonebot.load_plugins("src/hooks/")

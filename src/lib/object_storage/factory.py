@@ -1,4 +1,4 @@
-"""Factory helpers for configured object storage providers."""
+"""对象存储提供方的工厂。"""
 
 from __future__ import annotations
 

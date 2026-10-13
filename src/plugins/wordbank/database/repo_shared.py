@@ -1,4 +1,4 @@
-"""Shared helpers and bundle types for the wordbank repository."""
+"""wordbank 仓库共享辅助与组合类型。"""
 
 from __future__ import annotations
 

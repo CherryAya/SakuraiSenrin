@@ -14,11 +14,6 @@ from src.lib.enums import LocalizedMixin
 
 
 class BaseAuditEnum(LocalizedMixin, StrEnum):
-    """
-    [强制规范] 审计日志枚举基类。
-
-    所有核心枚举 (AuditCategory, AuditAction) 和插件自定义枚举
-    **必须** 继承此类，否则类型检查不通过。
-    """
+    """审计日志枚举基类：核心枚举与插件枚举统一继承。"""
 
     __labels__: ClassVar[MappingProxyType[str, str]]

@@ -161,11 +161,7 @@ def error_context_scope(context: ErrorContext | None = None) -> Generator[ErrorC
 
 
 def bind_error_context(**fields: str | Mapping[str, object] | None) -> ErrorContext:
-    """向当前上下文补充字段。
-
-    采用 copy-on-write：基于当前值派生新对象再写回 ContextVar，
-    避免多个事件共享同一个可变实例而互相污染。
-    """
+    """按 copy-on-write 向当前上下文补充字段。"""
     current = snapshot_error_context()
     extra = fields.pop("extra", None)
     for key, value in fields.items():
@@ -188,7 +184,7 @@ def bind_error_context(**fields: str | Mapping[str, object] | None) -> ErrorCont
 
 
 def describe_error_context(context: ErrorContext | None = None) -> str:
-    """把上下文渲染为多行文本，未知上下文返回空字符串。"""
+    """把上下文渲染为多行文本，空上下文返回空字符串。"""
     resolved = context if context is not None else snapshot_error_context()
     if resolved.is_empty():
         return ""

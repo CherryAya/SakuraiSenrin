@@ -1,4 +1,4 @@
-"""Wordbank database exports."""
+"""wordbank 数据库导出。"""
 
 from .repo import WordbankRepository
 

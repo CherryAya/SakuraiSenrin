@@ -1,4 +1,4 @@
-"""Generic long-task progress reporting helpers."""
+"""长任务进度上报辅助。"""
 
 from __future__ import annotations
 

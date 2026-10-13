@@ -32,16 +32,13 @@ from src.services.writers import (
 
 @dataclass
 class UserChangeContext:
-    """
-    封装用户变更请求的上下文，包含原始数据和衍生状态。
-    提供 resolve_xxx 方法统一处理 Unset -> Default 的逻辑。
-    """
+    """封装用户变更请求上下文，resolve_xxx 统一 Unset -> Default。"""
 
     user_id: str
     user_name: str | Unset = UNSET
     permission: Permission | Unset = UNSET
     is_new: bool = False
-    # 操作者：权限/状态变更需可归因，审计表 operator_id 依赖它
+    # 操作者：审计表 operator_id 依赖它
     operator_id: str = ""
 
     def resolve_name(self, default: str = "") -> str:
@@ -93,7 +90,6 @@ class UserRepository:
     async def _save_immediate(self, ctx: UserChangeContext) -> None:
         event_time = get_current_time()
         # 单一事务：core + 当月 log 分片 + 当月 snapshot 分片。
-        # 此前开三个独立会话，任一失败都会留下「已改主库但缺审计/快照」的状态。
         async with system_atomic_session(event_time) as session:
             user_ops = UserOps(session)
             audit_log_ops = AuditLogOps(session)
@@ -148,12 +144,7 @@ class UserRepository:
             await self._save_immediate(ctx)
 
     async def ensure_persisted(self, user_id: str, user_name: str) -> None:
-        """确保 biz_user 中存在该用户的数据库行。
-
-        运行时同步走 WritePolicy.BUFFERED，只更新缓存不落库；
-        而外键约束校验的是数据库行。若仅依赖缓存判断存在性，
-        后续对外键表的 IMMEDIATE 写入会因父行缺失而失败。
-        """
+        """确保 biz_user 有该用户的数据库行；外键校验的是库行。"""
         if not user_id:
             return
         async with core_db.session(commit=True) as session:

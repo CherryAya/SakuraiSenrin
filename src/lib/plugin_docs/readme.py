@@ -1,4 +1,4 @@
-"""Markdown README parser helpers for plugin docs."""
+"""插件文档的 Markdown README 解析辅助。"""
 
 from __future__ import annotations
 
@@ -450,8 +450,7 @@ def parse_flow_section_tokens(
     return "\n".join(cleaned).strip(), tuple(demo_turns)
 
 
-# 元组（而非 set）形态：pyright 对 ``x in <tuple>`` 能把 str 收窄成对应字面量，
-# 对 set 成员测试则不能——这正是原处需要 cast 的原因。
+# 元组形态：pyright 对 ``x in <tuple>`` 把 str 收窄成字面量
 _DEMO_SPEAKERS: tuple[Literal["USER", "BOT", "SYSTEM"], ...] = (
     "USER",
     "BOT",

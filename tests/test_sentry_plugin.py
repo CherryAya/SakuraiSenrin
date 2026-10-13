@@ -1,4 +1,4 @@
-# 测试/脚本需直接验证内部不变量，故关闭跨模块私有符号告警
+# 测试直取内部符号：pyright 私有访问豁免
 # pyright: reportPrivateUsage=false
 from __future__ import annotations
 
@@ -100,8 +100,8 @@ def test_before_send_handler_keeps_real_errors_and_notifies(
         loop.run_until_complete(asyncio.gather(*pending))
     finally:
         loop.close()
-        # 不把已关闭的 loop 留在当前线程，否则同 worker 的后续用例
-        # 会撞上 "There is no current event loop in thread 'MainThread'"。
+        # 关闭的 loop 归还线程前先换新，避免同 worker 后续用例撞上
+        # "There is no current event loop" 报错。
         asyncio.set_event_loop(asyncio.new_event_loop())
 
     assert result is event
@@ -109,7 +109,7 @@ def test_before_send_handler_keeps_real_errors_and_notifies(
 
 
 def _event_dict(event: Event) -> dict[str, Any]:
-    """TypedDict 下访问非必填键会报错，统一走 Any 读取。"""
+    """TypedDict 访问非必填键会报错，统一走 Any 读取。"""
     return cast(dict[str, Any], event)
 
 
@@ -118,7 +118,7 @@ def _event_contexts(event: Event) -> dict[str, Any]:
 
 
 def _event_tags(event: Event) -> dict[str, str]:
-    """按 Sentry 的真实契约读取 tags：``Event["tags"]`` 是 ``Mapping[str, str]``。"""
+    """按 Sentry 契约读 tags：Event["tags"] 即 Mapping[str, str]。"""
     return cast(dict[str, str], _event_dict(event).get("tags") or {})
 
 
@@ -127,7 +127,7 @@ def _run_before_send(
     event: Event,
     exc: BaseException,
 ) -> list[str]:
-    """驱动 before_send_handler 并回收内部调度出去的告警任务。"""
+    """驱动 before_send_handler 并回收派出的告警任务。"""
     recorded_messages: list[str] = []
 
     async def _fake_notify(error_message: str) -> None:
@@ -146,8 +146,8 @@ def _run_before_send(
         loop.run_until_complete(asyncio.gather(*pending))
     finally:
         loop.close()
-        # 不把已关闭的 loop 留在当前线程，否则同 worker 的后续用例
-        # 会撞上 "There is no current event loop in thread 'MainThread'"。
+        # 关闭的 loop 归还线程前先换新，避免同 worker 后续用例撞上
+        # "There is no current event loop" 报错。
         asyncio.set_event_loop(asyncio.new_event_loop())
     return recorded_messages
 
@@ -243,7 +243,7 @@ def _build_action_failed(wording: str) -> ActionFailed:
         "send group message rejected: result=299 err=本群每分钟只能发10条消息",
         "OIDB error 120162002 on 0x10c8_1: already agree msg",
         "send private message rejected: result=16 err=发送失败，请先添加对方为好友",
-        # 未知文案也必须降级：判定只看异常类型，不依赖文案
+        # 陌生文案照样降级：判定只看异常类型
         "some brand new platform rejection nobody has seen before",
     ],
 )
@@ -262,7 +262,7 @@ def test_non_action_failed_is_not_downgraded() -> None:
 def test_before_send_handler_downgrades_action_failed_but_still_notifies(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """ActionFailed 只降级 Sentry level，管理员通报必须照常发出。"""
+    """ActionFailed 只降级 Sentry level，管理员通报照常发出。"""
     reset_error_context()
     bind_error_context(group_id="10001", user_id="20002", message_id="30003")
     exc = _build_action_failed(
@@ -278,7 +278,7 @@ def test_before_send_handler_downgrades_action_failed_but_still_notifies(
     assert _event_contexts(event)["default"]["level"] == "warning"
     assert _event_tags(event)["action_failed"] == "true"
 
-    # 关键断言：业务异常不能被静默，必须通报管理员，且带完整上下文
+    # 关键断言：业务异常照样通报管理员，且带完整上下文
     assert len(recorded) == 1
     assert "Type: FakeActionFailed" in recorded[0]
     assert "本群每分钟只能发10条消息" in recorded[0]
@@ -290,7 +290,7 @@ def test_before_send_handler_downgrades_action_failed_but_still_notifies(
 def test_before_send_handler_never_drops_business_exceptions(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """除心跳噪声外，任何异常都不得被 before_send 丢弃。"""
+    """除心跳噪声外，其余异常都照常穿过 before_send。"""
     reset_error_context()
     for exc in (
         _build_action_failed("already agree msg"),
@@ -307,12 +307,10 @@ def test_before_send_handler_never_drops_business_exceptions(
 def test_action_failed_downgrade_preserves_scope_tags(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """回归：降级 ActionFailed 时不得摧毁 scope/SDK 已写入的标签。
+    """降级 ActionFailed 时保留 scope/SDK 已写入的标签。
 
-    SDK 的 ``Scope._apply_tags_to_event`` 用
-    ``event.setdefault("tags", {}).update(...)`` 写入 dict 形状的标签；
-    本插件必须在该形状上增量合并，而不是整体替换成另一种形状。
-    """
+    SDK 用 event.setdefault("tags", {}).update(...) 写 dict 形状标签；
+    本插件在该形状上增量合并，整体替换属于破坏。"""
     reset_error_context()
     exc = _build_action_failed("send group message rejected: result=299 err=限流")
     # 模拟 scope 已先把标签写进 event（SDK 的真实行为）
@@ -330,7 +328,7 @@ def test_action_failed_downgrade_preserves_scope_tags(
 def test_attach_context_merges_without_clobbering_scope_tags(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """回归：附加异常上下文时，非 ctx_ 前缀的既有标签必须原样保留。"""
+    """附加异常上下文时，非 ctx_ 前缀的既有标签原样保留。"""
     reset_error_context()
     bind_error_context(group_id="10001", user_id="20002")
     event = cast(
@@ -356,5 +354,5 @@ def test_notify_admin_swallows_missing_bot(
 
     monkeypatch.setattr("src.plugins.sentry.get_bot", _raise)
 
-    # 不应抛出，避免告警失败再次触发 Sentry 形成自激循环。
+    # 抛错止步于此，避免告警失败再次触发 Sentry 形成自激循环。
     asyncio.run(notify_admin("boom"))

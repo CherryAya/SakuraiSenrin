@@ -1,4 +1,4 @@
-"""Audit water storage layout and benchmark log index baseline."""
+"""水存储布局审计：盘点分片并给日志索引做基准。"""
 
 from __future__ import annotations
 

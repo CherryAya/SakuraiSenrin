@@ -137,8 +137,8 @@ def test_wordbank_leaderboard_height_excludes_duplicate_champion_row() -> None:
     one_height = renderer._measure_height(_data(items=items[:1]))  # pyright: ignore[reportPrivateUsage]
     two_height = renderer._measure_height(_data(items=items))  # pyright: ignore[reportPrivateUsage]
 
-    # 冠军已在 hero 区单独占位，行区只应补一条普通行的高度，不能重复计入。
-    # 断言关系而非具体像素，避免排版微调即误报。
+    # 冠军已在 hero 区占位，行区只补一条普通行的高度。
+    # 断言高度关系而非具体像素，排版微调时维持稳定。
     row_delta = two_height - one_height
     assert row_delta == LEADERBOARD_ROW_HEIGHT
     assert LEADERBOARD_CHAMPION_HEIGHT > row_delta

@@ -1,4 +1,4 @@
-"""Copy text builders and command display helpers for plugin docs."""
+"""插件文档的文案构造与命令展示。"""
 
 from __future__ import annotations
 

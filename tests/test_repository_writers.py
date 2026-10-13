@@ -35,7 +35,7 @@ class _FakeSessionContext:
 
 
 def _fake_atomic_session(*_args: object, **_kwargs: object) -> _FakeSessionContext:
-    """跨库原子会话的桩：产出对象本身，各 Ops 桩并不使用 session。"""
+    """跨库原子会话的桩：产出对象本身，各 Ops 桩直接忽略 session。"""
     return _FakeSessionContext()
 
 

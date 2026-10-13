@@ -1,12 +1,8 @@
-"""归档 job 的进程内执行与诚实上报回归。
+"""归档 job 的进程内执行与诚实上报契约。
 
-历史故障：归档在子进程里执行，Windows 上子进程的 dispose 释放不掉主进程
-持有的分片引擎句柄 -> 归档被 WinError 32 挡死；异常被宽 except 吞掉后，
-子进程照样写出 status="success" 的清单，job 层继续打「cron archive done」，
-磁盘只涨不缩而日志一片太平。本文件锁定修复后的契约：
-
-1. 两个归档 job 不再调子进程编排器；
-2. 归档报告含失败时 job 记 ERROR 而不是 success。
+历史故障：归档走子进程，Windows 上句柄释放被 WinError 32 挡死，异常被宽
+except 吞掉后清单照写 success。修复后的契约：两个归档 job 在进程内直接
+调用编排器；报告含失败时 job 记 ERROR 而非 success。
 """
 
 from __future__ import annotations
@@ -39,7 +35,7 @@ def _report_failed() -> SegmentArchiveReport:
 async def test_message_archive_job_runs_in_process_and_reports_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """归档失败必须记 ERROR：不得再调子进程，也不得打 success 日志。"""
+    """归档失败必须记 ERROR：in-process 执行，日志走 exception。"""
     from src.plugins.water import schedulers
 
     subprocess_mock = AsyncMock(side_effect=AssertionError("子进程不应被调用"))
@@ -66,7 +62,7 @@ async def test_message_archive_job_runs_in_process_and_reports_failure(
 async def test_summary_archive_job_runs_in_process_and_reports_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """summary 归档失败同样必须记 ERROR（prune 仍然执行）。"""
+    """summary 归档失败同样记 ERROR，prune 照常执行。"""
     from src.plugins.water import schedulers
 
     subprocess_mock = AsyncMock(side_effect=AssertionError("子进程不应被调用"))
@@ -96,7 +92,7 @@ async def test_summary_archive_job_runs_in_process_and_reports_failure(
 async def test_message_archive_job_reports_success_when_clean(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """归档正常时照常打 success，不误报失败。"""
+    """归档正常时照常打 success 日志。"""
     from src.plugins.water import schedulers
 
     success_mock = Mock()

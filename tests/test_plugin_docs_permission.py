@@ -2,7 +2,7 @@ from tests.test_plugin_docs_support import *
 
 
 def test_filter_features_by_permission_normal_user() -> None:
-    """验证普通用户只能看到普通用户权限的功能"""
+    """普通用户只看到 NORMAL 权限的功能。"""
     from src.lib.plugin_docs import (
         FeatureDoc,
         filter_features_by_permission,
@@ -53,14 +53,14 @@ def test_filter_features_by_permission_normal_user() -> None:
         ),
     )
 
-    # 普通用户只能看到普通权限的功能
+    # 普通用户看到普通权限功能
     normal_visible = filter_features_by_permission(features, Permission.NORMAL)
     assert len(normal_visible) == 1
     assert normal_visible[0].slug == "public"
 
 
 def test_filter_features_by_permission_admin_user() -> None:
-    """验证管理员可以看到管理员及以下权限的功能"""
+    """管理员看到 GROUP_ADMIN 及以下权限的功能。"""
     from src.lib.plugin_docs import FeatureDoc, filter_features_by_permission
 
     features = (
@@ -108,14 +108,14 @@ def test_filter_features_by_permission_admin_user() -> None:
         ),
     )
 
-    # 管理员可以看到普通用户和管理员权限的功能
+    # 管理员看到普通用户与管理员权限的功能
     admin_visible = filter_features_by_permission(features, Permission.GROUP_ADMIN)
     assert len(admin_visible) == 2
     assert {f.slug for f in admin_visible} == {"public", "admin"}
 
 
 def test_filter_features_by_permission_superuser() -> None:
-    """验证超级管理员可以看到所有功能"""
+    """超级管理员看到全部功能。"""
     from src.lib.plugin_docs import FeatureDoc, filter_features_by_permission
 
     features = (
@@ -163,17 +163,17 @@ def test_filter_features_by_permission_superuser() -> None:
         ),
     )
 
-    # 超级管理员可以看到所有功能
+    # 超级管理员看到所有功能
     superuser_visible = filter_features_by_permission(features, Permission.SUPERUSER)
     assert len(superuser_visible) == 3
     assert {f.slug for f in superuser_visible} == {"public", "admin", "superuser"}
 
 
 def test_can_view_node_respects_permission() -> None:
-    """验证节点可见性检查遵守权限"""
+    """节点可见性检查遵守权限。"""
     from src.lib.plugin_docs import DocNode, PluginDocBundle, can_view_node
 
-    # 创建一个需要管理员权限的节点
+    # 节点要求管理员权限
     admin_node = DocNode(
         kind="plugin",
         slug="admin-plugin",
@@ -203,11 +203,11 @@ def test_can_view_node_respects_permission() -> None:
         ),
     )
 
-    # 普通用户看不到
+    # 普通用户被挡在门外：can_view_node 为 False
     assert not can_view_node(admin_node, Permission.NORMAL)
 
-    # 管理员可以看到
+    # 管理员可查看
     assert can_view_node(admin_node, Permission.GROUP_ADMIN)
 
-    # 超级管理员可以看到
+    # 超级管理员可查看
     assert can_view_node(admin_node, Permission.SUPERUSER)

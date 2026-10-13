@@ -55,7 +55,7 @@ def _resolve_window(args: argparse.Namespace) -> tuple[arrow.Arrow, arrow.Arrow]
 
 async def main() -> None:
     args = parse_args()
-    # AliasStore 不做隐式代理；init / map_reduce 属物理分片库职责，走 .store
+    # init / map_reduce 归物理分片库，走 .store
     await log_db.store.init(LogBase)
     start, end = _resolve_window(args)
 

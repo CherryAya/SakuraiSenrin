@@ -1,4 +1,4 @@
-"""Shared plugin docs dataclasses and metadata shapes."""
+"""插件文档的数据类与元数据形态。"""
 
 from __future__ import annotations
 

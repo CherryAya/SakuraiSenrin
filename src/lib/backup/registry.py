@@ -1,4 +1,4 @@
-"""Backup database registration and discovery."""
+"""备份库注册与发现。"""
 
 from __future__ import annotations
 
@@ -16,17 +16,7 @@ _attempted_modules: set[str] = set()
 
 
 def register_backup_database(db: BaseDB | AliasStore[OpsFactory]) -> None:
-    """注册备份源。
-
-    接受 BaseDB，也接受 AliasStore（内部解包为其物理 SegmentStore），
-    这样 instances.py 只需把逻辑名注册一次。
-
-    参数写成 ``AliasStore[OpsFactory]`` 而非某个具体 ops：``AliasStore`` 的
-    OpsT 只出现在 ``__init__`` 输入位，对它是协变的，具体
-    ``AliasStore[TraceEventLogOps]`` 可赋给 ``AliasStore[OpsFactory]``。
-    反之若把参数固定成 ``AliasStore[BaseOps[DeclarativeBase]]``，
-    ``BaseOps`` 的模型参数不变，任何具体 ops 都判不进去（见 alias.OpsFactory）。
-    """
+    """注册备份源：BaseDB 直接入册，AliasStore 解包出物理 SegmentStore。"""
     physical: BaseDB = db.store if isinstance(db, AliasStore) else db
     db_id = id(physical)
     if db_id in _registered_database_ids:
@@ -40,12 +30,7 @@ def get_registered_backup_databases() -> tuple[BaseDB, ...]:
 
 
 def reset_registered_database_runtime_states() -> None:
-    """备份恢复后复位全部已注册库的进程内派生状态。
-
-    恢复是就地覆盖文件（copy2 保留 inode）：分片库的 schema 初始化标记按
-    (st_dev, st_ino) 判断，身份不变即误命中缓存——补丁不会在恢复出的旧内容上
-    重放，manifest 也停留在恢复前。这里统一复位，调用方无需知道有哪些库。
-    """
+    """复位已注册库的进程内派生状态；恢复就地覆盖文件，inode 复用会误命中缓存。"""
     for database in tuple(_registered_databases):
         database.reset_runtime_state()
 

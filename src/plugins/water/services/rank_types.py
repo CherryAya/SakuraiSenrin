@@ -137,7 +137,7 @@ def rank_command_suggestion(
     *,
     locale: LocaleCode = "zh-CN",
 ) -> str:
-    """Build a copy-pasteable rank command example for the current locale."""
+    """按当前 locale 生成可复制的榜单命令示例。"""
     params = {
         "subject": subject_label(subject, locale),
         "scope": scope_label(scope, locale),

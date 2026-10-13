@@ -409,9 +409,8 @@ async def test_migrate_legacy_water_imports_and_rebuilds_runtime() -> None:
             "updated_at": now_ts,
         }
     )
-    # 结算结果按 SUMMARY_HOT_WINDOW_DAYS(90) 路由：窗口内写 water_core_db，
-    # 窗口外写归档分片。硬编码 2026-06-11 会在今天逐步滑出热窗口后失效，
-    # 因此这里取「昨天」，始终落在热窗口内并落到 water_core_db。
+    # 结算结果按热窗路由：窗口内写 core，窗口外写归档分片。
+    # 取「昨天」让数据恒落在热窗内，固定日期会随热窗滑动失效。
     record_day = arrow.get(get_current_time()).to("Asia/Shanghai").shift(days=-1)
     record_date = int(record_day.format("YYYYMMDD"))
     day_at = record_day.datetime.replace(tzinfo=None)

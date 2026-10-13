@@ -5,7 +5,7 @@ from src.lib.db.orm import TimeMixin
 
 
 class SelfUnbanBase(DeclarativeBase):
-    """Self-unban plugin database base."""
+    """self_unban 插件数据库基类。"""
 
 
 class SelfUnbanAttempt(SelfUnbanBase, TimeMixin):

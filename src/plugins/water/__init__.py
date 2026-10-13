@@ -1,8 +1,4 @@
-"""water 插件入口包。
-
-显式转发 entry_plugin 的公开符号：`import *` 不会导出下划线名，
-而恢复重载流程需要访问模块级状态，隐式转发会让包与模块的命名空间不一致。
-"""
+"""water 插件入口包：显式转发 entry_plugin 的公开符号。"""
 
 from __future__ import annotations
 

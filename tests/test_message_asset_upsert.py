@@ -18,9 +18,9 @@ def anyio_backend() -> str:
 
 
 class _FakeDb:
-    """把 async_sessionmaker 包装成仓库期望的 write_session()/read_session() 接口。
+    """包装 async_sessionmaker 为仓库期望的会话接口。
 
-    提交语义与 src.lib.db.manager.DatabaseManager.open 保持一致。
+    提交语义与 src.lib.db.manager.DatabaseManager.open 一致。
     """
 
     def __init__(self, session_factory: Any) -> None:
@@ -56,7 +56,7 @@ class _SessionCtx:
 
 
 async def _build_session_factory(tmp_path: Path) -> Any:
-    # 使用文件型 SQLite：内存库会为每条连接创建独立数据库，无法验证并发 upsert。
+    # 文件型 SQLite：各连接共享同一库文件，并发 upsert 依赖这一点。
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'asset.db'}")
     async with engine.begin() as conn:
         await conn.run_sync(MessageAsset.metadata.create_all)
@@ -77,7 +77,7 @@ _COMMON_PAYLOAD: dict[str, Any] = {
 
 @pytest.mark.asyncio
 async def test_upsert_asset_is_idempotent_for_same_key(tmp_path: Path) -> None:
-    """同一 asset_key 重复写入不应抛 UNIQUE 冲突。"""
+    """同一 asset_key 重复写入保持幂等。"""
     engine, session_factory = await _build_session_factory(tmp_path)
 
     try:
@@ -101,7 +101,7 @@ async def test_upsert_asset_is_idempotent_for_same_key(tmp_path: Path) -> None:
 async def test_concurrent_upsert_does_not_raise_unique_violation(
     tmp_path: Path,
 ) -> None:
-    """并发写入同一 asset_key 时，SQLite 原生 upsert 应吸收唯一键冲突。"""
+    """并发写同一 asset_key 时，SQLite 原生 upsert 吸收唯一键冲突。"""
     engine, session_factory = await _build_session_factory(tmp_path)
 
     try:

@@ -1,8 +1,4 @@
-"""Small shared display helpers.
-
-These are presentation-layer utilities that must not pull in NoneBot runtime
-dependencies, so they import the i18n catalog lazily inside the function body.
-"""
+"""展示层小工具：i18n catalog 在函数体内懒导入，避开 NoneBot 运行时依赖。"""
 
 from __future__ import annotations
 
@@ -14,7 +10,7 @@ def fallback_group_name(
     *,
     locale: LocaleCode = "zh-CN",
 ) -> str:
-    """Return a stable placeholder group name when the real one is unavailable."""
+    """取群名占位文案（真实群名缺失时）。"""
     from src.locales.zh_cn import CATALOG
 
     if not group_id:
@@ -28,7 +24,7 @@ def format_group_label(
     *,
     locale: LocaleCode = "zh-CN",
 ) -> str:
-    """Render a OneBot-style `[id|name]` group label."""
+    """渲染 OneBot 风格 [id|name] 群标签。"""
     if not group_id:
         return "-"
     safe_name = group_name or fallback_group_name(group_id, locale=locale)

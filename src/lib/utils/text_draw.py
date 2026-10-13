@@ -1,17 +1,8 @@
-"""文字绘制加速。
+"""文字绘制加速：先画局部图再贴回原位。
 
-`pil_utils.BuildImage.draw_text` 在传入 4 元组区域时，内部会把**整张画布**
-转成 bytes 再建一个全尺寸 Skia surface（见 pil_utils/text2image.py 的
-`draw_on_image`）。耗时与画布面积成正比：
-
-    560x350   16 ms/次
-    2240x1400 225 ms/次
-
-报告图是 2240 宽、1000-2800 高的长图，且单张要画 30+ 次文字，
-累计可达 9 秒。
-
-这里改为「先画到目标区域大小的局部图，再贴回原位」，结果一致而
-无需每行文字转换全画布，实测约 13 倍加速。
+pil_utils 的 draw_text 传 4 元组区域时会把整张画布转 bytes 再建全尺寸 Skia
+surface（见 pil_utils/text2image.py `draw_on_image`）；报告图 2240 宽、
+单张 30+ 次文字，累计可达 9 秒，本包装实测约 13 倍加速。
 """
 
 from __future__ import annotations
@@ -25,11 +16,7 @@ def draw_text_in_region(
     text: str,
     **kwargs: object,
 ) -> None:
-    """在 box 指定的区域内绘制文字。
-
-    与 `card.draw_text(box, text, **kwargs)` 等价，但不做全画布往返。
-    box 为 (left, top, right, bottom)。
-    """
+    """在 box 区域内绘制文字；box 为 (left, top, right, bottom)。"""
     left, top, right, bottom = box
     width = right - left
     height = bottom - top

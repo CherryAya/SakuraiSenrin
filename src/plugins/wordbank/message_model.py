@@ -1,4 +1,4 @@
-"""Unified wordbank message shapes and fingerprints."""
+"""wordbank 消息形态与指纹统一模型。"""
 
 from __future__ import annotations
 

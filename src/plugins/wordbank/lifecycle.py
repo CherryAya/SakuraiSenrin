@@ -1,4 +1,4 @@
-"""wordbank 初始化生命周期（无 NoneBot driver / scheduler 副作用，可安全早期导入）。"""
+"""wordbank 初始化生命周期：保持零 NoneBot driver / scheduler 副作用，可早期导入。"""
 
 from __future__ import annotations
 

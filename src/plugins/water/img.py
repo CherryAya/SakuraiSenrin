@@ -34,8 +34,7 @@ from .renderers.rank import WaterRankRenderer, WaterRankRowData
 FALLBACK_FONT_PATH = MAPLE_FONT_PATH
 _water_podium_themes = water_podium_themes
 
-# _build_copyright_text 的调用方是测试（tests/plugins/wordbank/test_search_cards.py），
-# 显式列入 __all__ 声明该跨模块导出意图，避免被误判为私有死代码。
+# 跨模块导出：调用方在 wordbank 测试中（test_search_cards）
 __all__ = ["_build_copyright_text"]
 
 
@@ -74,8 +73,7 @@ async def build_water_rank_image(
             else tr(locale, "water.image.day_rank.member_fallback", tail=uid[-4:])
         )
 
-        # gather(return_exceptions=True) 下失败项为异常；渲染层要求 avatar_img
-        # 具备 circle()，故降级为占位头像而非空字节（后者会在渲染时崩溃）。
+        # 失败项降级为占位头像：渲染层要求 avatar_img 具备 circle()
         avatar_result = avatars[idx]
         avatar_img = (
             avatar_result

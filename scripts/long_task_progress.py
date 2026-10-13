@@ -1,4 +1,4 @@
-"""Emit the current LongTask migration progress as a machine-readable endpoint."""
+"""输出 LongTask 迁移进度端点（机器可读）。"""
 
 from __future__ import annotations
 

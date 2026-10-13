@@ -1,4 +1,4 @@
-"""Fixed-schema wordbank rules."""
+"""wordbank 固定 schema 规则。"""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ Scope = Literal[
 ]
 Role = Literal["any", "owner", "admin", "member"]
 
-# 规则 dict 中的原始值：普通 JSON 值，scope 位置额外允许集合字面量
+# 规则原始值：普通 JSON，scope 位置额外允许集合字面量
 type RuleValue = JsonValue | AbstractSet[str]
 
 VALID_SCOPES: set[str] = {
@@ -82,7 +82,7 @@ SCOPE_PRIORITY: dict[str, int] = {
 
 
 class RuleError(WordbankUserError):
-    """Raised when a wordbank rule cannot be canonicalized."""
+    """规则规范化失败时抛出。"""
 
 
 def _rule_error(fallback: str, key: MessageKey, **params: object) -> RuleError:
@@ -195,12 +195,9 @@ def _normalize_role(value: RuleValue) -> Role:
 
 
 def _rule_int(value: RuleValue) -> int:
-    """把规则里的整数值收窄成 int，用于需要显式报错的校验路径。
+    """把规则里的整数值收窄成 int，供显式报错的校验路径使用。
 
-    刻意不用 ``int(cast(...))``：``bool`` 是 ``int`` 的子类，JSON 里的 ``true``
-    会被静默当成 1 绕过「必须为正」之类的校验。这里与 ``src.lib.types.as_int``
-    同一口径：``bool`` 一律拒绝；整值浮点（``3.0``）与数字字符串（``"3"``）仍
-    按原有语义接受，避免收紧口径误伤既有数据形态。
+    bool 一律拒绝，整值浮点与数字字符串按原语义接受，与 as_int 同口径。
     """
     if isinstance(value, bool) or not isinstance(value, (str, int, float)):
         raise ValueError(f"rule value must be numeric, got {value!r}")
@@ -208,7 +205,7 @@ def _rule_int(value: RuleValue) -> int:
 
 
 def _rule_float(value: RuleValue) -> float:
-    """同上，浮点口径；``int``/``float`` 与数字字符串接受，``bool`` 拒绝。"""
+    """同上，浮点口径：int/float 与数字字符串接受，bool 拒绝。"""
     if isinstance(value, bool) or not isinstance(value, (str, int, float)):
         raise ValueError(f"rule value must be numeric, got {value!r}")
     return float(value)
@@ -396,9 +393,7 @@ def rule_allows(
 
     call_count = rule.get("call_count")
     if isinstance(call_count, dict):
-        # 读取路径没有 try/except 兜底，必须用回落的取整数：
-        # 规则值来自存储，{"window_seconds": null} 之类会让 int(None) 直接抛
-        # TypeError 冒泡到被动链路（那里只 catch Exception 后静默禁用触发词）。
+        # 走回落的 as_int：存储里的 null 会让 int(None) 抛错
         window_seconds = as_int(call_count.get("window_seconds"), 0)
         if window_seconds <= 0 or window_seconds > MAX_CALL_COUNT_WINDOW_SECONDS:
             return False
@@ -445,14 +440,10 @@ def parse_legacy_study_text(
     *,
     is_group: bool = True,
 ) -> tuple[str, str, dict[str, RuleValue]]:
-    """Convert legacy study text into a fixed-schema add request.
+    """把旧版 study 文本转为固定 schema 添加请求。
 
-    Supported forms:
-    - ``触发词 => 响应词``
-    - ``触发词 -> 响应词``
-    - ``触发词 回答 响应词``
-    - ``a t 触发词 响应词``
-    """
+    支持形式：触发词 => 响应词、触发词 -> 响应词、
+    触发词 回答 响应词、a t 触发词 响应词。"""
 
     source = text
     for sep in ("=>", "->", "回答", "回复"):

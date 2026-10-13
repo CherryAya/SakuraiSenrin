@@ -190,12 +190,10 @@ async def test_archive_script_main_logs_completed_targets(
 async def test_archive_failures_are_surfaced_with_nonzero_exit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """回归：归档失败必须以 ERROR 上报并非零退出，不得再打 completed。
+    """归档失败要 ERROR 上报并携带非零退出码。
 
-    旧行为：脚本丢弃 run_archiver_task 的返回值，失败分片也照打
-    「completed」成功日志——与主进程归档 job 的诚实上报契约不一致，运维会
-    据此误判归档已生效。
-    """
+    旧行为：脚本丢弃 run_archiver_task 的返回值，失败分片照打
+    「completed」。"""
     from src.lib.db.connectors import (
         SegmentArchiveFailure,
         SegmentArchiveOutcome,

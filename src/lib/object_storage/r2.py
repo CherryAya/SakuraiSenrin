@@ -1,4 +1,4 @@
-"""Cloudflare R2 object storage client."""
+"""Cloudflare R2 对象存储客户端。"""
 
 from __future__ import annotations
 
@@ -80,9 +80,7 @@ class _S3SyncSession(Protocol):
 class _SessionFactory(Protocol):
     """``aioboto3.Session`` / ``boto3.Session`` 的最小构造协议。
 
-    这两个 SDK 均未发布 ``py.typed``，直接 ``import`` 会触发
-    ``reportMissingTypeStubs``；经 ``importlib`` 取得模块后再按协议取属性，
-    既保留运行时的可选依赖语义，又避免为第三方库维护存根。
+    两个 SDK 走 importlib 取模块：绕开 reportMissingTypeStubs。
     """
 
     def __call__(self) -> object: ...
@@ -148,7 +146,7 @@ class R2ObjectStorageClient:
         return cast("_S3AsyncSession", session_factory())
 
     def _client_context(self) -> object:
-        """aioboto3 无稳定类型注解，返回值按鸭子类型在使用处收窄。"""
+        """aioboto3 缺类型注解，返回值按鸭子类型在使用处收窄。"""
         access_key_id, secret_access_key, _, endpoint = self._require_config()
         return self._session().client(
             "s3",

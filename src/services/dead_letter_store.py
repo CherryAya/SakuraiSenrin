@@ -1,14 +1,8 @@
 """死信落库与补偿重放。
 
-`BatchWriter` 在超过 `max_retries` 后会把批次放进内存死信队列。上一轮补了可观测
-（health / 脚本 / 告警），但仍有三个缺口：
-
-1. **重启即丢** —— 死信只在内存里，进程退出后无从回溯
-2. **无上界泄漏** —— 持续失败会让队列无限增长
-3. **无法补偿** —— 队列里的数据只能人工捞日志
-
-这里把死信落库到 ``core_db.sys_dead_letter``，并提供按 worker / 时间范围的重放
-入口。上界裁剪（`max_dead_letters`）保证内存不会无限增长，落库记录则是完整的。
+`BatchWriter` 超 `max_retries` 后把批次放入内存死信队列；本模块将死信落库到
+``core_db.sys_dead_letter``，并提供按 worker 的重放入口（scripts/dead_letter.py）。
+落库保留上限 ``DEFAULT_DEAD_LETTER_KEEP``，超出后裁剪最旧的已处理记录。
 """
 
 from __future__ import annotations
@@ -28,7 +22,7 @@ from src.lib.trace_log import log_trace_event
 from src.lib.utils.time_utils import get_current_time
 from src.logger import logger
 
-# 落库保留上限：超过后清理最旧的已落库记录，防止 core_db 无限增长
+# 落库保留上限：超出后裁剪最旧的已处理记录
 DEFAULT_DEAD_LETTER_KEEP = 2000
 
 
@@ -166,11 +160,7 @@ async def replay_dead_letters(
     limit: int = 100,
     handlers: dict[str, Callable[[list[object]], object]] | None = None,
 ) -> int:
-    """按 worker 重放未处理死信，成功后标记 resolved。
-
-    handlers 形如 ``{"_flush_water_logs": callable}``；未提供 handler 的记录会跳过
-    并保持未处理状态，便于后续补齐。
-    """
+    """按 worker 重放待处理死信，成功后标记 resolved。"""
     handlers = handlers or {}
     async with core_db.session(commit=False) as session:
         records = await DeadLetterOps(session).list_unresolved(

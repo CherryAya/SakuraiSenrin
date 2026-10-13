@@ -1,4 +1,4 @@
-"""Helpers for rewinding interactive matchers by recalled message id."""
+"""按撤回消息 id 回放交互 matcher 的辅助。"""
 
 from __future__ import annotations
 
@@ -104,9 +104,7 @@ def find_recall_session(
             continue
         if matcher_cls.module_name != matcher_source.module_name:
             continue
-        # _source / _default_state 是 nonebot 内部字段（直接访问触发
-        # reportPrivateUsage）；沿用仓库既有做法用 getattr 字符串取原始值再收窄，
-        # 不对类型做欺骗。
+        # _source / _default_state：nonebot 内部字段
         cls_source = cast("MatcherSource | None", getattr(matcher_cls, "_source", None))
         source = cast("MatcherSource | None", getattr(matcher_source, "_source", None))
         if cls_source != source:
@@ -161,8 +159,7 @@ def rebuild_temp_matcher(
     step_index: int,
     state: Mapping[str, object],
 ) -> type[Matcher]:
-    # _source / _default_*_updater 是 nonebot 内部字段（直接访问触发
-    # reportPrivateUsage）；getattr 取原始值后按 Matcher.new 的形参类型收窄。
+    # _source / _default_*_updater：nonebot 内部字段
     source = cast("MatcherSource | None", getattr(matcher_source, "_source", None))
     type_updater = cast(
         "T_TypeUpdater | Dependent[str] | None",

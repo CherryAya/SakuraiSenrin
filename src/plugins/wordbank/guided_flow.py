@@ -1,4 +1,4 @@
-"""Guided add/search flow helpers for wordbank plugin."""
+"""wordbank 引导式添加 / 搜索流程。"""
 
 from __future__ import annotations
 
@@ -81,11 +81,6 @@ from src.plugins.wordbank.text_parsing import (
 
 if TYPE_CHECKING:
     from src.plugins.wordbank.database.types import WordbankSearchPage
-
-# 与 src/plugins/study/__init__.py 的 record_study_* 系列刻意保持各自实现：
-# study 独有「触发词预载」概念与五步权重流程，wordbank 独有 scope/advanced 步骤与
-# 转发来源消息追踪，强行统一会让调用方参数膨胀而更难读。
-# 两边共享的 state 内核已收敛到 src/lib/guided_state.py。
 
 GUIDED_MAX_ERRORS = 3
 WORDBANK_GUIDED_STEP_TRIGGER = 1
@@ -892,7 +887,7 @@ async def finish_guided_search(
     page_number: int,
     clamp_page: bool = False,
 ) -> None:
-    # 局部导入：views 依赖 guided_flow，模块级导入会成环。
+    # 局部导入：views 依赖本模块，模块级导入成环
     from src.plugins.wordbank import views as views_module
 
     record_search_result_view_message = views_module.record_search_result_view_message
@@ -978,7 +973,7 @@ async def handle_search_session_event(
     state: T_State,
     locale: LocaleCode,
 ) -> None:
-    # 局部导入：views/errors 依赖 guided_flow，模块级导入会成环。
+    # 局部导入：views/errors 依赖本模块，模块级导入成环
     from src.plugins.wordbank import views as views_module
     from src.plugins.wordbank.errors import build_wordbank_error_message
 

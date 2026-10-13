@@ -1,4 +1,4 @@
-"""Run one water cron job in a standalone subprocess."""
+"""在独立子进程里跑一个 water 定时任务。"""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Wordbank passive message handling."""
+"""wordbank 被动消息处理。"""
 
 from __future__ import annotations
 
@@ -517,12 +517,7 @@ async def handle_passive_notice(
     return None
 
 
-# ---------------------------------------------------------------------------
-# 被动响应编译与投递
-#
-# 把 `PassiveResponse` 编译为可投递的消息规划，并统一 passive / notice 两条
-# 入口的投递循环。原本这两份循环内联在 entry_runtime 的闭包里，逻辑重复。
-# ---------------------------------------------------------------------------
+# 被动响应编译与投递：passive / notice 共用循环
 
 
 @dataclass(slots=True, frozen=True)
@@ -733,11 +728,7 @@ async def compile_passive_response(
     locale: LocaleCode,
     media_service: WordbankMediaService,
 ) -> CompiledPassiveResponse:
-    """把被动响应编译为消息规划。
-
-    `media_service` 必须显式传入：调用方持有 service 单例，避免在渲染层隐式
-    依赖全局注册表，也便于测试替换。
-    """
+    """把被动响应编译为消息规划；media_service 由调用方显式传入便于测试替换。"""
     start = perf_start()
     shape = response.response_shape
     if shape is None or shape.is_empty():
@@ -890,7 +881,7 @@ async def build_passive_message(
     locale: LocaleCode,
     media_service: WordbankMediaService,
 ) -> tuple[MessagePlanInput, dict[str, object]]:
-    """兼容旧接口：返回 `(消息规划, 图片埋点)`。"""
+    """兼容旧接口：返回 (消息规划, 图片埋点)。"""
     compiled = await compile_passive_response(
         response,
         locale=locale,
@@ -909,7 +900,7 @@ async def execute_passive_post_actions(
 ) -> None:
     if not actions:
         return
-    # 暂时关闭主动戳一戳执行，保留被动事件匹配与正常消息投递不变。
+    # 主动戳一戳保持关闭，被动匹配与投递照常
     logger.info(
         "[Wordbank] passive poke disabled | "
         f"response_item_id={response.response_item_id} action_count={len(actions)}"

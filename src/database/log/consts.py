@@ -80,9 +80,7 @@ class AuditContext(BaseAuditEnum):
 
 
 class AuditCategory(BaseAuditEnum):
-    """
-    审计日志分类 - 资源维度
-    """
+    """审计日志分类：资源维度。"""
 
     ACCESS = "ACCESS"
     PERMISSION = "PERMISSION"
@@ -102,38 +100,36 @@ class AuditCategory(BaseAuditEnum):
 
 
 class AuditAction(BaseAuditEnum):
-    """
-    审计日志动作 - 操作维度
-    """
+    """审计日志动作：操作维度。"""
 
-    # === 基础 CRUD ===
+    # 基础 CRUD
     CREATE = "CREATE"
     UPDATE = "UPDATE"
     DELETE = "DELETE"
 
-    # === 交互/状态 ===
+    # 交互/状态
     LOGIN = "LOGIN"
     LOGOUT = "LOGOUT"
     CONNECT = "CONNECT"
 
-    # === 群组管理 ===
+    # 群组管理
     KICK = "KICK"
     BAN = "BAN"
     UNBAN = "UNBAN"
     MUTE = "MUTE"
     UNMUTE = "UNMUTE"
 
-    # === 审批流程 ===
+    # 审批流程
     APPROVE = "APPROVE"
     REJECT = "REJECT"
 
-    # === 功能控制 ===
+    # 功能控制
     ENABLE = "ENABLE"
     DISABLE = "DISABLE"
     TRIGGER = "TRIGGER"
     RELOAD = "RELOAD"
 
-    # === 权限控制 ===
+    # 权限控制
     CHANGE = "CHANGE"
     GRANT = "GRANT"
     REVOKE = "REVOKE"

@@ -1,4 +1,4 @@
-"""Check SakuraiSenrin backup health and remote snapshot visibility."""
+"""备份健康检查与远端快照可见性。"""
 
 from __future__ import annotations
 

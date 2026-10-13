@@ -1,4 +1,4 @@
-"""GitHub Contents API object storage client."""
+"""GitHub Contents API 对象存储客户端。"""
 
 from __future__ import annotations
 
@@ -174,8 +174,7 @@ class GitHubObjectStorageClient:
             raise ObjectStorageError(
                 f"GitHub contents list failed: {response.status_code}"
             )
-        # response.json() 的静态返回是 Any；显式声明为 JsonValue 后，下面的
-        # isinstance(payload, list) 会把元素收窄成 JsonValue，供 as_object 使用。
+        # response.json() 静态返回为 Any，显式声明后收窄
         payload: JsonValue = response.json()
         if not isinstance(payload, list):
             raise ObjectStorageError("GitHub contents list response is not an array")

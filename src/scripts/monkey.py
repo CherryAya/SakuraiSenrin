@@ -1,20 +1,9 @@
-"""
-Author: SakuraiCora<1479559098@qq.com>
+"""Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-25 01:58:04
 LastEditors: SakuraiCora<1479559098@qq.com>
 LastEditTime: 2026-02-25 15:57:07
-Description: Gemini 写的 🐒 猴子补丁
-
-# deadcode-keep: manual-entry | 需要彩色 emoji 时由启动流程手工调用；当前未接线
-
-⚠️ 现状说明（deadcode 审计发现，待决策）：
-- ``patch_pil()`` 全仓零调用，``git log -S patch_pil`` 显示**从未接线**；
-- ``pilmoji`` 是 pyproject 声明依赖，但除本文件外全仓无人使用。
-
-即：本模块与 ``pilmoji`` 依赖目前都是「有实现、无使用」。两条路——
-1. 确定不用彩色 emoji → 删除本文件并移除 ``pilmoji`` 依赖（依赖瘦身）；
-2. 确实要用 → 在 ``bot.py`` 启动流程里调用 ``patch_pil()`` 接上线。
-决策前先标记保留，避免门禁红灯掩盖真实意图。
+Description: 🐒 猴子补丁
+# deadcode-keep: manual-entry | 全仓零调用，需彩色 emoji 时人工接线
 """
 
 
@@ -27,10 +16,7 @@ from pilmoji import Pilmoji
 
 
 def patch_pil() -> None:
-    """
-    全局劫持 PIL 的 ImageDraw 方法，为其注入彩色 Emoji 支持。
-    自带防重复补丁与防无限递归机制。
-    """
+    """劫持 PIL ImageDraw 方法，注入彩色 Emoji 支持。"""
     if getattr(ImageDraw.ImageDraw, "_is_emoji_patched", False):
         return
 

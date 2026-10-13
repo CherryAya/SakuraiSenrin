@@ -39,27 +39,22 @@ from .schema import PatchBase, PatchRegistry
 
 MAX_MAP_REDUCE_MONTH_SPAN = 24
 
-# 分片键的业务时区。分片路由（execute_batch_write 与各 plugin writer）一律按
-# Asia/Shanghai 切分，因此「当前活跃分片」的判定必须使用同一时区；否则每月 1 号
-# 00:00-08:00 CST 期间，当月刚建立的分片会被误判为冷分片并被归档任务删除。
+# 分片键业务时区：路由与活跃判定同源
 DEFAULT_SEGMENT_TZ = "Asia/Shanghai"
 
-# manifest 落盘去抖间隔（秒）。manifest 只是加速判断的旁路状态，真正的数据来源
-# 是分片文件本身，因此允许延迟落盘。
+# manifest 去抖落盘间隔（秒），允许延迟
 MANIFEST_FLUSH_INTERVAL = 5.0
 
-# 单个活跃分片的体积上限（MB）。对齐 ES ILM 的 max_primary_shard_size：按时间
-# 切分之外再加一道体积闸门，避免某个月数据暴涨把单文件撑到不可控。
+# 单分片体积上限（MB），对齐 ES ILM
 DEFAULT_MAX_SEGMENT_SIZE_MB = 512
 
-# 超过该阈值的分片在下次巡检时会被强制 seal（转为 COLD）。
+# 超阈值分片在巡检时强制 seal 转 COLD
 SEGMENT_SIZE_ROLLOVER_MB = 256
 
-# 两阶段归档的中间态后缀。归档先把分片 rename 成该后缀，压缩成功后再删除。
+# 两阶段归档的中间态后缀
 ARCHIVE_STAGING_SUFFIX = ".archiving"
 
-# 业务时间入参的可选形态：Unix 时间戳 / datetime / arrow.Arrow / 分片键字符串
-# （store.fmt 形态，如 "2026_09"）/ record_date 字符串（"20260901"）。
+# 业务时间入参：时间戳 / datetime / Arrow / 字符串
 type MomentLike = datetime | arrow.Arrow | str | int
 
 
@@ -80,7 +75,7 @@ class ArchiveCodec(StrEnum):
 
 
 class SegmentArchiveOutcome(StrEnum):
-    """单个分片归档的结果。区分「跳过的正常状态」与「真正的失败」。"""
+    """单个分片归档结果：区分跳过与失败。"""
 
     ARCHIVED = "archived"
     SKIPPED = "skipped"
@@ -90,12 +85,7 @@ class SegmentArchiveOutcome(StrEnum):
 
 @dataclass(slots=True, frozen=True)
 class SegmentArchiveFailure:
-    """归档失败/冲突的显式记录，供 job 层如实上报。
-
-    此前 run_archiver_task 返回 None、_archive_shard 用 bool 混淆 skip/fail，
-    失败被宽 except 吞掉后 job 仍上报 success。这里把「哪个分片、什么原因」
-    固定成可传递的数据，让上层无法再谎报成功。
-    """
+    """归档失败/冲突记录：分片与原因如实传给 job 层。"""
 
     shard_key: str
     outcome: SegmentArchiveOutcome
@@ -125,21 +115,11 @@ class SegmentArchiveReport:
 
 
 class ArchiveStagingConflictError(RuntimeError):
-    """在线分片与归档残留（.archiving）冲突：拒绝覆盖，交由运维裁决。
-
-    绝不能把新分片 rename 到已存在的 staging 上——那会静默销毁残留里尚未
-    压缩的数据。宁可拒绝归档并把冲突显式暴露。
-    """
+    """在线分片与归档残留并存：拒绝覆盖，交运维裁决。"""
 
 
 class ArchiveIntegrityError(RuntimeError):
-    """归档文件损坏（截断 / 校验和不匹配）：拒绝把它当作可用库存。
-
-    copy_stream 对截断的 zstd 帧**静默返回已有字节、不报错**（实测），因此
-    损坏归档会被解压成半截数据库：查询返回空、写入"成功"，线上无声无息地
-    把整月数据当空月处理。解压路径改用 decompressobj 并强制校验 eof 与
-    校验和，损坏时抛本异常并把坏归档 rename 隔离（保留证据，不静默丢弃）。
-    """
+    """归档损坏（截断 / 校验和失配）：隔离留证，拒绝当库存。"""
 
 
 @dataclass(slots=True)
@@ -199,11 +179,7 @@ class SegmentManifest:
 
 @dataclass(slots=True)
 class SegmentConfig:
-    """分片生命周期策略（对应 ES 的 ILM policy）。
-
-    原先是 dead code：字段与 SegmentStore 上的同名参数重复且无人引用。这里保留
-    为「策略的单一描述」，供 ILM 校验与文档使用，避免再出现两套阈值来源。
-    """
+    """分片生命周期策略，对应 ES 的 ILM policy。"""
 
     granularity: str = "month"
     hot_window: int = 2
@@ -235,7 +211,7 @@ class BaseDB(ABC):
 
     @property
     def db_path(self) -> Path:
-        """单文件库的物理路径（分片库没有单一路径，调用需自行判断）。"""
+        """单文件库物理路径；分片库此处报错。"""
         filename = getattr(self, "filename", None)
         if filename is None:
             raise TypeError(
@@ -265,7 +241,7 @@ class BaseDB(ABC):
         time_ctx: datetime | None = None,
         cold_policy: ColdPolicy | None = None,
     ) -> AbstractAsyncContextManager[AsyncSession]:
-        # 如实转发具名参数：子类分片库据此路由到指定分片；单文件库忽略多余参数。
+        # 具名参数如实转发：分片库据此路由，单文件库忽略
         if commit:
             return self.write_session(time_ctx=time_ctx)
         return self.read_session(time_ctx=time_ctx, cold_policy=cold_policy)
@@ -274,12 +250,7 @@ class BaseDB(ABC):
         await self.init_schema(base)
 
     def reset_runtime_state(self) -> None:
-        """清空进程内派生状态；备份恢复后由公共层统一调用。
-
-        默认空实现（单文件库没有分片内存态）；分片库覆盖它以清除 schema 初始化
-        标记与 manifest 缓存——恢复是**就地覆盖**文件（copy2 保留 inode），
-        文件身份标记会误命中缓存，导致补丁不重放、manifest 停留在恢复前的状态。
-        """
+        """清空进程内派生状态；备份恢复后由公共层统一调用。"""
 
     def iter_backup_sources(self) -> list[BackupSource]:
         return []
@@ -338,13 +309,7 @@ def _safe_size(path: Path | None) -> int:
 
 
 class _ReentrantShardLock:
-    """按 task 可重入的分片锁。
-
-    write_session 会在整个会话期间持锁（否则归档任务会在写事务飞行途中
-    dispose 引擎并 rename 文件，导致写事务重连到一个新建的空库）。而该持锁
-    路径内部又会调用 _ensure_shard_online / _initialize_shard_schema，这两者
-    也需要同一把锁，因此这里做按 task 的可重入处理，避免自死锁。
-    """
+    """按 task 可重入的分片锁。"""
 
     __slots__ = ("_depth", "_lock", "_owner")
 
@@ -370,12 +335,7 @@ class _ReentrantShardLock:
             self._lock.release()
 
     def is_busy(self) -> bool:
-        """当前是否被任一 task 持有。
-
-        供「跨分片、尽力而为」的操作（WARM 逐出）做跳过判断：绝不在持有本
-        分片锁时阻塞等待另一把分片锁，否则两个任务各自持有 A/B 锁、又互相
-        等对方的锁时会死锁。跳过只是推迟淘汰，不影响正确性。
-        """
+        """锁被任一 task 持有时为真，供 WARM 逐出做跳过判断。"""
         return self._depth > 0
 
 
@@ -417,12 +377,7 @@ class SegmentStore(BaseDB):
         return self.base_dir / f"{self.prefix}_manifest.json"
 
     def reset_runtime_state(self) -> None:
-        """清空分片内存态；备份恢复后由公共层统一调用。
-
-        恢复是就地覆盖文件（copy2 保留 inode），而 `_initialized_shards` 按
-        (st_dev, st_ino) 判断「schema 已建」——身份不变即误命中缓存，补丁不会
-        在恢复后的内容上重放；manifest 缓存同理停留在恢复前。必须整体复位。
-        """
+        """清空分片内存态；备份恢复后由公共层统一调用。"""
         self._initialized_shards.clear()
         self._manifest = None
         self._manifest_dirty = False
@@ -439,16 +394,7 @@ class SegmentStore(BaseDB):
         return arrow.get(get_current_time()).to(self.tz)
 
     def _to_local(self, moment: datetime | arrow.Arrow) -> arrow.Arrow:
-        """把任意 datetime 归一化到本 store 的业务时区。
-
-        调用方可能传 naive datetime（本业务时区的墙钟时间）、aware datetime
-        或 arrow.Arrow（绝对时刻），或三者混用；这里统一成「同一个绝对时刻在
-        store 时区的表示」，保证分片枚举与写入路由口径一致。
-
-        注意 ``arrow.get(naive)`` 会按 UTC 解释 naive 输入、``.tzinfo`` 恒非 None，
-        因此可空判定必须落在原始 ``datetime`` 上（tzinfo 为 None 即墙钟时间），
-        arrow 输入本身总带时区、无需判定。
-        """
+        """归一化到本 store 业务时区：naive 视为该时区墙钟。"""
         if isinstance(moment, arrow.Arrow):
             return moment.to(self.tz)
         if moment.tzinfo is None:
@@ -464,7 +410,7 @@ class SegmentStore(BaseDB):
         return self._locks[shard_key]
 
     def _shard_lock(self, shard_key: str) -> _ReentrantShardLock:
-        """分片级互斥锁。归档、冷库唤醒、schema 初始化共用同一把锁。"""
+        """分片级互斥锁：归档、唤醒、schema 初始化共用。"""
         return self._get_lock(self._lock_key(shard_key))
 
     @staticmethod
@@ -502,11 +448,7 @@ class SegmentStore(BaseDB):
         return shard_key in active_keys
 
     def shard_file_for(self, moment: MomentLike) -> Path:
-        """解析业务时间对应的物理分片文件路径。
-
-        跨库原子事务需要在运行期决定 ATTACH 目标（log/snapshot 按月分片），
-        因此这条路径必须从绝对时间出发，不能让调用方自己拼分片名。
-        """
+        """解析业务时间对应的物理分片文件路径。"""
         local = self._to_local(
             moment if isinstance(moment, arrow.Arrow) else arrow.get(moment)
         )
@@ -520,17 +462,7 @@ class SegmentStore(BaseDB):
         self,
         moment: MomentLike,
     ) -> AsyncGenerator[Path, None]:
-        """在持分片锁的前提下确保分片在线，并让锁覆盖整个 ATTACH 会话。
-
-        ATTACH 直接打开文件路径：分片被 seal（只剩 .zst）时 SQLite 会**凭空
-        建出空库**并在其中完成本次事务——审计/快照从此写进影子库，与归档里
-        的旧行分裂；换月归档时影子空壳还会覆盖该月 .zst（整月数据永久丢失）。
-        因此原子路径必须先经分片层把目标唤醒/建库，再把它交给 ATTACH。
-
-        会话期间继续持锁（与 read/write_session 同款保证）：否则归档任务可
-        把文件 rename 走，ATTACH 的连接会指向已消失的 inode（Windows）或与
-        重启路径竞态。
-        """
+        """持分片锁确保分片在线，锁覆盖整个 ATTACH 会话。"""
         local = self._to_local(
             moment if isinstance(moment, arrow.Arrow) else arrow.get(moment)
         )
@@ -578,14 +510,7 @@ class SegmentStore(BaseDB):
         return self._manifest
 
     async def flush_manifest(self) -> None:
-        """强制把 manifest 落盘。
-
-        落盘失败（磁盘满、临时目录不可写等）**不向上抛**：manifest 是旁路
-        加速状态，真实数据在分片文件本身；此前它会沿 write_session ->
-        create_shard_placeholder 把单次落盘失败放大成「整批写入失败」，
-        而失败原因与业务数据无关。失败时记日志/trace 并保持 dirty，等下次
-        定时落盘重试。
-        """
+        """强制把 manifest 落盘；失败只记日志并保持 dirty 待重试。"""
         task = self._manifest_flush_task
         if task is not None and not task.done():
             if self._manifest_loop is asyncio.get_running_loop():
@@ -614,10 +539,7 @@ class SegmentStore(BaseDB):
         manifest = self._load_manifest()
         target = self.manifest_path
         payload = manifest.to_json()
-        # 临时名必须唯一：主进程与子进程（cron worker）可能同时落盘，固定的
-        # ".json.tmp" 会让两边互踩——A 写完 B 截断，A 的 os.replace 再把 B 的
-        # 半截内容搬到正式路径，manifest 从此损坏（读回抛异常）。用 uuid 而非
-        # pid+tid：线程池可能复用同一线程，同类写者仍会撞名。
+        # 临时名取 uuid：主进程与 cron worker 并发落盘时避免互踩
         tmp_path = target.with_suffix(f".json.{uuid.uuid4().hex}.tmp")
         try:
             tmp_path.write_text(payload, encoding="utf-8")
@@ -626,12 +548,7 @@ class SegmentStore(BaseDB):
             tmp_path.unlink(missing_ok=True)
 
     def _save_manifest(self) -> None:
-        """标记 manifest 脏，并安排一次去抖落盘。
-
-        manifest 只是分片状态的旁路缓存，真实数据在分片文件本身，因此允许延迟
-        落盘；这里只保证「进程不会被截断的 JSON 打死」——真正落盘走 tmp +
-        os.replace 原子替换。
-        """
+        """标记 manifest 脏并安排一次去抖落盘。"""
         self._manifest_dirty = True
         self._schedule_manifest_flush()
 
@@ -643,8 +560,7 @@ class SegmentStore(BaseDB):
             loop = asyncio.get_running_loop()
         except RuntimeError:
             return
-        # 后台任务不能跨事件循环存活（测试里每个用例各有一个 loop）。若残留任务
-        # 属于别的 loop，直接丢弃并同步落盘，避免 "attached to a different loop"。
+        # 残留任务属于别的 loop 时直接丢弃并同步落盘
         if task is not None and self._manifest_loop is not loop:
             self._manifest_flush_task = None
             self._write_manifest_atomic()
@@ -691,9 +607,7 @@ class SegmentStore(BaseDB):
                 summary=f"Initializing shard schema for {shard_key}.",
                 shard_key=shard_key,
             )
-            # 分片文件已被删除/重建（identity 变化或为 None）时，旧引擎的连接池里
-            # 仍握着那个已失效的 inode；必须先释放，否则后续写入会静默落到被删除
-            # 的文件上，数据看似写成功实则全部丢失。
+            # 分片文件身份变化时先释放旧引擎：连接池可能仍握着失效 inode
             await db_manager.dispose(str(db_path))
             async with db_manager.open(str(db_path), commit=True) as session:
                 engine = session.bind
@@ -719,21 +633,14 @@ class SegmentStore(BaseDB):
 
     def _compress_file(self, source: Path, destination: Path) -> None:
         destination.parent.mkdir(parents=True, exist_ok=True)
-        # `with sqlite3.connect(...)` 退出时只提交事务、不关闭连接，连接会一直
-        # 持有到被 GC 回收。Windows 下该句柄会钉住 .db 与 -wal/-shm，使调用方
-        # 随后的 rename/unlink 抛 WinError 32。这里显式关闭，保证归档前释放。
+        # Windows：连接句柄会钉住 .db 与 sidecar，先显式关闭再 rename
         conn = sqlite3.connect(source)
         try:
             conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         finally:
             conn.close()
-        # 先写 tmp 再原子改名：压缩中途被杀只会留下 .zst.tmp，不会产出
-        # 「看起来像归档、实际被截断」的 .zst（后者被 hydrate 后是损坏库，
-        # 会让该分片写入永久卡死）。
-        #
-        # 开启帧校验和（write_checksum）：解压时据此识别位翻转/静默损坏。
-        # 压缩侧不做成本敏感取舍——校验和仅 4 字节/帧，而缺了它，损坏归档
-        # 会被当成正常库存进去（见 _decompress_file 的检测逻辑）。
+        # 先写 tmp 再原子改名，压缩中断只留下 .zst.tmp
+        # write_checksum：供解压侧识别截断与位翻转
         tmp_path = destination.with_suffix(f"{destination.suffix}.tmp")
         cctx = zstd.ZstdCompressor(level=10, write_checksum=True)
         try:
@@ -745,8 +652,7 @@ class SegmentStore(BaseDB):
             raise
 
     def _cleanup_sqlite_sidecars(self, db_path: Path) -> None:
-        # -journal 是回滚日志模式下的残留，同样需要清理，否则 rename 后会在
-        # 新路径旁留下孤儿文件。
+        # -journal 是回滚日志模式下的残留，一并清理
         for suffix in ("-wal", "-shm", "-journal"):
             sidecar = Path(f"{db_path}{suffix}")
             if sidecar.exists():
@@ -754,11 +660,7 @@ class SegmentStore(BaseDB):
 
     def _decompress_file(self, source: Path, destination: Path) -> None:
         destination.parent.mkdir(parents=True, exist_ok=True)
-        # 同 _compress_file：tmp + 原子改名，解压中途失败不留下半截损坏的 .db。
-        #
-        # 用 decompressobj 而非 copy_stream：后者对截断的 zstd 帧静默返回
-        # 已解出的字节、不抛错（实测），半截库会冒充正常库；前者能通过
-        # eof 标志与校验和识别截断与位翻转。
+        # tmp + 原子改名；用 decompressobj 识别截断与校验和失配
         tmp_path = destination.with_suffix(f"{destination.suffix}.tmp")
         dctx = zstd.ZstdDecompressor()
         decompressor = dctx.decompressobj()
@@ -823,7 +725,7 @@ class SegmentStore(BaseDB):
             shard_key = self._shard_key_for_path(Path(entry.path))
             if shard_key is None:
                 continue
-            # 逐出 = 删除在线文件：只有归档存在时才允许，否则会删掉唯一副本。
+            # 逐出即删在线文件：仅归档在场时可做
             archive_path = Path(entry.archive_path) if entry.archive_path else None
             if archive_path is None or not await asyncio.to_thread(archive_path.exists):
                 logger.warning(
@@ -831,10 +733,7 @@ class SegmentStore(BaseDB):
                     f"跳过逐出以免删除唯一副本"
                 )
                 continue
-            # 绝不在持有其它分片锁时等待本锁：map_reduce 持 A 锁时经
-            # _ensure_shard_online 调到这里，若同时有写路径持 B 锁、并同样
-            # 在逐出 A，就构成 AB-BA 死锁。逐出是尽力而为的优化，跳过只会
-            # 让它晚一点发生，不影响正确性。
+            # 锁忙时跳过：跨分片等待会形成 AB-BA 死锁
             lock = self._shard_lock(shard_key)
             if lock.is_busy():
                 logger.debug(
@@ -843,9 +742,7 @@ class SegmentStore(BaseDB):
                 )
                 continue
             async with lock:
-                # 状态复检：上面的 WARM 列表是快照，本循环每个 await 都会让出
-                # 事件循环；期间若有写入把该分片提升回 HOT（在线库含新数据、
-                # 归档还是旧的），仍按快照逐出就会删除唯一持有新写入的副本。
+                # 状态复检：期间写路径可能把该分片提升回 HOT
                 if entry.state != SegmentState.WARM:
                     continue
                 db_path = Path(entry.path)
@@ -853,8 +750,7 @@ class SegmentStore(BaseDB):
                     try:
                         staging = await self._retire_shard_file(shard_key, db_path)
                     except ArchiveStagingConflictError as exc:
-                        # 该分片存在归档残留：保留两者，跳过本次逐出。
-                        # 逐出发生在调用方的读/写路径上，绝不能因此让调用方失败。
+                        # 归档残留阻塞逐出：保留两者并跳过本次
                         logger.error(
                             f"[{self.namespace}/{self.prefix}] 逐出分片 {shard_key} "
                             f"被归档残留阻塞，已保留待人工裁决: {exc}"
@@ -880,7 +776,7 @@ class SegmentStore(BaseDB):
         await self.flush_manifest()
 
     async def _mark_archived(self, shard_key: str) -> None:
-        """记录归档完成时间，供 retention 判定使用。"""
+        """记录归档完成时间，供 retention 判定。"""
         entry = self._load_manifest().segments.get(shard_key)
         if entry is None:
             return
@@ -888,10 +784,7 @@ class SegmentStore(BaseDB):
         entry.updated_at = entry.archived_at
 
     def shard_health(self) -> list[dict[str, JsonValue]]:
-        """分片健康快照，对应 ES 的 _cat/indices + _cluster/health。
-
-        只读，不触碰磁盘以外的状态；供运维脚本与启动自检使用。
-        """
+        """分片健康快照，对应 ES 的 _cat/indices；只读。"""
         manifest = self._load_manifest()
         rows: list[dict[str, JsonValue]] = []
         for shard_key, entry in sorted(manifest.segments.items()):
@@ -925,14 +818,7 @@ class SegmentStore(BaseDB):
     async def _retire_shard_file(self, shard_key: str, db_path: Path) -> Path:
         """把分片文件原子挪走并释放引擎，返回 staging 路径。
 
-        用 rename 而不是 unlink：rename 之后原路径立即消失，后续写入方看到的是
-        「分片不存在」，会走新建/唤醒路径，绝不会写进正在被压缩的文件；而已经在
-        飞行中的写事务仍然写在这个 inode 上，其数据会随 staging 一起进入归档，
-        不会丢。
-
-        安全约束：staging 已存在时拒绝覆盖并抛 ArchiveStagingConflictError。
-        上次归档在 rename 之后被中断会留下残留 staging，里面装着尚未压缩的真实
-        数据；直接覆盖等于静默销毁它（此前正是这么丢数据的）。
+        staging 已存在时拒绝覆盖并抛冲突异常。
         """
         staging_path = self._get_staging_path(shard_key)
         if await asyncio.to_thread(staging_path.exists):
@@ -940,8 +826,7 @@ class SegmentStore(BaseDB):
                 f"staging residue exists for shard {shard_key}: {staging_path.name}"
             )
         await db_manager.dispose(str(db_path))
-        # 先把 WAL 中的已提交帧回放进主库、再删 sidecar：否则崩溃残留的 -wal
-        # 会在归档前被直接删除，其中的提交随之丢失。
+        # 先回放 WAL 已提交帧、再删 sidecar，固定此顺序
         await asyncio.to_thread(self._checkpoint_wal, db_path)
         await asyncio.to_thread(self._cleanup_sqlite_sidecars, db_path)
         await asyncio.to_thread(os.replace, db_path, staging_path)
@@ -949,7 +834,7 @@ class SegmentStore(BaseDB):
 
     @staticmethod
     def _checkpoint_wal(db_path: Path) -> None:
-        """把 WAL 中的已提交帧合并进主库；-wal 不存在时是空操作。"""
+        """把 WAL 已提交帧合并进主库；-wal 在场时才执行。"""
         if not Path(f"{db_path}-wal").exists():
             return
         conn = sqlite3.connect(db_path)
@@ -959,21 +844,14 @@ class SegmentStore(BaseDB):
             conn.close()
 
     async def _restore_staged_shard(self, shard_key: str) -> bool:
-        """在线分片缺失而 .archiving 残留存在时把残留归位，返回是否恢复。
-
-        上次归档在 rename 之后、压缩完成之前被中断会留下这种残留。staging 是
-        一个完整的 .db 文件（含归档时点的全部数据），比 .zst 归档严格更新；
-        若放任不管，写路径会把它当作「分片不存在」而重建空库，整段数据被孤儿化，
-        后续归档还会用空库覆盖销毁它。访问与巡检路径先在此归位，保住数据。
-        """
+        """在线分片缺失而 .archiving 残留在场时把残留归位，返回 True 表示已归位。"""
         staging_path = self._get_staging_path(shard_key)
         if not await asyncio.to_thread(staging_path.exists):
             return False
         db_path, _ = self._get_file_paths(shard_key)
         if await asyncio.to_thread(db_path.exists):
             return False
-        # 与 hydrate 同锁：map_reduce 等路径调用 _ensure_shard_online 时不持锁，
-        # 归位与解压/新建并发会写出损坏库。
+        # 与 hydrate 同锁：归位与解压/新建并发会写出损坏库
         async with self._shard_lock(shard_key):
             if await asyncio.to_thread(db_path.exists):
                 return False
@@ -983,7 +861,7 @@ class SegmentStore(BaseDB):
             try:
                 await asyncio.to_thread(os.replace, staging_path, db_path)
             except FileNotFoundError:
-                # 并发路径（访问与巡检各一次归位尝试）已完成恢复
+                # 并发路径已完成归位
                 return False
         log_trace_event(
             event_name="recover_staged_shard",
@@ -1000,11 +878,9 @@ class SegmentStore(BaseDB):
         shard_key: str,
         error: BaseException,
     ) -> Path:
-        """把损坏的归档改名隔离，返回隔离路径。
+        """把损坏归档改名隔离，返回隔离路径。
 
-        绝不删除：损坏文件是事后取证与人工恢复的唯一线索；改名后 hydrate
-        路径不再命中它，该分片会明确表现为「离线 / 损坏」，而不是被当成
-        空月静默服务。
+        改名后 hydrate 路径随之避开它，该分片显式表现为离线/损坏。
         """
         archive_path = self._get_file_paths(shard_key)[1]
         quarantine = archive_path.with_suffix(
@@ -1034,8 +910,7 @@ class SegmentStore(BaseDB):
         policy = cold_policy or self.cold_policy
         db_path, archive_path = self._get_file_paths(shard_key)
         entry = self._manifest_entry(shard_key, db_path, archive_path)
-        # 先处理归档残留：db 缺失而 .archiving 在时归位，避免下面把它当成分片
-        # 不存在而重建空库（那会让整段数据不可见，见 _restore_staged_shard）。
+        # 归档残留在场时先归位，避免下方重建空库
         if not await asyncio.to_thread(db_path.exists):
             restored = await self._restore_staged_shard(shard_key)
             if restored:
@@ -1089,8 +964,7 @@ class SegmentStore(BaseDB):
             try:
                 await asyncio.to_thread(self._decompress_file, safe_archive, safe_db)
             except ArchiveIntegrityError as exc:
-                # 损坏归档：隔离留证（绝不静默丢弃，也绝不冒充正常库），
-                # 并把该分片显式报错。下次巡检会把 quarantine 暴露在日志/trace。
+                # 损坏归档：隔离留证并把该分片显式报错
                 quarantine = await self._quarantine_archive(shard_key, exc)
                 log_trace_event(
                     event_name="hydrate_shard",
@@ -1108,7 +982,7 @@ class SegmentStore(BaseDB):
                 )
                 raise
             await self._touch_segment(shard_key, state=SegmentState.WARM)
-        # 放在分片锁之外：_ensure_budget 会逐个淘汰其它分片，嵌套加锁会带来死锁风险。
+        # 放分片锁之外执行，避免嵌套加锁
         await self._ensure_budget()
         logger.success(f"冷库解压完成: {safe_db.name}")
         log_trace_event(
@@ -1158,8 +1032,7 @@ class SegmentStore(BaseDB):
         if time_ctx is None:
             time_ctx = self._tz_now().datetime
         shard_key = self._get_shard_key(time_ctx)
-        # 全程持分片锁：归档任务必须等在途写事务结束后才能 rename/删除分片，
-        # 否则 db_manager.dispose 会把在途 session 重新接到一个新建的空库上。
+        # 全程持分片锁：归档须等在途写事务结束后才能动文件
         async with self._shard_lock(shard_key):
             await self._ensure_shard_online(
                 shard_key,
@@ -1181,8 +1054,7 @@ class SegmentStore(BaseDB):
         *,
         cold_policy: ColdPolicy | None = None,
     ) -> list[T]:
-        # 分片按 self.tz 切分，窗口边界必须先归一化到同一时区再取月，否则每月
-        # 1 号 00:00-08:00 CST 期间会漏掉当月分片（此时 UTC 仍在上个月）。
+        # 窗口边界先归一到 self.tz 再取月，与分片切分口径一致
         start_local = self._to_local(start_time)
         end_local = self._to_local(end_time)
         curr = start_local.floor("month")
@@ -1192,8 +1064,7 @@ class SegmentStore(BaseDB):
             + end_local.month
             - start_local.month
         )
-        # Store-level safety guard for generic shard scans. Business modules should
-        # enforce their own narrower windows before reaching this layer.
+        # 通用分片扫描的库级护栏，业务侧应各自收窄窗口
         if months_span > MAX_MAP_REDUCE_MONTH_SPAN:
             from src.lib.i18n.catalog import tr
 
@@ -1219,8 +1090,7 @@ class SegmentStore(BaseDB):
                 f"{start_local.strftime('%Y-%m')} to {end_local.strftime('%Y-%m')}."
             ),
             batch_size=len(shard_keys),
-            # list[str] 不能赋给不变量 JsonValue（= list[JsonValue]）；显式标注成
-            # JsonObject，键值类型与 log_trace_event 的契约一致。
+            # list[str] 赋给 JsonValue 需显式 cast
             payload_json=cast("JsonObject", {"shard_keys": list(shard_keys)}),
         )
         semaphore = asyncio.Semaphore(self.map_reduce_concurrency)
@@ -1228,10 +1098,7 @@ class SegmentStore(BaseDB):
         async def _run(key: str) -> T | None:
             policy = cold_policy or self.cold_policy
             async with semaphore:
-                # 全程持分片锁：归档/驱逐会 rename 或删除在线分片、dispose 引擎，
-                # 读路径不持锁时与它们存在 TOCTOU——检查通过到 open 之间文件被
-                # 挪走，SQLite 会把「打开一个不存在的路径」直接建出空库，查询
-                # 静默返回空结果（并被后续归档固化成空归档）。
+                # 全程持分片锁：锁内检查与 open 之间是 TOCTOU 窗口
                 async with self._shard_lock(key):
                     try:
                         is_online = await self._ensure_shard_online(
@@ -1258,11 +1125,7 @@ class SegmentStore(BaseDB):
     async def run_archiver_task(self) -> SegmentArchiveReport:
         """ILM 巡检：残留自愈 -> hot -> warm -> cold，并按保留期回收。
 
-        对应 ES 的 ILM：hot 是可写索引，warm 是刚压缩完仍可被唤回的，cold 只剩
-        归档。这里在时间窗口之外再加一道体积闸门（active 分片超过阈值也 seal），
-        以及一条 delete 阶段（retention_months > 0 时删除超期归档）。
-
-        返回结构化报告：调用方据此如实上报失败/冲突，不能再把巡检当成必然成功。
+        返回结构化报告：调用方据此如实上报失败/冲突。
         """
         report = SegmentArchiveReport()
         now = self._tz_now()
@@ -1270,9 +1133,7 @@ class SegmentStore(BaseDB):
             now.shift(months=-offset).strftime(self.fmt)
             for offset in range(self.active_window_months)
         }
-        # 阶段 0：上次归档中断留下的 .archiving 残留自愈。
-        # （进程被 kill 会停在 rename 之后、压缩完成之前，此时残留是唯一的
-        # 完整数据；归位或显式暴露，绝不静默处置。）
+        # 阶段 0：上次归档中断留下的 .archiving 残留自愈
         conflicted: set[str] = set()
         residue_pattern = f"{self.prefix}_*{ARCHIVE_STAGING_SUFFIX}"
         for residue in sorted(self.base_dir.glob(residue_pattern)):
@@ -1318,13 +1179,13 @@ class SegmentStore(BaseDB):
             file_key = db_file.stem.removeprefix(f"{self.prefix}_")
             if not file_key:
                 continue
-            # 已在阶段 0 判定为「残留与在线库并存」的分片不再重复归档/上报。
+            # 阶段 0 已判定冲突的分片留在该集合里，此处跳过
             if file_key in conflicted:
                 continue
             size_mb = await asyncio.to_thread(
                 lambda: db_file.stat().st_size / (1024 * 1024)
             )
-            # active_keys 之外，或虽在窗口内但体积已超阈值，都需要 seal。
+            # 窗口外或体积超阈值的分片都走 seal
             oversized = size_mb >= SEGMENT_SIZE_ROLLOVER_MB
             if file_key in active_keys and not oversized:
                 await self._touch_segment(file_key, state=SegmentState.HOT)
@@ -1375,9 +1236,9 @@ class SegmentStore(BaseDB):
         return report
 
     async def _enforce_retention(self, now: arrow.Arrow) -> None:
-        """ILM delete 阶段：删除超过保留期的归档文件。
+        """ILM delete 阶段：删除超保留期的 .db.zst 归档。
 
-        只删 .db.zst 归档，绝不碰在线 .db；且删除前必须确认分片不在活跃窗口内。
+        确认分片已出活跃窗口后才动手，在线 .db 一概保留。
         """
         manifest = self._load_manifest()
         cutoff = now.shift(months=-self.retention_months).strftime(self.fmt)
@@ -1427,19 +1288,8 @@ class SegmentStore(BaseDB):
         *,
         force: bool = False,
     ) -> tuple[SegmentArchiveOutcome, str]:
-        """两阶段归档单个分片，返回 (结果, 原因)。
-
-        force=True 时用于「体积闸门 seal 活跃分片」，会跳过活跃窗口保护。
-
-        阶段一（持锁）：释放引擎并把分片原子 rename 成 staging。
-        阶段二（不持锁）：压缩 staging 到 .db.zst，成功后删除，失败则改回原名。
-
-        之所以用 rename 而不是直接 unlink，是因为 unlink 之后已经在飞行中的写事务
-        仍会写进那个已被删除的 inode，数据静默丢失；rename 之后写入方看到的是
-        「分片不存在」，会走新建/唤醒路径，而旧 inode 上的数据随 staging 进入归档。
-
-        返回结构化结果而非 bool：调用方无法再把「跳过」与「失败」混为一谈，
-        也让 job 层能如实上报失败分片。
+        """两阶段归档单个分片，返回 (结果, 原因)；force 跳过活跃窗口保护。
+        阶段一（持锁）释放引擎并 rename 成 staging，阶段二（松锁）压缩后删除。
         """
         db_path, archive_path = self._get_file_paths(shard_key)
         trace_id = log_trace_event(
@@ -1452,8 +1302,7 @@ class SegmentStore(BaseDB):
         )
         try:
             async with self._shard_lock(shard_key):
-                # 归档期间可能正好跨月，重新确认一次，避免删掉刚转成活跃的分片。
-                # force=True 表示「按体积闸门主动 seal 活跃分片」，跳过该保护。
+                # 归档期间可能正好跨月，复检活跃窗口；force 跳过该保护
                 if not force and self._is_active_shard(shard_key):
                     await self._touch_segment(shard_key, state=SegmentState.HOT)
                     return SegmentArchiveOutcome.SKIPPED, "active window"

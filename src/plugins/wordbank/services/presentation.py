@@ -1,4 +1,4 @@
-"""Wordbank presentation models and text formatters."""
+"""wordbank 展示模型与文本格式化。"""
 
 from __future__ import annotations
 

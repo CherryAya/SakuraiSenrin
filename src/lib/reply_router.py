@@ -26,7 +26,7 @@ from src.logger import logger
 
 
 class ReplyContextBase(DeclarativeBase):
-    """Global reply-context database base."""
+    """全局回复上下文库基类。"""
 
 
 class ReplyContext(ReplyContextBase, TimeMixin):
@@ -359,7 +359,7 @@ def _normalize_image_key(data: Mapping[str, object]) -> str:
 
 
 def _normalize_text_map(data: Mapping[str, object]) -> dict[str, str]:
-    """按 key 排序、值统一转文本，供未知类型的 segment 载荷使用。"""
+    """按 key 排序、值统一转文本，供其它类型 segment 载荷使用。"""
     return {key: _normalize_text_value(data[key]) for key in sorted(data.keys())}
 
 

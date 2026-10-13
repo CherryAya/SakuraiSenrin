@@ -1,4 +1,4 @@
-# 测试/脚本需直接验证内部不变量，故关闭跨模块私有符号告警
+# 测试直取内部符号：pyright 私有访问豁免
 # pyright: reportPrivateUsage=false
 from __future__ import annotations
 
@@ -24,8 +24,8 @@ def _isolated_processor_module(
     monkeypatch: pytest.MonkeyPatch,
 ) -> Iterator[ModuleType]:
     original_run_preprocessors = message_module._run_preprocessors.copy()
-    # nonebot 的插件注册表是进程级全局的，重新导入同名插件会撞
-    # "Plugin processor already exists"。同 worker 内跨文件顺序执行时必须先摘掉。
+    # nonebot 插件注册表是进程级全局的，重导入同名插件会撞
+    # "Plugin processor already exists"；执行前先摘掉。
     saved_plugin = nonebot_plugin._plugins.pop("processor", None)
     sys.modules.pop("src.hooks.processor", None)
     module = importlib.import_module("src.hooks.processor")

@@ -1,4 +1,4 @@
-"""List or recompute water levels for users inside configured support groups."""
+"""列出或重算支持群内用户的水位。"""
 
 from __future__ import annotations
 

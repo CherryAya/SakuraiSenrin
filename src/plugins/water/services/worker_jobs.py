@@ -41,12 +41,7 @@ _WATER_WORKER_JOB_NAMES: tuple[WaterWorkerJobName, ...] = (
 
 
 def _as_status(value: object) -> WaterWorkerStatus:
-    """把跨进程读回的 status 收窄成字面量，非法值回落 ``failed``。
-
-    manifest 由子进程写出、父进程回读，``.get`` 只能兜「缺 key」，兜不住
-    「值非法」：大小写串（``Success``）在过去会被断言成合法字面量一路流出，
-    下游按 ``message_kind`` 分派时把 PNG 当文本读。这里显式白名单回落。
-    """
+    """把跨进程读回的 status 收窄成字面量，非法值回落 ``failed``。"""
     if isinstance(value, str) and value in _WATER_WORKER_STATUSES:
         return value
     return "failed"
@@ -138,13 +133,7 @@ class WaterWorkerManifest:
 
     @classmethod
     def from_dict(cls, payload: Mapping[str, object]) -> "WaterWorkerManifest":
-        """从「键为 str 的映射」构造。
-
-        入参声明为 ``Mapping[str, object]`` 而非 ``WaterWorkerManifestPayload``：
-        真实来源是跨进程回读的原始 JSON（未经校验），若声明成 TypedDict 就等于
-        在签名上撒谎、把校验责任推给调用方——之前那处 ``cast`` 正是这么来的。
-        所有字段在这里逐个收窄，非法值回落默认值而不是带病流出。
-        """
+        """从「键为 str 的映射」构造；字段逐个收窄，非法值回落默认值。"""
         raw_items = payload.get("report_items")
         items = raw_items if is_object_sequence(raw_items) else ()
         report_items = tuple(
@@ -179,10 +168,7 @@ def build_water_job_id(job_name: WaterWorkerJobName) -> str:
 def load_water_worker_manifest(path: Path) -> WaterWorkerManifest:
     """读回子进程写出的 manifest。
 
-    这里是跨进程 JSON 边界，不能用 ``cast`` 把任意解析结果断言成 payload：
-    manifest 缺失/被截断/被外部改写时，``json.loads`` 可能返回 list、数字或
-    字符串，直接断言会让下游在 ``.get`` 上抛 ``AttributeError``。显式校验成
-    映射再逐字段收窄。
+    跨进程 JSON 边界：先校验成映射再逐字段收窄。
     """
     parsed = json.loads(path.read_text(encoding="utf-8"))
     if not is_json_value(parsed) or not isinstance(parsed, Mapping):

@@ -1,14 +1,7 @@
 """Buffered writer 的运行态巡检与死信告警。
 
-`BatchWriter` 在超过 `max_retries` 后把批次放进内存死信队列，但此前生产代码
-没有任何消费方：一次持续性的写入失败会静默丢数据直到进程重启，且日志之外
-没有可查询的状态。
-
-这里提供三件事：
-
-1. 汇总所有 writer 的运行态快照（对应 ES 的 _cluster/health）
-2. 把死信暴露给运维脚本与告警
-3. 关机前 drain + 落盘，避免正常退出时丢掉内存缓冲
+汇总全部 writer 的运行态快照（近似 ES 的 _cluster/health），把死信暴露给运维
+脚本与告警；关机前 drain + 落盘，让正常退出的内存缓冲完整进入 sys_dead_letter。
 """
 
 from __future__ import annotations
@@ -35,16 +28,12 @@ class WriterHealthReport:
 
 
 def _collect_writers() -> tuple[BatchWriter[object], ...]:
-    """返回进程内全部已注册的 writer。
-
-    注册由 `BatchWriter.__init__` 自行完成，因此无论 writer 建在模块顶层还是
-    业务函数内都会被巡检到。
-    """
+    """返回进程内全部已注册的 writer。"""
     return BatchWriter.iter_registered()
 
 
 def build_health_report() -> WriterHealthReport:
-    """汇总所有 writer 的运行态，不消费死信。"""
+    """汇总所有 writer 的运行态快照；死信只读。"""
     degraded: list[str] = []
     total_batches = 0
     total_items = 0
@@ -65,10 +54,7 @@ def build_health_report() -> WriterHealthReport:
 
 
 async def report_writer_health(*, alert: bool = True) -> WriterHealthReport:
-    """巡检并（可选）上报降级状态。
-
-    与 build_health_report 的区别：会写日志与 trace，供启动自检或定时任务调用。
-    """
+    """巡检并上报降级状态：写日志与 trace，供启动自检或定时任务调用。"""
     report = build_health_report()
     if not report.is_degraded or not alert:
         return report
@@ -108,11 +94,7 @@ async def drain_all_writers() -> None:
 
 
 async def flush_dead_letters() -> int:
-    """把各 writer 的内存死信落库，返回落库条数。
-
-    须在 drain_all_writers 之后调用：drain 会把暂存错误重抛，而新产生的死信要
-    到这里才写入 sys_dead_letter，以便关机后仍可回溯与重放。
-    """
+    """把各 writer 的内存死信落库，返回落库条数；须在 drain 之后调用。"""
     from src.services.dead_letter_store import persist_dead_letters
 
     total = 0

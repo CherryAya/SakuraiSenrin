@@ -29,7 +29,7 @@ from src.logger import logger
 
 
 class MessageAssetBase(DeclarativeBase):
-    """Global message asset database base."""
+    """全局消息资产库基类。"""
 
 
 class MessageAsset(MessageAssetBase, TimeMixin):
@@ -84,12 +84,7 @@ MessageShapeKind = Literal["plain", "rich", "contains_reply", "contains_at"]
 
 
 class _ReuseGate:
-    """复用闸的内存态。
-
-    用单例对象持有可变标记，而不是模块级全局变量：全局变量在 strict 下会被
-    判为「常量不可重定义」（reportConstantRedefinition），改用对象属性既保留
-    setter 语义，也无需 global 声明。
-    """
+    """复用闸内存态：标记放在单例属性上，绕开 strict 下模块级常量的重定义检查。"""
 
     blocked: bool = False
 
@@ -314,9 +309,8 @@ class MessageAssetRepository:
     ) -> MessageAssetRecord:
         now = get_current_time()
         async with message_asset_db.write_session() as session:
-            # 使用 SQLite 原生 upsert，避免 SELECT-then-INSERT 在并发下
-            # 同时判定为不存在而触发 uq_message_asset_asset_key 冲突。
-            # 这里的预查询只用于日志区分 create/update，不参与写入决策。
+            # 原生 upsert：并发写同键由唯一约束合并
+            # 预查询仅用于日志区分 create/update
             existed = (
                 await session.execute(
                     select(MessageAsset.id).where(MessageAsset.asset_key == asset_key)

@@ -1,5 +1,5 @@
-"""Export rankings dashboard data bundle for the offline HTML page."""
-# 测试/脚本需直接验证内部不变量，故关闭跨模块私有符号告警
+"""导出榜单看板数据包（离线 HTML 页用）。"""
+# 脚本直验模块内部符号：pyright 私有访问豁免
 # pyright: reportPrivateUsage=false
 
 from __future__ import annotations

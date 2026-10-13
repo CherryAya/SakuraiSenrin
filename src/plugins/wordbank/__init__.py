@@ -105,7 +105,7 @@ wordbank_notice = on_notice(priority=95, block=False)
 
 from . import bootstrap as bootstrap  # 注册启动钩子与定时任务
 
-# 导入入口模块即完成全部 matcher 注册（模块级 @matcher.handle()）：
+# 入口模块导入即完成 matcher 注册：
 #   entry_commands —— 命令 / 引导流程
 #   entry_runtime  —— 回复路由 / 被动响应 / 通知
 from . import entry_commands as entry_commands

@@ -343,10 +343,7 @@ class WaterAchievementOps(BaseOps[WaterUserAchievement]):
         self,
         user_ids: Sequence[str],
     ) -> dict[str, list[tuple[str, str, str, int]]]:
-        """一次会话取回多个用户的已解锁成就，按 user_id 分组。
-
-        结算路径逐用户调用 get_unlocked_items 会产生 N 个会话；这里批量取回。
-        """
+        """一次会话取回多个用户的已解锁成就，按 user_id 分组。"""
         unique_ids = list(dict.fromkeys(user_ids))
         if not unique_ids:
             return {}

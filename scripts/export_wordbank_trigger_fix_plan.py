@@ -1,4 +1,4 @@
-"""Export a PostgreSQL-backed wordbank trigger-fix plan for later SQLite repair."""
+"""导出 PG 侧词库触发词修复计划，供后续 SQLite 修复。"""
 
 from __future__ import annotations
 

@@ -1,7 +1,6 @@
-"""i18n 的事件绑定能力：语言解析与发送。
+"""i18n 事件绑定：语言解析与发送。
 
-依赖 nonebot matcher、message_delivery 与 repositories，因此从
-``src.lib.i18n.catalog`` 中分离出来——只需要文案的模块不该被迫拉起这条链。
+依赖 nonebot matcher、message_delivery 与 repositories，与纯查表的 catalog 分离。
 """
 
 from __future__ import annotations
@@ -101,7 +100,7 @@ async def finish_i18n(
             message=message,
             source_kind="i18n_matcher_finish",
         )
-        # 通过 getattr 取 finish，避免 pyright 对 nonebot 泛型默认参数推导成 Unknown。
+        # getattr 取 finish：绕开 pyright 泛型推导
         finish = getattr(matcher, "finish")
         await finish()
         return

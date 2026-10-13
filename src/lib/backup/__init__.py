@@ -1,4 +1,4 @@
-"""Backup event hooks."""
+"""备份事件与注册入口。"""
 
 from .events import (
     BackupCallback,

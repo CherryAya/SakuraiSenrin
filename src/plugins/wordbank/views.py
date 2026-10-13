@@ -1,10 +1,4 @@
-"""wordbank 视图渲染与投递层。
-
-本模块是 wordbank 的「渲染 + 投递」边界：把业务数据渲染为 `DeliveryPlan` 并交给统一
-投递层，同时登记消息引用（供回复路由复用）。它位于 handlers / guided_flow 之上、
-`entry_*` 入口层之下，且**不依赖任何 entry_* 模块**，因此入口层可以直接静态导入，
-不会再出现历史上的 `entry_runtime → __init__ → entry_runtime` 绕环与 getattr 派发。
-"""
+"""wordbank 视图渲染与投递层：渲染为 DeliveryPlan 并登记消息引用，对 entry_* 零依赖。"""
 
 from __future__ import annotations
 
@@ -291,7 +285,7 @@ async def record_passive_response_message(
 
 
 def group_detail_has_image(detail: WordbankGroupDetail) -> bool:
-    """判断群详情（触发词或任一响应）是否含图片原子。"""
+    """群详情含图片原子时返回 True（触发词或任一响应）。"""
     if any(atom.kind == "image" for atom in detail.trigger_shape.atoms):
         return True
     return any(
@@ -374,11 +368,7 @@ async def send_search_result_view(
     image_scores: dict[int, float] | None = None,
     state: T_State | None = None,
 ) -> None:
-    """渲染并投递搜索结果卡片。
-
-    传入 `state` 时进入引导式搜索会话（不额外开长任务，由后续分页动作负责），
-    否则以长任务进度提示包裹一次性查询。
-    """
+    """渲染并投递搜索结果卡片；state 为空时以长任务进度提示包裹一次性查询。"""
     if state is not None:
         await _render_search_result_view(
             bot,
@@ -524,12 +514,7 @@ async def deliver_passive_response(
     target: DeliveryTarget | None = None,
     handle_ms: float = 0.0,
 ) -> CompiledPassiveResponse:
-    """编译并投递被动响应，随后登记消息引用。
-
-    统一 passive / notice 两条入口的投递循环：编译 → 发送 → 后续动作 → 记录。
-    `event` 与 `target` 二选一（受 `deliver_message_plan` 的投递约束）。
-    返回编译结果，调用方可据此复用（例如判断是否有可见输出）。
-    """
+    """编译并投递被动响应，随后登记消息引用；返回编译结果供调用方复用。"""
     start = perf_start()
     build_start = perf_start()
     compiled = await compile_passive_response(

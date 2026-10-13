@@ -16,34 +16,17 @@ type JsonValue = JsonScalar | JsonArray | JsonObject
 
 
 def is_object_mapping(value: object) -> TypeGuard[Mapping[str, object]]:
-    """把 ``object`` 收窄成键为 str、值为 object 的映射。
-
-    用于消费 JSON 解析结果时消掉 ``Mapping[Unknown, Unknown]`` 噪音：
-    ``json.loads`` 的返回值标注为 ``Any``，逐键 ``str()`` 转换既不安全也不必要。
-    """
+    """把 object 收窄成键为 str、值为 object 的映射。"""
     return isinstance(value, Mapping)
 
 
 def is_object_sequence(value: object) -> TypeGuard[Sequence[object]]:
-    """把 ``object`` 收窄成「元素类型为 object 的序列」，排除 ``str``/``bytes``。
-
-    ``str``/``bytes`` 本身也是 ``Sequence``，若不排除会被逐字符拆开。
-    """
+    """把 object 收窄成「元素为 object 的序列」，排除 str / bytes。"""
     return isinstance(value, (list, tuple))
 
 
 def is_json_value(value: object) -> TypeGuard[JsonValue]:
-    """校验 ``object`` 是否为合法 JSON 值。
-
-    用于 ``json.loads`` 的返回值：它静态是 ``Any``（strict 下成员为 Unknown），
-    直接声明成 ``JsonValue`` 只是断言、并不校验，成员类型仍会向下扩散成
-    ``Unknown | None``。这里做一次真正的递归校验，收窄成可审计的 ``JsonValue``；
-    非 JSON 形态（如自定义对象、bytes）返回 False，由调用方决定回落或报错。
-
-    注意：只判断形态，不做深度/循环引用防护——来源是本项目自己写出的 JSON 文件。
-    内部几处 cast 只用于消掉 ``isinstance`` 收窄出的 ``Mapping[Unknown, Unknown]``
-    噪音（与本模块 ``config._string_object_map`` 同一手法），不放松任何运行期校验。
-    """
+    """递归校验 object 是合法 JSON 值（标量 / 列表 / 对象）。"""
     if isinstance(value, (str, int, float, bool)) or value is None:
         return True
     if isinstance(value, Mapping):
@@ -57,43 +40,32 @@ def is_json_value(value: object) -> TypeGuard[JsonValue]:
 
 
 def is_json_object(value: object) -> TypeGuard[JsonObject]:
-    """把 ``object`` 收窄成 ``JsonObject``（键 str、值 JsonValue）。
+    """把 object 收窄成 JsonObject（键 str、值 JsonValue）。
 
-    与 ``is_object_mapping`` 的区别：后者只保证键为 str、值仍是 ``object``，
-    适合「先收窄、再逐键用 as_str/as_int 处理」；本函数额外校验值确实是 JSON
-    形态，适合直接把整个映射交给需要 ``dict[str, JsonValue]`` 的位置。
+    与 is_object_mapping 的区别：本函数额外校验值确实是 JSON 形态。
     """
-    # is_json_value 的映射分支已校验「键为 str」，故此处只需排除非 dict 的映射。
+    # is_json_value 的映射分支已校验键为 str，这里只需收紧 dict 判断
     if not isinstance(value, dict):
         return False
     return is_json_value(cast("Mapping[object, object]", value))
 
 
 def as_str_tuple(value: object) -> tuple[str, ...]:
-    """把「字符串序列」收窄成字符串元组，元素去空白后丢弃空串。
-
-    刻意接受 ``list`` 与 ``tuple`` 两种来源：JSON 解析结果是 ``list``，
-    而插件元数据里的 ``extra["docs"]["aliases"]`` 直接写成元组。
-    ``str``/``bytes`` 本身也是 Sequence，必须排除，否则会被逐字符拆开。
-    """
+    """把字符串序列收窄成字符串元组，元素去空白后丢弃空串。"""
     if not is_object_sequence(value):
         return ()
     return tuple(item.strip() for item in value if isinstance(item, str) and item)
 
 
 def as_int(value: object, default: int) -> int:
-    """把任意来源值收窄成 int；非整数（含 ``bool``）一律回落 default。
-
-    ``bool`` 是 ``int`` 的子类，JSON 里的 ``true`` 若不显式排除会被当成 1/0
-    静默通过；``int("100")`` 这类字符串转换同样会掩盖数据来源问题。
-    """
+    """把任意来源值收窄成 int；bool 与其余类型一律回落 default。"""
     if isinstance(value, bool):
         return default
     return value if isinstance(value, int) else default
 
 
 def as_float(value: object, default: float) -> float:
-    """把任意来源值收窄成 float；``bool`` 同样排除。"""
+    """把任意来源值收窄成 float；bool 同样回落 default。"""
     if isinstance(value, bool):
         return default
     if isinstance(value, float):
@@ -102,12 +74,12 @@ def as_float(value: object, default: float) -> float:
 
 
 def as_object(value: JsonValue) -> JsonObject | None:
-    """把 JSON 值收窄成 JSON 对象；非 dict（含 list）返回 None。"""
+    """把 JSON 值收窄成 JSON 对象；其余形态返回 None。"""
     return value if isinstance(value, dict) else None
 
 
 def as_str(value: object, default: str = "") -> str:
-    """把任意来源值收窄成字符串；非 str（含 int/float/bool）返回 default。"""
+    """把任意来源值收窄成字符串；其余形态回落 default。"""
     return value if isinstance(value, str) else default
 
 

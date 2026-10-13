@@ -1,4 +1,4 @@
-# 测试/脚本需直接验证内部不变量，故关闭跨模块私有符号告警
+# 测试直取内部符号：pyright 私有访问豁免
 # pyright: reportPrivateUsage=false
 from PIL import ImageDraw
 
@@ -919,8 +919,8 @@ def test_render_plugin_guide_and_copy_text_list_all_visible_features() -> None:
             )
         )
     )
-    # guide 画布高宽比很大，超出 WebP 单边上限后编码阶段会等比缩放，
-    # 因此断言"未超出编码上限 + 仍是长图"，而不是硬编码某个像素宽度。
+    # guide 画布高宽比很大，超出 WebP 单边上限后编码阶段等比缩放；
+    # 断言"落在编码上限内 + 仍是长图"，绕开具体像素宽度。
     assert image.format == "WEBP"
     assert max(image.size) <= WEBP_MAX_DIMENSION
     assert image.height > image.width

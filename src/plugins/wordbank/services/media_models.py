@@ -1,4 +1,4 @@
-"""Wordbank media constants, models, and image helpers."""
+"""wordbank 媒体常量、模型与图片辅助。"""
 
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ _HEX_MD5_ANYWHERE_RE = re.compile(r"(?<![0-9a-fA-F])([0-9a-fA-F]{32})(?![0-9a-fA
 
 
 class MediaError(WordbankUserError):
-    """Raised when an image cannot be processed for wordbank media storage."""
+    """图片处理失败时抛出，供媒体存储层使用。"""
 
 
 @dataclass(slots=True, frozen=True)

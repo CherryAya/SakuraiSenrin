@@ -727,9 +727,7 @@ class WaterReportService:
                     return index, candidate, None
 
         render_started = perf_counter()
-        # 并发渲染，但结果必须按 candidates 原始顺序（活跃度降序）归位：
-        # as_completed 只保证完成顺序，直接 append 会让推送顺序与超管通报里的
-        # 「序号」编号随并发调度漂移。
+        # 并发渲染后按原索引归位，保住活跃度降序的推送顺序
         ordered_candidates = list(candidates)
         rendered_by_index: list[
             tuple[WaterDailyReportCandidate, WaterPreparedReportItem | None] | None
@@ -1443,9 +1441,7 @@ class WaterReportService:
         )
         current_rows_by_group = self._group_summary_rows_by_group(current_rows_all)
         previous_rows_by_group = self._group_summary_rows_by_group(previous_rows_all)
-        # 与 repo 的公开口径一致：聚合与排序逻辑收口在
-        # get_group_daily_distribution_items，这里传入已取好的昨日记录日窗口，
-        # 避免重复一份 rows 聚合实现。
+        # 聚合与排序口径收口在 repo 的 distribution 查询
         distribution_items = tuple(
             await water_repo.get_group_daily_distribution_items(
                 record_date=record_date,
@@ -1492,8 +1488,7 @@ class WaterReportService:
     ) -> tuple[tuple[int, ...], dict[str, tuple[tuple[int, int | None], ...]]]:
         if not group_ids or days <= 0:
             return (), {}
-        # 排名历史按日聚合的口径与 repo 的公开查询一致（同一窗口、同一排序键），
-        # 直接复用避免两份实现漂移。
+        # 历史聚合口径与 repo 公开查询共用一份实现
         history = await water_repo.get_group_daily_rank_history(
             group_ids=list(group_ids),
             end_record_date=end_record_date,

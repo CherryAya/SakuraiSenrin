@@ -1,4 +1,4 @@
-"""Migrate legacy PostgreSQL water records into the current water plugin."""
+"""迁移遗留 PG water 记录到 water 插件。"""
 
 from __future__ import annotations
 

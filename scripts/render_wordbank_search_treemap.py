@@ -1,4 +1,4 @@
-"""Render a standalone wordbank search treemap fixture into a PNG."""
+"""把词库搜索矩形树图夹具渲染成 PNG。"""
 
 from __future__ import annotations
 

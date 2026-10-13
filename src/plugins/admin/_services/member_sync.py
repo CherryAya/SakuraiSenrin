@@ -101,7 +101,7 @@ def build_sync_members_completion_summary(
     *,
     locale: LocaleCode = "zh-CN",
 ) -> str:
-    """Build the short completion summary shared by admin notice and matcher."""
+    """admin 通报与 matcher 共用的完成摘要。"""
     return "\n".join(
         [
             tr(locale, "admin.sync_members.completed"),

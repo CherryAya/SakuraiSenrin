@@ -245,13 +245,10 @@ def test_canonicalize_private_only_in_private_chat_downgrades_to_self() -> None:
 
 @pytest.mark.parametrize("bad", [None, True, False, "60", 60.5, [60]])
 def test_rule_allows_tolerates_malformed_window_seconds(bad: JsonValue) -> None:
-    """回归：call_count 的非法值必须回落为「不满足」，而不是抛异常。
+    """call_count 的非法值回落为「拒绝」，就地返回而非抛异常。
 
-    历史故障：``int(cast(...))`` 遇到 ``{"window_seconds": null}`` 会抛
-    TypeError——``.get`` 的默认值对「键存在但值为 null」不生效。该异常不被
-    调用方的 except (RuleError, ValueError) 捕获，会冒泡到被动链路被静默吞掉，
-    导致触发词无声失效。
-    """
+    旧实现 int(cast(...)) 遇到 {"window_seconds": null} 抛 TypeError，
+    调用方 except 漏接该异常，触发词就此静默失效。"""
     context = RuleContext(
         group_id="20001",
         user_id="10001",
@@ -275,7 +272,7 @@ def test_rule_allows_tolerates_malformed_window_seconds(bad: JsonValue) -> None:
 
 
 def test_rule_allows_tolerates_malformed_min_max() -> None:
-    """min/max 非法同样不得抛异常。"""
+    """min/max 非法同样就地返回，异常止步。"""
     context = RuleContext(
         group_id="20001",
         user_id="10001",
@@ -297,11 +294,10 @@ def test_rule_allows_tolerates_malformed_min_max() -> None:
 
 @pytest.mark.parametrize("bad", [True, False, "abc"])
 def test_canonicalize_rejects_boolean_weight(bad: JsonValue) -> None:
-    """weight 必须拒绝布尔值：``int(True) == 1`` 会绕过「权重 1..5」的下界校验。
+    """weight 拒绝布尔值：int(True) == 1 会绕过「权重 1..5」下界校验。
 
-    注意 ``None``（缺省）、单元素列表（解包）、整值浮点 ``3.0`` 与数字字符串
-    ``"3"`` 都是既有合法形态，收紧口径时不得误伤——见下一条用例。
-    """
+    None 缺省、单元素列表、整值浮点 3.0 与数字字符串 "3" 都是合法
+    形态，收紧口径时逐一保留——见下一条用例。"""
     with pytest.raises(RuleError, match="权重"):
         canonicalize_rule({"weight": bad}, is_group=True, short_trigger=False)
 
@@ -314,14 +310,14 @@ def test_canonicalize_rejects_boolean_probability(bad: JsonValue) -> None:
 
 @pytest.mark.parametrize("bad", [[3, 4], [0.5, 0.6]])
 def test_canonicalize_rejects_multi_value_constraint(bad: JsonValue) -> None:
-    """多元素列表要走「只能设置一个约束」的既有分支。"""
+    """多元素列表走「只能设置一个约束」分支。"""
     with pytest.raises(RuleError, match="只能设置一个约束"):
         canonicalize_rule({"weight": bad}, is_group=True, short_trigger=False)
 
 
 @pytest.mark.parametrize("value", [3, 3.0, "3", [3], None])
 def test_canonicalize_still_accepts_valid_weight_forms(value: JsonValue) -> None:
-    """确保收紧口径没有误伤既有合法形态（含 None 缺省与单元素列表解包）。"""
+    """收紧口径后既有合法形态照常通过（含 None 缺省与单元素列表）。"""
     rule = canonicalize_rule({"weight": value}, is_group=True, short_trigger=False)
 
     assert rule.weight == 3

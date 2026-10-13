@@ -1,1 +1,1 @@
-"""Split into focused wordbank migration test modules."""
+"""词库迁移测试拆分为聚焦模块。"""

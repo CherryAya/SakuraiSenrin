@@ -160,8 +160,7 @@ STUDY_STEP_GROUP_BLOCK = 2
 STUDY_STEP_TRIGGER = 3
 STUDY_STEP_RESPONSE = 4
 STUDY_STEP_WEIGHT = 5
-# TODO: 本组仅覆盖转发/权重待处理键，而 TRIGGER / RESPONSE 步骤注册检查点时
-# 未传 cleanup_keys（默认空），撤回时各步的清理范围不一致，需确认是否有意为之。
+# TODO: 各步骤 cleanup_keys 覆盖范围待核实。
 STUDY_RECALL_PENDING_KEYS: tuple[str, ...] = (
     "study_forward_response_pending",
     "study_forward_response_event",
@@ -170,9 +169,8 @@ STUDY_RECALL_PENDING_KEYS: tuple[str, ...] = (
 )
 
 # region recall 快照保留键
-# 流程按「触发词 → 回答 → 权重」推进，每一步确认后都需要在撤回重建时恢复已确认
-# 的状态。集中声明避免各处理函数散落手写、彼此漏字段。
-# TRIGGER 步骤时尚未确认回答，故不含 trigger/response shape。
+# 撤回重建时按步骤恢复已确认状态，集中声明一份。
+# TRIGGER 步骤快照：shape 留待 RESPONSE 补。
 STUDY_SNAPSHOT_KEYS_AFTER_TRIGGER: tuple[str, ...] = (
     "study_trig_mode",
     "study_group_block",
@@ -194,10 +192,8 @@ STUDY_SNAPSHOT_KEYS_AFTER_WEIGHT: tuple[str, ...] = (
 
 
 # region 引导步骤处理
-# 本区与 wordbank/guided_flow.py 的 record_guided_* 系列刻意保持各自实现：
-# study 独有「触发词预载」概念（study_trigger_preloaded）、五步权重流程，以及
-# 合并转发选择后的权重步时序；强行统一会让调用方参数膨胀到 8-10 个字段而更难读。
-# 两边共享的 state 内核已收敛到 src/lib/guided_state.py。
+# 与 wordbank/guided_flow.py 各自实现：触发词预载与五步权重。
+# 共享 state 内核见 src/lib/guided_state.py。
 @lru_cache(maxsize=1)
 def _build_study_submission_lifecycle() -> SubmissionLifecycle:
 
@@ -310,10 +306,7 @@ def _guided_media_task(
     locale: LocaleCode,
     matcher: Matcher,
 ) -> LongTaskRunner:
-    """构造引导式流程共用的媒体处理长任务。
-
-    所有引导步骤的 prompt、阈值与进度来源一致，仅 task_name 不同，故在此收口。
-    """
+    """构造引导流程共用的媒体长任务，按 task_name 区分。"""
     return LongTaskRunner(
         LongTaskSpec(
             task_name=task_name,
@@ -862,17 +855,17 @@ async def _start_guided_study_with_trigger_image(
 
 
 # region 命令入口
-# 以下 handler 共享同一个 matcher（study_command, priority=5），按注册顺序级联：
-# 命中后 pause 终止整条链；不适用则直接 return，把事件交给下一个 handler。
+# handler 共享 study_command，按注册顺序级联：
+# 命中 pause 终止整链；其余直接 return，交给下一个 handler。
 #
 #   #study <args> → 入口：带参直接提交 / 预填步骤
 #   模式          → 消费 study_skip_mode_step 后跳过
-#   分组范围      → 消费 study_skip_group_block_step 后跳过
-#   触发/回答     → 按 *_preloaded / *_after_preloaded_trigger 分流
+#   分组范围      → 消费 study_skip_group_block_step
+#   触发/回答     → 按 *_preloaded 标记分流
 #   回答/权重     → 合并转发选择 / 记录回答
-#   权重与提交    → 仅在 study_weight_pending 时执行
+#   权重与提交    → 仅 study_weight_pending 时执行
 #
-# 注意：*_skip_* 均为一次性令牌，命中即 pop；重排 handler 顺序等同于改动行为。
+# 注意：*_skip_* 为一次性令牌，命中即 pop；重排顺序等同改行为。
 @study_command.handle()
 async def _(
     bot: Bot,
@@ -993,7 +986,7 @@ async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> 
         return
     clear_interaction_errors(state)
     state["study_trig_mode"] = text
-    # 触发词已预载时需连同 shape 一起保留，否则重建后丢失预载结果。
+    # 预载触发词时连同 shape 保留，重建时恢复。
     mode_keep_keys = (
         ("study_trigger_preloaded", "study_trigger_shape")
         if state.get("study_trigger_preloaded")
@@ -1128,8 +1121,7 @@ async def _(bot: Bot, matcher: Matcher, event: NoticeEvent) -> None:
 
     locale = "zh-CN"
     checkpoint = session.checkpoint
-    # Matcher._default_state 是 nonebot 的受保护类变量，直接访问会报
-    # reportPrivateUsage；经 getattr 收口成公开的只读映射视图。
+    # Matcher._default_state 受保护，经 getattr 取只读视图
     state = cast(
         "Mapping[str, object]",
         getattr(session.matcher_cls, "_default_state"),

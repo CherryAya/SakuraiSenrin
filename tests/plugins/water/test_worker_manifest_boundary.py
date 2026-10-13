@@ -1,8 +1,8 @@
-"""worker manifest 跨进程 JSON 边界的类型诚实性测试。
+"""worker manifest 跨进程 JSON 边界的类型校验契约。
 
-manifest 由子进程写出、父进程回读，属于「外部数据」；历史上的实现用 cast
-把原始 JSON 直接断言成 TypedDict，非法值会带病流出到下游分派逻辑。
-这里锁定新的白名单/形态校验行为。
+manifest 由子进程写出、父进程回读，属于外部数据；旧实现用 cast 把原始
+JSON 直接断言成 TypedDict，非法值会带病流出到下游分派逻辑。这里锁定
+白名单/形态校验行为。
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ def test_load_manifest_roundtrip_preserves_valid_values(tmp_path: Path) -> None:
 
 
 def test_load_manifest_rejects_non_object_json(tmp_path: Path) -> None:
-    """非对象 JSON（list/标量）必须显式报错，而不是断言后在下游 .get 崩掉。"""
+    """非对象 JSON（list/标量）显式报错，避免下游 .get 崩溃。"""
     path = tmp_path / "manifest.json"
     _write_raw_manifest(path, [1, 2, 3])
 
@@ -56,10 +56,9 @@ def test_load_manifest_rejects_non_object_json(tmp_path: Path) -> None:
 def test_load_manifest_falls_back_on_invalid_status(
     tmp_path: Path, bad_status: str
 ) -> None:
-    """非白名单 status 必须回落 failed，不得以 Literal 之名流出。
+    """非白名单 status 回落 failed。
 
-    历史故障：大小写串被 cast 成合法字面量，下游按 message_kind 分派时
-    把 PNG 当文本读，UnicodeDecodeError 被 per-item except 吞掉，单群静默丢失。
+    大小写串曾被 cast 成合法字面量，异常被 per-item except 吞掉，单群静默丢失。
     """
     path = tmp_path / "manifest.json"
     _write_raw_manifest(path, {"status": bad_status, "job_name": "settlement"})
@@ -95,7 +94,7 @@ def test_load_manifest_normalizes_report_item_message_kind(
 
 
 def test_load_manifest_drops_non_mapping_report_items(tmp_path: Path) -> None:
-    """report_items 混入非映射元素时整项丢弃，不得抛异常拖垮整份 manifest。"""
+    """report_items 混入非映射元素时整项丢弃，异常止步于该项。"""
     path = tmp_path / "manifest.json"
     _write_raw_manifest(
         path,
@@ -117,10 +116,9 @@ def test_load_manifest_drops_non_mapping_report_items(tmp_path: Path) -> None:
 
 
 def test_load_manifest_tolerates_wrong_typed_scalar_fields(tmp_path: Path) -> None:
-    """标量字段类型不符时走默认值，不得 int(None) / int(True) 式静默错误。
+    """标量字段类型走偏时回落默认值，避开 int(None) / int(True) 式静默错误。
 
-    旧实现用 int(x)：``{"started_at": null}`` 的默认值不生效会抛 TypeError，
-    ``true`` 会变成 1 绕过校验；as_int 显式排除 bool 与非整数。
+    旧实现用 int(x)：null 会抛 TypeError，true 会变成 1 绕过校验。
     """
     path = tmp_path / "manifest.json"
     _write_raw_manifest(
@@ -137,7 +135,7 @@ def test_load_manifest_tolerates_wrong_typed_scalar_fields(tmp_path: Path) -> No
 
     manifest = load_water_worker_manifest(path)
     assert manifest.started_at == 0
-    assert manifest.finished_at == 0  # bool 不被当成 1
+    assert manifest.finished_at == 0  # bool 走默认值，避开 1 的误判
     assert manifest.record_date is None
     assert manifest.report_items[0].activity_score == 0
 

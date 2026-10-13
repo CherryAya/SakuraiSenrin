@@ -9,13 +9,12 @@ from nonebug import NONEBOT_INIT_KWARGS
 import pytest
 import pytest_asyncio
 
-# 必须在任何测试模块导入 sentry 插件之前设置：
-# sentry_sdk.init() 在模块导入时全局生效，测试里一条用例失败就会派发管理员告警，
-# 该派发是异步 task，会落到后续用例的 event loop 上造成连锁失败。
+# sentry 插件导入前就设置好：init() 在模块导入时全局生效，
+# 用例失败会派发管理员告警，异步 task 落到后续用例 event loop，
+# 造成连锁失败。
 os.environ.setdefault("SAKURAI_DISABLE_SENTRY_NOTIFY", "1")
 
-# Prevent importing plugin bootstrap modules during test collection.
-# We only test submodules (handlers/services/repo), not NoneBot side effects.
+# 测试收集阶段拦截插件引导模块导入：只测子模块，避开 NoneBot 副作用。
 _root = Path(__file__).resolve().parents[1]
 _water_pkg_path = _root / "src" / "plugins" / "water"
 _wordbank_pkg_path = _root / "src" / "plugins" / "wordbank"
@@ -82,10 +81,10 @@ if "src.config" not in sys.modules:
 
 
 def pytest_configure(config: pytest.Config) -> None:
-    # nonebug 会把这里的 kwargs 原样交给 nonebot.init(**kwargs)。
-    # pydantic-settings 按字段名精确匹配程序化 kwargs：nonebot 声明的字段是
-    # 小写 superusers，大写会被塞进 __pydantic_extra__ 而真实字段仍为空集。
-    # 生产走 .env（大小写不敏感查找）会同时填好两者，这里保持同样的双写语义。
+    # nonebug 把 kwargs 原样交给 nonebot.init()。
+    # pydantic-settings 按字段名精确匹配程序化 kwargs：
+    # nonebot 声明小写 superusers；大写名落进 extra 字段。
+    # 生产 .env 查找会同时填好两者；这里也双写。
     config.stash[NONEBOT_INIT_KWARGS] = {
         "superusers": {"1"},
         "SUPERUSERS": {"1"},
@@ -131,7 +130,7 @@ def pytest_configure(config: pytest.Config) -> None:
 def _disable_real_plugin_loading(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Avoid loading unrelated plugins when importing modules under test."""
+    """拦截插件加载：测试只导入被测模块。"""
     monkeypatch.setenv("ENVIRONMENT", "test")
 
 

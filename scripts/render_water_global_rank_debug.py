@@ -1,4 +1,4 @@
-"""Cache and render offline water global total-rank debug boards."""
+"""离线水王全局总榜调试板：缓存与渲染。"""
 
 from __future__ import annotations
 
@@ -14,8 +14,7 @@ import nonebot
 from pil_utils import BuildImage
 
 if TYPE_CHECKING:
-    # 仅供类型标注。运行期不导入 src.*：那会经 water 包 __init__ 触发
-    # nonebot 初始化链路，本脚本需要能独立运行（--help 也不能崩）。
+    # 类型标注专用：运行期避免经 water 包触发 nonebot 初始化
     from src.lib.i18n.types import LocaleCode
     from src.plugins.water.services.rank_types import (
         WaterRankPeriod,
@@ -28,7 +27,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 DEFAULT_OUTPUT_DIR = ROOT / "output" / "water-rank-debug"
-# 与 src.lib.i18n.types 的 LocaleCode 保持一致；就地声明以避开运行期导入。
+# 与 LocaleCode 一致；就地声明以避开运行期导入
 _LOCALE_CHOICES: tuple[LocaleCode, ...] = ("zh-CN", "lzh", "x-meme")
 DEFAULT_LOCALE: LocaleCode = "zh-CN"
 
@@ -120,12 +119,7 @@ def _serialize_card_data(
 
 
 def _as_locale(value: object) -> LocaleCode:
-    """把命令行传入的 locale 收窄成 LocaleCode，非法值回落默认语言。
-
-    ``--locale`` 已用 ``choices`` 限定，这里是第二道防线：直接给下游传裸 str
-    会在 ``tr()`` 里抛未捕获的 ``KeyError``（例如 ``--locale en``），
-    让整个调试脚本产出为空。
-    """
+    """命令行 locale 收窄成 LocaleCode，非法值回落默认语言。"""
     for candidate in _LOCALE_CHOICES:
         if value == candidate:
             return candidate
@@ -133,11 +127,7 @@ def _as_locale(value: object) -> LocaleCode:
 
 
 def _as_rank_subject(value: object) -> WaterRankSubject:
-    """把缓存 JSON 里回读的 subject 收窄成字面量，非法值回落 ``user``。
-
-    缓存文件属于外部数据（可能被手工编辑或跨版本残留），直接 ``str()`` 再断言
-    会把非法值带进下游构建器。
-    """
+    """缓存 JSON 回读的 subject 收窄成字面量，非法值回落 user。"""
     if value in ("user", "group", "matrix"):
         return value
     return "user"
@@ -301,8 +291,7 @@ async def _render_images_from_cache(
 async def main() -> None:
     args = parse_args()
     output_dir = Path(args.output_dir)
-    # argparse 返回值静态是 str；--locale 已用 choices 限定，这里显式收窄成
-    # LocaleCode，避免把裸 str 带到需要字面量的构建器（旧写法是 cast(Any, ...)）。
+    # argparse 返回 str；显式收窄成 LocaleCode 再交给字面量构建器
     locale: LocaleCode = _as_locale(args.locale)
     runtime = await _init_runtime()
 

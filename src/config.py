@@ -14,12 +14,7 @@ from pydantic import BaseModel
 
 
 def _string_object_map(value: object) -> dict[str, object] | None:
-    """把 JSON 解析结果的 dict 收窄成 ``dict[str, object]``。
-
-    ``json.loads`` 返回 ``Any``，strict 模式下其成员类型一律为 Unknown。这里
-    在边界处一次性收窄：只保留字符串键（JSON 对象的键必然是字符串），值保持
-    ``object``；非 dict 返回 ``None``，交由调用方报错。
-    """
+    """把 JSON 解析结果收窄成字符串键字典。"""
     if not isinstance(value, dict):
         return None
     result: dict[str, object] = {}

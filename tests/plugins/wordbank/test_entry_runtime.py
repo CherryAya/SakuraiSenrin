@@ -60,7 +60,7 @@ def _stub_notify(
     list_message_refs_by_response_item_ids: AsyncMock | None = None,
     deliver_message_plan: AsyncMock | None = None,
 ) -> AsyncMock:
-    """给 notify 模块打桩：业务 service + 统一投递入口。"""
+    """notify 打桩：业务 service + 统一投递入口。"""
     service = cast(
         Any,
         SimpleNamespace(

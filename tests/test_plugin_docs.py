@@ -1,1 +1,1 @@
-"""Split into focused plugin docs test modules."""
+"""插件文档测试拆分为聚焦模块。"""

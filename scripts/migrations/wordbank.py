@@ -1,4 +1,4 @@
-"""Legacy wordbank migration helpers."""
+"""wordbank 遗留迁移辅助。"""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Wordbank table definitions."""
+"""wordbank 表定义。"""
 
 from sqlalchemy import (
     JSON,
@@ -16,19 +16,19 @@ from src.lib.types import JsonObject
 
 
 class WordbankMainBase(DeclarativeBase):
-    """Wordbank main database base."""
+    """wordbank 主库基类。"""
 
 
 class WordbankLogBase(DeclarativeBase):
-    """Wordbank sharded log database base."""
+    """wordbank 分片日志库基类。"""
 
 
 class WordbankMessageRouteBase(DeclarativeBase):
-    """Wordbank message route database base."""
+    """wordbank 消息路由库基类。"""
 
 
 class WordbankMessageRefBase(DeclarativeBase):
-    """Wordbank sharded message ref database base."""
+    """wordbank 分片消息引用库基类。"""
 
 
 class WordbankTriggerGroup(WordbankMainBase, TimeMixin):
@@ -362,8 +362,7 @@ class WordbankLog(WordbankLogBase):
             "created_at",
         ),
         Index("idx_wordbank_log_group_time", "group_id", "created_at"),
-        # count_trigger_group_calls_for_user_in_windows 按
-        # (trigger_group_id, user_id, created_at) 过滤，位于消息热路径
+        # 消息热路径：按触发组 / 用户 / 时间过滤
         Index(
             "idx_wordbank_log_trigger_user_time",
             "trigger_group_id",

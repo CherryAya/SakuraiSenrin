@@ -1,4 +1,4 @@
-"""Export real legacy PostgreSQL wordbank rows into treemap fixtures and PNGs."""
+"""导出遗留 PG 词库行为矩形树图夹具与 PNG。"""
 
 from __future__ import annotations
 

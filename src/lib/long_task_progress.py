@@ -1,4 +1,4 @@
-"""Developer-facing LongTask migration audit helpers."""
+"""LongTask 迁移审计辅助：扫描运行时代码并生成进度报告。"""
 
 from __future__ import annotations
 
@@ -22,11 +22,8 @@ RUNTIME_SCAN_ROOTS = (
 )
 WAIT_PROMPT_PATTERN = re.compile(f"({ZH_CATALOG['i18n.wait_prompt_words']})")
 
-# Wait-prompt message keys. This is an explicit allowlist rather than a suffix
-# match because some `.running` / `.processing` keys are status *labels*
-# (e.g. `admin.sync_members.status.running`) and must not be treated as
-# long-task prompts. Every key below is validated against the catalog so the
-# allowlist can never drift out of sync with the i18n catalogs.
+# 等待提示 i18n 键白名单：.running/.processing 里混有状态标签，
+# 故逐键对目录校验以防漂移。
 WAIT_I18N_KEYS = frozenset(
     {
         "admin.backup.restore.running",
@@ -44,7 +41,7 @@ WAIT_I18N_KEYS = frozenset(
     }
 )
 _UNKNOWN_WAIT_KEYS = WAIT_I18N_KEYS - set(ZH_CATALOG)
-if _UNKNOWN_WAIT_KEYS:  # pragma: no cover - guards against catalog drift
+if _UNKNOWN_WAIT_KEYS:  # pragma: no cover - 防御目录漂移
     raise ValueError(
         f"WAIT_I18N_KEYS references unknown message keys: {sorted(_UNKNOWN_WAIT_KEYS)}"
     )
@@ -555,8 +552,7 @@ def _collect_heavy_path_candidates(
 ) -> list[LongTaskHeavyPathCandidate]:
     candidates: list[LongTaskHeavyPathCandidate] = []
     for path in _iter_runtime_python_files(root):
-        # 报告会写入 git 跟踪的 JSON endpoint，路径必须是 POSIX 形式，
-        # 否则 Windows 生成的产物与既有文件整体 diff 冲突。
+        # endpoint 是 git 跟踪产物，路径固定 POSIX 形式
         relative_path = path.relative_to(root).as_posix()
         source = _read_text(path)
         if not source:
@@ -624,8 +620,7 @@ def build_long_task_progress_report(
     return {
         "version": 1,
         "generated_at": datetime.fromtimestamp(get_current_time()).isoformat(),
-        # 同上：endpoint 是跨平台提交物，绝对值按 POSIX 形式输出，
-        # 避免换机生成时整文件重写（当前提交版本即 macOS 生成的 POSIX 路径）。
+        # 同上：root 以 POSIX 形式输出，换机生成时整文件 diff 稳定
         "root": root.as_posix(),
         "summary": {
             "total_targets": len(target_rows),

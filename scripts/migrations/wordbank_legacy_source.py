@@ -1,4 +1,4 @@
-"""Legacy source loading helpers for wordbank migration."""
+"""wordbank 迁移的遗留源加载辅助。"""
 
 from __future__ import annotations
 

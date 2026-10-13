@@ -27,7 +27,7 @@ class MergeCandidate:
 
 class MatrixSuggestionService:
     def __init__(self) -> None:
-        # 热路径本地缓存：群首次记录状态已确认后，后续消息不再击穿 DB。
+        # 热路径本地缓存：群首次记录确认后走缓存
         self._first_record_seen_cache: set[str] = set()
         self._group_locks: dict[str, asyncio.Lock] = {}
 
@@ -57,7 +57,7 @@ class MatrixSuggestionService:
                 return
 
             first_seen = await water_repo.mark_group_first_record_seen(group_id)
-            # 无论是否首次，DB 状态都已确认，后续消息直接走本地缓存。
+            # DB 状态确认后，后续消息直接走本地缓存
             self._first_record_seen_cache.add(group_id)
             if not first_seen:
                 return
@@ -182,7 +182,7 @@ class MatrixSuggestionService:
         if not candidates:
             return None
         candidates.sort(key=lambda item: item.score, reverse=True)
-        # 极端情况：两个候选矩阵分差过小，不做自动建议，避免误并。
+        # 分差过小时保持静默，回收自动建议
         if (
             len(candidates) > 1
             and abs(candidates[0].score - candidates[1].score) < 0.03

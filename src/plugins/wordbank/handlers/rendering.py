@@ -1,4 +1,4 @@
-"""Async rendering helpers for wordbank rich messages."""
+"""wordbank 富消息的异步渲染辅助。"""
 
 from __future__ import annotations
 
@@ -498,16 +498,11 @@ async def build_reply_detail_plan_entry(
                 locale,
                 "wordbank.reply.info_header",
                 entry_id=selected.response_item_id,
-                # status=format_status_label(selected.status, locale=locale),
-                # enabled=_format_enabled(selected.enabled, locale),
-                # deleted_at=str(selected.deleted_at) if selected.deleted_at else "0",
                 scope=format_scope_label(selected, locale=locale),
                 group_id=selected.group_id or "-",
                 created_by=selected.created_by,
                 probability=f"{detail.probability:g}",
                 weight=selected.weight,
-                # message_id=message_id,
-                # message_type=message_type,
             )
         )
     ]

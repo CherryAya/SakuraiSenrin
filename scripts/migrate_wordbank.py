@@ -1,4 +1,4 @@
-"""Migrate legacy PostgreSQL wordbank records into the current SQLite wordbank."""
+"""迁移遗留 PG wordbank 记录到 SQLite 词库。"""
 
 from __future__ import annotations
 

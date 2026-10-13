@@ -1,4 +1,4 @@
-"""Handle startup backup-sync confirmation replies from superusers."""
+"""超管的启动备份同步确认回复：路由与回复处理。"""
 
 from __future__ import annotations
 
@@ -46,7 +46,7 @@ startup_sync_reply = on_message(
 @startup_sync_reply.handle()
 async def _(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
     result = await dispatch_reply_route("startup_sync.restore", bot, event)
-    # 该路由的 handler 契约为 str | None，dispatch 统一按 object 返回。
+    # handler 契约为 str | None，dispatch 统一返回 object
     if not isinstance(result, str):
         return
     await finish_with_message(

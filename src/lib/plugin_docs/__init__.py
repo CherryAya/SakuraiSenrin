@@ -1,4 +1,4 @@
-"""Stable public facade for plugin docs helpers."""
+"""插件文档辅助的稳定导出面。"""
 
 from ._engine import DemoImageRenderer as DemoImageRenderer
 from ._engine import DemoRenderParams as DemoRenderParams

@@ -1,4 +1,4 @@
-"""Generate and validate plugin documentation demo assets."""
+"""生成并校验插件文档演示资产。"""
 
 from __future__ import annotations
 

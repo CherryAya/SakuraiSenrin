@@ -1,4 +1,4 @@
-"""Public treemap entrypoints for wordbank search rendering."""
+"""wordbank 搜索渲染的 treemap 公开入口。"""
 
 from .models import ResponseCardVerticalLayout as ResponseCardVerticalLayout
 from .models import SearchTreemapItem as SearchTreemapItem

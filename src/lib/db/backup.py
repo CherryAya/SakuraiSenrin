@@ -1,4 +1,4 @@
-"""SQLite database backup primitives."""
+"""SQLite 备份原语。"""
 
 from __future__ import annotations
 

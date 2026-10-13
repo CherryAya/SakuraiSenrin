@@ -115,11 +115,7 @@ def _rank_label_box_width(
 
 
 class _TileChartRenderer(WaterRankRenderer):
-    """暴露 rank 渲染器内部热力瓦片生成能力的受控子类。
-
-    ``_generate_tile_chart`` 是 rank 渲染器的保护成员；本文件在子类内部调用它，
-    再以公开方法对外暴露，既复用了同一份实现，又不构成跨模块的私有访问。
-    """
+    """子类复用 rank 渲染器的热力瓦片生成能力并对外暴露。"""
 
     def build_tile_chart(self, hourly_data: list[int]) -> BuildImage:
         return self._generate_tile_chart(hourly_data)
@@ -1440,7 +1436,7 @@ async def build_water_group_report_image(
     data: WaterGroupReportImageData,
     locale: LocaleCode,
 ) -> bytes | None:
-    # Group report rendering is Pillow-heavy and must not block the event loop.
+    # 群报表渲染开销大：走线程池保持事件循环畅通
     return await asyncio.to_thread(_build_water_group_report_image_sync, data, locale)
 
 

@@ -20,7 +20,7 @@ def _disable_runtime_processor(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture(autouse=True)
 async def _clear_reply_contexts() -> None:
-    """回复路由测试依赖 reply_context，逐例清理避免相互污染。"""
+    """逐例清理 reply_context，隔离回复路由用例。"""
     await reply_context_repo.clear_all_contexts()
 
 
@@ -31,7 +31,7 @@ async def seed_reply_context(
     payload: dict[str, Any],
     sender_bot_id: str = "99999",
 ) -> None:
-    """写入一条 reply_context，供回复路由用例命中。"""
+    """写入一条 reply_context 供回复路由用例命中。"""
     await reply_context_repo.upsert_context(
         context_kind=context_kind,
         message_id=str(message_id),

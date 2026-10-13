@@ -1,4 +1,4 @@
-"""Generated message keys from src.locales.zh_cn."""
+"""由 src.locales.zh_cn 生成的消息键。"""
 
 from typing import Literal
 

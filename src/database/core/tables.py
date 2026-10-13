@@ -290,11 +290,7 @@ class PluginConfig(CoreBase):
 
 
 class DeadLetter(CoreBase, TimeMixin):
-    """Buffered writer 的死信落库表。
-
-    死信此前只存于内存，重启即丢且无上界（长期失败会持续占用内存）。这里
-    落库以支持回溯与补偿重放，并按 resolved 状态闭环。
-    """
+    """Buffered writer 死信落库表：按 resolved 闭环，供回溯与补偿重放。"""
 
     __tablename__ = "sys_dead_letter"
     __table_args__ = (
@@ -308,7 +304,7 @@ class DeadLetter(CoreBase, TimeMixin):
     error: Mapped[str] = mapped_column(Text, nullable=False, default="")
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     item_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    # 原始批次，JSON 序列化后落库，供人工回溯与补偿重放
+    # 原始批次：JSON 落库，供回溯与补偿重放
     payload: Mapped[JsonArray] = mapped_column(JSON, nullable=False, default=list)
     resolved: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     resolved_at: Mapped[int | None] = mapped_column(Integer, nullable=True)

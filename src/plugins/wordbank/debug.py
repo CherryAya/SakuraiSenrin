@@ -1,4 +1,4 @@
-"""Wordbank performance debug helpers."""
+"""wordbank 性能调试辅助。"""
 
 from __future__ import annotations
 

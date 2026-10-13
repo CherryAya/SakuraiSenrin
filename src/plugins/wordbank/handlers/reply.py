@@ -1,4 +1,4 @@
-"""Reply-style wordbank management handlers."""
+"""wordbank 回复式管理 handler。"""
 
 from __future__ import annotations
 

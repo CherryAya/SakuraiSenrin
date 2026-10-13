@@ -339,11 +339,10 @@ async def test_apply_is_atomic_when_search_index_rebuild_fails(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """回归：索引重建失败时，变体改动必须整体回滚而不是留下半应用状态。
+    """索引重建失败时，变体改动整体回滚。
 
-    旧实现先 commit 变体改动、再重建 FTS 索引：一旦重建抛错，数据已是新文案
-    而索引仍是旧文案，且报告 JSON 未写出——既不完整也很难恢复。
-    """
+    旧实现先 commit 变体改动、再重建 FTS 索引：重建抛错时数据是新
+    文案、索引仍是旧文案。"""
     db_path = await _prepare_database(tmp_path, monkeypatch)
     image_root = tmp_path / "images"
     image_root.mkdir()
@@ -369,7 +368,7 @@ async def test_apply_is_atomic_when_search_index_rebuild_fails(
             dry_run=False,
         )
 
-    # 事务整体回滚：变体文案必须还是旧值，不能出现「数据已改、索引没跟上」。
+    # 事务整体回滚：变体文案保持旧值，杜绝「数据已改、索引滞后」。
     with sqlite3.connect(db_path) as connection:
         row = connection.execute(
             "SELECT trigger_text FROM wordbank_trigger_variant"

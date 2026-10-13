@@ -1,4 +1,4 @@
-"""Shared helpers for wordbank group detail card rendering."""
+"""wordbank 群详情卡片渲染共享辅助。"""
 
 from __future__ import annotations
 

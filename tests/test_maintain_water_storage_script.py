@@ -1,4 +1,4 @@
-# 测试/脚本需直接验证内部不变量，故关闭跨模块私有符号告警
+# 测试直取内部符号：pyright 私有访问豁免
 # pyright: reportPrivateUsage=false
 from __future__ import annotations
 
@@ -267,15 +267,15 @@ async def test_main_runs_selected_steps_and_writes_report(
 
     await maintain_script.main()
 
-    # captured 的值是 object，用 cast 显式收窄，避免下游 dict 取值全部退化成
-    # Unknown（运行期断言仍保留，不影响校验强度）。
+    # captured 的值是 object，用 cast 显式收窄，下游 dict 取值才
+    # 落到具体类型（运行期断言照旧保留）。
     report_record = cast("tuple[object, dict[str, object]]", captured["report"])
     report_payload = report_record[1]
     assert report_payload["summary_backfill"] == {"moved_rows": 1}
     assert report_payload["log_index_cleanup"] == {"shards_touched": 2}
     assert report_payload["summary_prune"] == {"pruned_rows": 3}
-    # db_root 是真实文件系统路径，Windows 下必然是反斜杠；按路径语义比较，
-    # 不绑定 POSIX 字面量（与 test_audit_water_storage_script.py 的写法一致）。
+    # db_root 是真实文件系统路径，Windows 下为反斜杠；按路径语义比较
+    # （与 test_audit_water_storage_script.py 写法一致）。
     post_audit = cast("dict[str, object]", report_payload["post_audit"])
     db_root = cast(str, post_audit["db_root"])
     assert Path(db_root) == Path("data/db")

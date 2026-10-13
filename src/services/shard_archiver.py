@@ -1,15 +1,8 @@
 """核心分片库（log / snapshot）的定期归档调度。
 
-``log_db`` / ``snapshot_db`` 是 EventStore 分片库：trace 审计日志与用户/群/
-成员快照按月落盘，``active_window_months=2``。二者此前没有任何归档调用点——
-分片只增不减，长跑后目录里堆积全部历史月份，而 water/wordbank 的同类库都有
-月度归档任务。这里把归档接入 cron，与 water（00:25/00:35/00:40）和 wordbank
-（00:30）错峰到 00:45。
-
-冷策略说明：两个库保持 ``ColdPolicy.DENY``（与 wordbank 的 HYDRATE 不同）。
-运行时没有读取历史分片的路径；归档后若真有路径去读，DENY 会让它**显式报错**
-而不是静默返回空库。运维脚本 ``scripts/query_trace_logs.py`` 自带 HYDRATE，
-不受影响。若将来新增历史读取需求，应连同该库的策略一起评估。
+``log_db`` / ``snapshot_db`` 是 EventStore 分片库，接入 cron 每日 00:45 归档。
+冷策略保持 ``ColdPolicy.DENY``（有别于 wordbank 的 HYDRATE）：归档后读历史
+分片会显式报错；运维脚本 ``scripts/query_trace_logs.py`` 自带 HYDRATE。
 """
 
 from __future__ import annotations
@@ -24,7 +17,7 @@ from src.logger import logger
 
 
 class _Scheduler(Protocol):
-    """本模块真正用到的 APScheduler 子集（与 backup_scheduler 同款收口）。"""
+    """本模块用到的 APScheduler 子集（backup_scheduler 同款收口）。"""
 
     def get_job(self, job_id: str, jobstore: str | None = ...) -> object | None: ...
 
@@ -41,7 +34,7 @@ class _Scheduler(Protocol):
     ) -> Callable[[Callable[[], Awaitable[None]]], object]: ...
 
 
-# 与 water/wordbank 的归档任务错峰：00:25/00:30/00:35/00:40 已有任务。
+# 避开 water/wordbank 的归档窗口
 ARCHIVE_HOUR = 0
 ARCHIVE_MINUTE = 45
 

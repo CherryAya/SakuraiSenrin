@@ -1,4 +1,4 @@
-"""封禁时长解析（admin 专用）。"""
+"""admin 时长解析：``1d2h3m`` 形式转 timedelta。"""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import re
 
 
 def parse_duration(time_str: str) -> timedelta:
-    """把 ``1d2h3m`` 形式的时长解析为 timedelta。无有效片段时抛 ValueError。"""
+    """``1d2h3m`` 形式时长解析；空片段抛 ValueError。"""
     time_units = {"d": 86400, "h": 3600, "m": 60, "s": 1}
     pattern = re.compile(r"(\d+)([dhms])")
     total_seconds = 0

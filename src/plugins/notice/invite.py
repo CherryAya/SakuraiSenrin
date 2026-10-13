@@ -41,12 +41,7 @@ DOCS_SOURCE = Path(__file__).parent / "docs" / "invite" / "README.MD"
 
 
 class _MatcherFinisher(Protocol):
-    """只暴露无参 ``finish`` 的最小协议。
-
-    nonebot 的 ``Matcher.finish`` 签名嵌套了 ``Message[Unknown]`` 等未绑定泛型，
-    strict 模式下直接调用点会被判为 partially unknown。passive 通知这里只用到
-    「结束当前事件」语义，用协议收窄即可，无需改动 nonebot 类型定义。
-    """
+    """零参 ``finish`` 的最小协议，收窄 strict 模式类型。"""
 
     async def finish(self) -> NoReturn: ...
 
@@ -92,8 +87,7 @@ async def _ensure_invitation_dependencies(
     group_id: str,
     group_name: str,
 ) -> None:
-    # 运行时同步只更新缓存，biz_user / biz_group 的数据库行可能尚未落库，
-    # 而 biz_invitation 的外键校验的是数据库行，因此必须显式确保父行存在。
+    # biz_invitation 外键校验数据库行；父行须显式落库。
     inviter = await user_repo.get_user(inviter_id)
     inviter_name = ""
     if inviter is None:

@@ -1,8 +1,6 @@
 """i18n 词典查表与格式化。
 
-只依赖 locales 目录与 logger，不依赖 nonebot / message_delivery / repositories，
-因此需要文案的模块（95 个）import 本模块即可，无需拉起投递与仓储栈。
-
+仅依赖 locales 目录与 logger，需要文案的模块直接 import 即可。
 与事件绑定的发送能力见 ``src.lib.i18n.delivery``。
 """
 

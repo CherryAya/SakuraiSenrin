@@ -20,13 +20,7 @@ from src.lib.messages import empty_message
 
 
 class _FinishCapable(Protocol):
-    """``matcher.finish(message)`` 的最小能力。
-
-    直接调用 ``matcher.finish`` 会把 nonebot 的类方法签名（含未参数化的
-    ``MessageSegment``/``MessageTemplate`` 与 ``**kwargs``）暴露进来，触发
-    “partially unknown”；经由本协议声明所需形态后，调用点只剩精确的
-    ``Message | str | None``，且真实 ``Matcher`` 仍结构匹配。
-    """
+    """``matcher.finish(message)`` 的最小能力，收口 nonebot 的类方法签名。"""
 
     async def finish(self, message: Message | str | None = None) -> object: ...
 
@@ -199,11 +193,7 @@ async def build_image_or_text_plan_entry(
 
 
 def _is_awaitable[T](value: T | Awaitable[T]) -> TypeIs[Awaitable[T]]:
-    """``isinstance(value, Awaitable)`` 的收窄版（TypeIs 保真到元素类型）。
-
-    裸 ``isinstance`` 只把 ``alternative`` 收窄成 ``Awaitable[Unknown]``，返回值
-    因此带上 Unknown；TypeIs 让 else 分支保持 ``TPlanResult``。
-    """
+    """``isinstance(value, Awaitable)`` 的收窄版：TypeIs 保真到元素类型。"""
     return isinstance(value, Awaitable)
 
 
@@ -323,12 +313,7 @@ async def deliver_message_plan(
 
 
 async def finish_matcher(matcher: _FinishCapable) -> None:
-    """结束当前响应器且不带正文（等价 ``matcher.finish()``）。
-
-    直接调用真实 ``Matcher.finish`` 会把 nonebot 的类方法签名（含未参数化的
-    ``MessageSegment``/``MessageTemplate`` 与 ``**kwargs``）暴露进诊断；经协议
-    收口后调用点干净，真实 ``Matcher`` 仍结构匹配。
-    """
+    """结束当前响应器且正文留空（等价 ``matcher.finish()``）。"""
     await matcher.finish()
 
 

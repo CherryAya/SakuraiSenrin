@@ -1,4 +1,4 @@
-"""Standalone treemap rendering for wordbank search results."""
+"""wordbank 搜索结果的独立 treemap 渲染。"""
 
 from __future__ import annotations
 

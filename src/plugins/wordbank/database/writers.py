@@ -1,4 +1,4 @@
-"""Wordbank buffered writers."""
+"""wordbank 缓冲写入器。"""
 
 from collections.abc import Sequence
 
@@ -13,11 +13,7 @@ async def _bulk_insert_wordbank_logs(
     ops: WordbankLogOps,
     data: Sequence[WordbankLogPayload],
 ) -> int:
-    """适配 ``execute_batch_write`` 的 ``Sequence`` 入参契约。
-
-    ``WordbankLogOps.bulk_insert_logs`` 声明为 ``list``（对调用方更严，安全），
-    直接作为 ``method`` 传入会因参数逆变而类型不兼容；这里补一层同实例转发。
-    """
+    """适配 execute_batch_write 的 Sequence 入参契约：同实例转发一层。"""
     return await ops.bulk_insert_logs(list(data))
 
 

@@ -401,7 +401,7 @@ class WaterRankService:
         locale: LocaleCode,
     ) -> list[WaterRankCardItem]:
         started = perf_counter()
-        # 名字走批量接口：此前逐条 get_name_by_uid，在缓存未命中时是 N 个会话
+        # 名字走批量接口，一次会话覆盖全部条目
         display_names = await self._resolve_display_names(subject, items, locale)
         names = [display_names.get(item.entity_id, "") for item in items]
         secondary_labels, avatars = await asyncio.gather(
@@ -508,8 +508,7 @@ class WaterRankService:
     ) -> dict[str, str]:
         """批量解析展示名，取代逐条 _resolve_display_name。
 
-        user / group 走 repo 的批量接口，一次会话即可覆盖全部条目；缓存未命中
-        时此前是 N 个并发会话。matrix 无展示名，直接返回空。
+        user / group 走 repo 批量接口；matrix 走空结果。
         """
         entity_ids = [item.entity_id for item in items]
         if subject == "user":
@@ -521,8 +520,7 @@ class WaterRankService:
             }
         if subject == "group":
             resolved = await group_repo.get_names_by_gids(entity_ids)
-            # 与 resolve_group_name(None, ...) 的兜底保持一致：DB 无名时原本会
-            # 因 bot=None 走异常分支并返回 "群聊_<尾号>"
+            # 兜底命名与 resolve_group_name(None, ...) 保持一致
             return {
                 entity_id: resolved.get(entity_id) or f"群聊_{entity_id[-4:]}"
                 for entity_id in entity_ids

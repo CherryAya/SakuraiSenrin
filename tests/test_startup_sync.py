@@ -1,4 +1,4 @@
-# 测试/脚本需直接验证内部不变量，故关闭跨模块私有符号告警
+# 测试直取内部符号：pyright 私有访问豁免
 # pyright: reportPrivateUsage=false
 from __future__ import annotations
 
@@ -290,10 +290,9 @@ def test_ensure_restore_not_in_progress_raises_when_restore_is_running() -> None
 async def test_reload_runtime_state_after_restore_warms_repos_then_reloads_plugins(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """恢复后的重载顺序：先预热核心仓储，再触发各插件注册的重载回调。
+    """恢复后的重载顺序：先预热核心仓储，再触发插件侧重载回调。
 
-    插件不再由本层点名，而是通过 src.lib.runtime_reload 自注册，
-    因此这里注册两个回调来代表插件侧。
+    插件经 src.lib.runtime_reload 自注册，此处注册两个回调代表插件侧。
     """
     events: list[str] = []
 

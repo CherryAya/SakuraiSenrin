@@ -24,8 +24,7 @@ class LocalizedMixin:
         if isinstance(labels, Enum):
             labels = labels.value
         elif isinstance(member, IntFlag) and member.value != 0:
-            # member 是 IntFlag 时必为 Enum，val 即其数值；这里取成员自身的
-            # 整数形态，避免沿用上面可能含非数值分支的 val 联合类型。
+            # IntFlag 成员取整数形态
             flag_value = member.value
             decomposed_labels: list[str] = []
             for m in member.__class__:

@@ -106,11 +106,7 @@ class WaterRepository(
 
     @staticmethod
     def _hot_summary_start_date(today_ts: int | None = None) -> int:
-        # 锚点必须取业务时区（CST）的日界：`arrow.get(int)` 默认按 UTC 解释，
-        # floor("day") 于是在 UTC 取日界。CST 00:00-08:00 期间两者相差一天——
-        # 归档 job（00:35 CST）按 UTC 边界算，读路径 08:00 后又按新边界算，
-        # 热/冷两段的切分点每天漂移一天：边界那天在 08:00 至次日 job 之间
-        # 既不在 core 也没被回填进分片，查询静默漏掉它（约 16.5 小时/天）。
+        # 日界按业务时区取：arrow.get(int) 默认走 UTC
         anchor = arrow.get(today_ts or get_current_time()).to("Asia/Shanghai")
         return int(
             anchor.floor("day")
@@ -199,7 +195,7 @@ class WaterRepository(
         month_keys = self._iter_month_keys(start_date, end_date)
         if not month_keys:
             return []
-        # 并发度由 AliasStore 收口，取代原先无上限的裸 gather
+        # 并发度由 AliasStore 收口
         results = await water_summary.scan_shards(
             month_keys,
             lambda session: WaterArchivedSummaryOps(session).get_summaries_in_window(
@@ -597,7 +593,7 @@ class WaterRepository(
                 mapping_ops = WaterGroupMatrixMapOps(session)
                 matrix_id = await mapping_ops.get_matrix_id_by_group(group_id)
                 if matrix_id is None:
-                    # mtx_ + 8位hex，碰撞概率极低；做轻量重试避免误并矩阵。
+                    # mtx_ + 8位hex：轻量重试收口碰撞
                     all_matrix_ids = set(
                         (await mapping_ops.get_all_mappings()).values()
                     )
@@ -728,7 +724,7 @@ class WaterRepository(
             for item in summaries
             if self._is_hot_summary_date(int(item["record_date"]))
         ]
-        # 归档分片写入：按 record_date 自动路由，业务侧不再手算 route_key
+        # 归档分片：record_date 自动路由
         archived_payloads = [
             item
             for item in summaries
@@ -788,7 +784,7 @@ class WaterRepository(
     ) -> int:
         if not messages:
             return 0
-        # 按 record_date 自动路由到当月分片，业务侧不再手算 route_key
+        # record_date 自动路由到当月分片
         return await water_message.write_batch(
             messages,
             method=WaterMessageOps.bulk_insert_water_message,

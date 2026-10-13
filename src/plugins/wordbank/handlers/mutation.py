@@ -1,4 +1,4 @@
-"""Wordbank mutation handlers for review and edit flows."""
+"""wordbank 审核与编辑流程的变更 handler。"""
 
 from __future__ import annotations
 
@@ -93,9 +93,6 @@ def format_entry_history(
             locale,
             "wordbank.reply.history",
             entry_id=selected.response_item_id,
-            # status=format_status_label(selected.status, locale=locale),
-            # enabled=_format_enabled(selected.enabled, locale),
-            # deleted_at=_format_deleted_at(selected.deleted_at),
             scope=format_scope_label(selected, locale=locale),
             probability=f"{detail.probability:g}",
             weight=selected.weight,
