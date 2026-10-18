@@ -1,0 +1,183 @@
+# 数据库使用规范
+
+本规范适用于 SakuraiSenrin 当前的 sharedDB v2 体系。
+
+## 1. 选型
+
+- `StateStore`：少量状态、配置、索引、映射表。
+- `EventStore`：按时间分片的事件/日志/明细记录。
+- `CounterStore`：高写低读的计数类数据，优先做小时/天级聚合。
+
+## 2. 写入原则
+
+- 热路径优先走仓储层，不在 handler 里直接写 SQL。
+- 高频写入使用批量/缓冲写入，避免每条消息都同步落库。
+- 写入前先判断数据是否能聚合，能聚合就不要存明细。
+- 默认写入策略用 `WritePolicy.BUFFERED`。
+- 只有管理员操作、修复操作、强一致更新才用 `WritePolicy.IMMEDIATE`。
+
+## 3. 查询原则
+
+- 日常查询优先查聚合表、计数表、索引表。
+- 只有确实需要历史明细时，才按时间分片 hydrate 冷库。
+- 长时间范围查询要显式限窗，避免一次扫太多分片。
+
+## 4. 分片与冷热分层
+
+- 活跃数据保留在 `.db`。
+- 冷数据归档为 `.db.zst`。
+- `manifest` 记录分片状态，不能依赖目录扫描作为唯一真相。
+- 对于几乎不回看的数据，优先让它进入冷归档。
+
+## 5. 备份与恢复
+
+- 所有数据库实例都应实现 `iter_backup_sources()`。
+- 备份服务会收集热库、冷归档和 manifest。
+- 恢复时先恢复文件，再按需要 hydrate 或重建索引。
+
+### 5.1 如何加入备份计划
+
+当前默认备份计划已经改为“自动发现 + 自动注册”模式，不再在 `src/services/backup.py` 中手工拼接插件数据库列表。
+
+接入约定如下：
+
+1. 数据库实例统一放在 `database/instances.py`。
+2. 实例类型优先使用 sharedDB v2 提供的 `StateStore`、`EventStore`、`CounterStore`。
+3. 实例定义完成后，立即调用 `register_backup_database(...)`。
+4. 备份服务会自动导入：
+   - `src.database.instances`
+   - `src.plugins/*/database/instances.py`
+5. 只要实例模块能被独立导入，该数据库就会自动进入默认备份计划。
+
+推荐写法：
+
+```python
+from src.lib.backup import register_backup_database
+from src.lib.db.connectors import EventStore, StateStore
+
+plugin_core_db = StateStore(
+    namespace="example_db",
+    filename="core.db",
+)
+register_backup_database(plugin_core_db)
+
+plugin_log_db = EventStore(
+    namespace="example_db",
+    prefix="event",
+    fmt="%Y_%m",
+    active_window_months=2,
+)
+register_backup_database(plugin_log_db)
+```
+
+接入时还要满足这些约束：
+
+- 不要把注册动作放在插件入口 `__init__.py`、`on_startup` 或 service 初始化里。
+- `database/instances.py` 必须可以脱离 NoneBot 插件加载链独立导入，因为 `scripts/run_backup.py`、`scripts/check_backup.py` 这类脚本不会加载插件入口。
+- 如果实例使用的是 sharedDB v2 标准 store，实现 `iter_backup_sources()` 一般不需要额外手写；`StateStore` 会提供主库文件，`EventStore` / `CounterStore` 会同时提供热分片、冷归档和 manifest。
+
+### 5.2 接入后的自检
+
+新插件数据库接入备份后，建议至少做一次下面的检查：
+
+1. 运行健康检查，确认远端仓库可访问：
+
+```bash
+uv run python scripts/check_backup.py
+```
+
+2. 手动触发一次备份：
+
+```bash
+uv run python scripts/run_backup.py --force
+```
+
+3. 确认输出的 manifest 中包含新数据库对应的文件或分片。
+
+manifest 默认保存在：
+
+```text
+<BACKUP_LOCAL_ROOT>/manifests/<run_id>.json
+```
+
+如果插件引入的是分片库，除了活跃 `.db` 外，还应关注：
+
+- 冷归档 `.db.zst`
+- 对应的 `manifest.json`
+
+## 6. 推荐约束
+
+- 插件层不要直接跨层访问表。
+- `init_all_tables()` 应作为初始化入口。
+- 新功能优先设计成“可聚合、可归档、可按时间分片”。
+- 移动端/低资源环境优先使用 SQLite + sharedDB v2，不优先引入重型数据库。
+
+## 7. 简单判断
+
+- 配置/映射表 -> `StateStore`
+- 日志/事件流 -> `EventStore`
+- 计数/统计 -> `CounterStore`
+
+## 8. 示例
+
+```python
+from src.lib.backup import register_backup_database
+from src.lib.db.connectors import CounterStore, EventStore, StateStore
+
+core_db = StateStore(namespace="core_db", filename="core.db")
+log_db = EventStore(namespace="log_db", prefix="log", fmt="%Y%m")
+water_db = CounterStore(namespace="water_db", prefix="logs", fmt="%Y_%m")
+
+register_backup_database(core_db)
+register_backup_database(log_db)
+register_backup_database(water_db)
+```
+
+## 9. 手动备份
+
+数据库规范层面只约定两件事：
+
+1. 备份服务只会备份已经注册的数据库实例。
+2. 手动备份和定时备份共用同一套注册发现逻辑。
+
+常用手动操作如下。
+
+### 9.1 手动执行一次备份
+
+即使 `BACKUP_ENABLED=false`，仍然可以手动强制执行：
+
+```bash
+uv run python scripts/run_backup.py --force
+```
+
+成功后会输出：
+
+- `run_id`
+- 本地 `manifest` 路径
+- 远端 `restic snapshot id`
+
+### 9.2 检查远端仓库状态
+
+```bash
+uv run python scripts/check_backup.py
+```
+
+只看最近 `5` 个快照：
+
+```bash
+uv run python scripts/check_backup.py --limit 5
+```
+
+### 9.3 做一次恢复验证
+
+```bash
+uv run python scripts/run_restore.py latest --target ./data/restore-check
+```
+
+推荐顺序：
+
+1. `uv run python scripts/check_backup.py`
+2. `uv run python scripts/run_backup.py --force`
+3. `uv run python scripts/run_restore.py latest --target ./data/restore-check`
+
+更完整的环境变量、R2 配置、定时调度和恢复说明，继续看 [数据库备份](./backup.md)。

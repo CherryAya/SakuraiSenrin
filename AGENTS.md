@@ -1,314 +1,22 @@
-# AGENTS.md
+# SakuraiSenrin 开发与协作规则
 
-SakuraiSenrin 插件开发规范（Plugin Development Spec）
+版本：v2.0 草案 · 更新：2026-10-18
 
-版本：v1.2  
-适用范围：`src/plugins/**`、`src/hooks/**`、`tests/plugins/**`  
-最后更新：2026-07-01
+本文件是所有 coding agent 共用的规则正文。协作、检查和提交规则适用于全仓库；插件约束适用于 `src/plugins/**`、`src/hooks/**` 及其测试。更近的目录规则补充本文件；当前会话中用户的明确指令优先。
 
----
+## 1. Plan → Confirm → Action
 
-## 1. 目标与定位
+1. **Plan**：先只读检查现有实现和工作区，提交方案，说明目标、涉及文件、关键设计、影响范围、验证方法，以及是否包含提交或其他有副作用的操作。
+2. **Confirm**：必须等待用户明确审查同意。询问细节、讨论方案、没有回复，都不算批准。用户要求“先写初稿供审阅”时，批准范围止于初稿和约定检查。
+3. **Action**：在已批准范围内连续执行，不逐条命令重复询问。新增实施阶段、扩大范围、改变关键设计或发现必须处理的无关问题，先补充计划，再等确认。
 
-本文件用于给人类开发者与 AI coding agents 提供统一、可执行的项目规则，重点解决：
+为准备计划而读取代码、查文档、查看差异是允许的。修改文件、执行会改文件的检查、运行迁移或真实数据库写入，必须包含在批准范围内。破坏性操作和外部发布须在计划里单独说明，不由普通代码修改授权推定。
 
-1. 插件如何在当前架构中正确接入。
-2. 插件代码如何保持可维护、可测试、可审计。
-3. 新增功能如何不破坏已有运行时约束（同步检查、黑白名单、缓存与落库策略）。
+开始修改前记录工作区状态，保留用户已有改动。不得覆盖、回滚或把无关改动顺手纳入本次交付。
 
-本文件是“面向 agent 的 README”，不替代业务文档。
+## 2. 质量门禁：默认全局
 
----
-
-## 2. AGENTS 规范兼容约定（参考 agentsmd）
-
-本项目采用 `agentsmd/agents.md` 的核心原则：
-
-1. `AGENTS.md` 使用标准 Markdown，无强制字段。
-2. 若未来存在多个 `AGENTS/Agents` 文件，按“离目标文件最近者优先”处理冲突。
-3. 用户在当前会话中的显式指令优先级高于文档默认规则。
-4. 文档中写出的检查命令视为可执行质量门禁，agent 需尽量自动执行并修复失败。
-
-注：为兼容不同工具链，若后续新增子目录级 `AGENTS.md`，需遵循“近目录优先”并避免与根规范冲突。
-
----
-
-## 3. 项目架构快照（当前事实）
-
-### 3.1 启动与加载链路
-
-1. 入口：`bot.py`
-2. 启动阶段：
-   - `init_fonts()`
-   - `nonebot.init()`
-   - 注册 OneBot V11 adapter
-3. `on_startup`：`init_db()` 初始化 `core/log/snapshot` 库
-4. `on_bot_connect`：
-   - 各 repository `warm_up()`
-   - API 同步用户/群组缓存
-5. 插件加载：
-   - `nonebot.load_plugins("src/hooks/")`
-   - `nonebot.load_plugins("src/plugins/")`
-
-### 3.2 运行时拦截与鉴权
-
-`src/hooks/processor.py` 通过 `run_preprocessor` 统一执行：
-
-1. 运行时同步：用户、群组、群成员缓存回填。
-2. 运行时检查：全局忽略、超管放行、黑名单拦截、群授权检查、全员禁言检查。
-3. `PluginMetadata.extra.no_check` 可绕过该检查链（仅限明确需要的系统级插件）。
-
-### 3.3 数据层职责分离
-
-1. `core_db`：主业务实体（用户/群组/成员/邀请/黑名单/插件开关）。
-2. `log_db`（分片）：审计日志与插件使用日志。
-3. `snapshot_db`（分片）：名称/名片等变更快照。
-4. Repository 层默认 `cache -> diff -> writer/db`，不鼓励插件直接跨层写 SQL。
-
----
-
-## 4. 插件分层模型（强制）
-
-插件按“入口编排 + 业务处理 + 数据访问”分层：
-
-1. 插件入口文件：只做 matcher 注册、元数据声明、薄编排。
-2. `handlers/`：处理命令解析、事件分流、交互文案。
-3. `services/`：封装业务规则、流程编排、幂等控制。
-4. `database/`（可选）：插件独立数据模型、ops、repo、writers。
-5. 文档统一通过 `PluginMetadata.extra.docs` 暴露给 `help` 自动注册。
-6. 多文件命令插件必须提供 `docs/README.MD`；单文件命令插件允许将文档直接内嵌在 `.py` 中。
-7. 被动插件可仅保留代码内文档实现。
-
-说明：
-包级 `__init__.py` 若仅用于导入子模块、声明 `__all__` 或组织目录结构，而不是被 NoneBot 直接视作插件入口，则不受 `extra.docs` 强制约束。
-
-禁止在 handler 中堆积复杂 SQL、跨模块状态机和大段流程逻辑。
-
----
-
-## 5. 目录与命名规范
-
-### 5.1 推荐目录模板
-
-```text
-src/plugins/<plugin_name>/
-  __init__.py               # 多文件插件入口
-  docs/README.MD            # 多文件 COMMAND 插件必需；PASSIVE/EVENT/CRON 可选
-  handlers/
-    __init__.py
-    admin.py
-    passive.py
-  services/
-    __init__.py
-    core.py
-  database/                 # 仅在插件有独立持久化需求时创建
-    __init__.py
-    instances.py
-    tables.py
-    ops.py
-    repo.py
-    types.py
-    writers.py
-```
-
-### 5.2 命名要求
-
-1. 插件目录名使用小写语义名，如 `water`、`notice`。
-2. 命令插件优先使用 `on_command` / `CommandGroup`，命令前缀和别名集中定义。
-3. 文件命名表达职责，不使用 `misc.py`、`tmp.py` 一类模糊命名。
-4. 单文件插件可直接位于 `src/plugins/*.py`，此时文档允许直接内嵌在该文件中。
-
----
-
-## 6. 插件元数据与权限契约
-
-每个可加载插件必须声明 `PluginMetadata`，且 `extra` 至少包含：
-
-1. `author`
-2. `version`
-3. `trigger`（建议复用 `src/lib/consts.py::TriggerType`）
-4. `permission`（建议复用 `src/database/core/consts.py::Permission`）
-5. `docs`（帮助系统自动注册文档的统一接口）
-
-可选字段：
-
-1. `no_check`：仅允许用于需要绕过运行时拦截的系统通知/防护插件。
-
-约束：
-
-1. 默认不设置 `no_check`。
-2. 涉及管理能力的命令必须设置明确权限（如 `SUPERUSER` 或群管理角色检查）。
-3. 所有插件必须实现 `extra.docs`，否则视为不合规插件。
-4. 本项目插件层不再维护独立 `usage` 文本，帮助文档统一由 `extra.docs` schema 描述并由项目级文档引擎渲染。
-
-### 6.1 文档接口契约（强制）
-
-`extra.docs` 推荐最小结构如下：
-
-```python
-from src.lib.plugin_meta import create_plugin_metadata
-
-__plugin_meta__ = create_plugin_metadata(
-    name=name,
-    description=description,
-    extra={
-        "author": "SakuraiCora",
-        "version": "0.1.0",
-        "trigger": TriggerType.PASSIVE,
-        "permission": Permission.SUPERUSER,
-        "docs": {
-            "kind": "plugin",
-            "source": {
-                "kind": "readme",
-                "readme_path": str(DOCS_SOURCE),
-            },
-            "tree": {
-                "slug": "notice.user",
-                "parent_slug": "notice",
-                "category": "system",
-                "order": 100,
-            },
-            "visibility": {
-                "visible": False,
-                "hidden": False,
-                "internal": False,
-            },
-            "permission": Permission.SUPERUSER,
-            "aliases": ("用户事件处理", "notice.user"),
-        },
-    },
-)
-```
-
-字段要求：
-
-1. `kind`：必填，描述节点类型，如 `plugin`、`overview`、`internal`。
-2. `source`：必填，当前至少支持 `readme_path`。
-3. `tree.slug`：必填，要求全仓唯一。
-4. `tree.parent_slug`：子节点必填；顶层节点留空。
-5. `visibility.visible`：必填，控制是否出现在默认 help 列表。
-6. `permission`：建议显式填写；节点默认权限与插件权限一致时也可重复声明。
-7. `aliases`：建议填写，便于 help 精确/模糊命中。
-
-### 6.2 文档内容格式（统一由引擎渲染）
-
-README 仍是首要文档内容载体，但它已经从“最终协议”降级为“结构化数据源”。渲染结果统一由项目级文档引擎生成。
-
-约束：
-
-1. `help` 插件只依赖 `extra.docs` schema、README 数据源和统一渲染器，不硬编码插件说明。
-2. 命令插件的 README 必须覆盖命令、参数、示例、权限说明。
-3. 被动插件可简化 README 内容，但仍必须提供可被精确查询的节点。
-4. 多文件命令插件必须提供 `docs/README.MD`；单文件插件可将文档内嵌在 `.py`。
-5. `help` 对节点/功能查询必须支持精确命中、模糊命中和歧义提示三种结果。
-6. 总览节点与子节点关系必须通过 `tree.parent_slug` 显式表达，禁止继续依赖“继续发送 #help xxx”这类隐式跳转文案。
-
----
-
-## 7. 运行时行为规范
-
-1. 高并发热路径默认使用 `WritePolicy.BUFFERED`，降低 I/O 抖动。
-2. 管理类强一致操作可使用 `WritePolicy.IMMEDIATE`。
-3. 对外 API 调用必须可失败并降级，避免阻塞主流程。
-4. 事件处理需要防止凛凛自触发循环（如 `event.user_id == bot.self_id`）。
-5. 定时任务需保证：
-   - 唯一 `id`
-   - 幂等控制
-   - 失败日志可追踪
-
-### 7.1 OneBot Message 注入约束（强制）
-
-1. 禁止使用 `Message(...)` 直接包裹文本消息，避免将用户输入或插值字符串按 CQ 码重新解析，造成 message 注入。
-2. 纯文本消息必须使用 `MessageSegment.text(...)` 手动组装；若项目已有统一辅助函数，应优先复用。
-3. 图片、艾特、回复等复合消息必须显式逐段拼装 `MessageSegment.image(...)`、`MessageSegment.at(...)`、`MessageSegment.reply(...)` 等，不得把整段 CQ 文本塞进 `Message(...)`。
-4. `Message()` 空构造仅允许用于“先建空消息、再逐段 append segment”的场景；禁止后续再通过 `Message(raw_text)` 回退到不安全构造。
-5. 若文件导入 `Message` 仅用于 type hint、返回类型标注、`CommandArg()` / `Arg()` 参数声明、`isinstance` 判断或消息对象遍历，可保留，不视为违规。
-6. 若消息内容来自用户输入、README、i18n、数据库或任何外部数据源，默认按“不可信文本”处理，必须走显式 `MessageSegment` 拼装。
-
-### 7.2 统一消息计划层约束（强制）
-
-1. 插件与 hook 的正式输出路径必须优先构造 `DeliveryPlan`，并通过 `deliver_message_plan(...)` 投递。
-2. 插件与 hook 不得直接导入或调用 `deliver_single_message(...)`、`resolve_delivery_target(...)` 作为正式输出入口。
-3. 需要多条消息、等待提示、合并转发、回复段、图片段时，应先表达为 `MessagePlanEntry` / block，再交给统一投递层决定最终发送形态。
-4. `deliver_single_message(...)` 仅允许保留在基础设施、兼容层或统一消息计划层内部，不得在插件业务层扩散。
-
-### 7.2 Message Delivery 与合并转发约束（强制）
-
-项目内所有“主动发消息”“复用历史消息”“发送合并转发”的能力，统一收敛到：
-
-- `src/lib/message_plan.py`
-- `src/lib/message_delivery.py`
-- `src/lib/message_assets.py`
-- `src/lib/message_api_hooks.py`
-- `src/lib/onebot_forward.py`
-
-详细开发规范见：
-
-- `docs/development/message-delivery.md`
-
-强制约束如下：
-
-1. 插件或 hook 的正式输出接口必须优先产出 `DeliveryPlan`，由 `deliver_message_plan(...)` 统一决定单条发送、等待提示、批量节点和合并转发。
-2. 插件层可以决定“要发哪些逻辑内容”，但不得自己决定“这一批内容最终是单条消息、逐条消息还是合并转发”。
-3. 插件层不得直接调用 `send_custom_forward(...)`、`deliver_forward_messages(...)`，也不得手写一套“查缓存 -> 转发 -> 发送 -> 回写”的重复发送链路。
-4. 插件层不得直接把 `send_group_forward_msg` / `send_private_forward_msg` 作为常规业务实现；自定义 forward 节点构造仅允许留在底层 fallback。
-5. 插件层不得显式保留“先发给自己，再转发出去”的业务路径；若平台限制导致必须 staging，只允许封装在 `ensure_forward_node(...)` 这一类底层实现中。
-6. `message_asset` 仅是发送资产缓存，不是业务数据库；插件不得直接依赖其表结构做业务查询或写入。
-7. 只要消息带 `reply`、`at` 或其他上下文绑定语义，就不能为了命中缓存而当作全局可复用消息。
-8. 合并转发复用必须顺序敏感；不得仅凭节点内容相同就整包复用，也不得做“跳过中间节点复用后缀”的稀疏复用。
-9. 对 help、guide、demo、批量列表这类多节点输出，若修改了节点顺序、summary 内容或首屏结构，必须同步检查 forward cache 语义是否仍然成立。
-10. 涉及 `message_plan` / `message_delivery` 语义变更时，默认需要补测试，至少覆盖单条、等待提示、批量转发、缓存命中、失效重建、前缀复用和 fallback 路径。
-11. 涉及消息复用、计划渲染与转发判定的新增分支，必须补 debug 日志，确保 hash、缓存命中、停止复用原因和 fallback 原因可追踪。
-
----
-
-## 8. 数据与审计规范
-
-1. 优先通过 repository/service 调用，不直接在插件 handler 中访问底层表。
-2. 需要留痕的权限、封禁、状态变更必须落审计日志（`log_db`）。
-3. 名称/名片等用户可感知文本变化，按现有能力写入 `snapshot_db`。
-4. 新插件若引入独立数据库：
-   - 明确 `StateStore`、`EventStore`、`CounterStore` 等 sharedDB v2 存储模型的选择理由。
-   - 提供初始化入口与 `init_all_tables()`。
-   - 提供最小可测 repo 接口，避免业务层直接依赖 ops。
-
----
-
-## 9. 测试规范（以 water 插件为基线）
-
-测试目录结构：
-
-```text
-tests/plugins/<plugin_name>/
-  helpers.py
-  test_handlers.py
-  test_services.py
-  test_repository_edges.py
-```
-
-至少覆盖：
-
-1. 参数解析与非法输入处理。
-2. 权限门禁与角色判断。
-3. 幂等路径（重复操作、锁冲突、无待处理状态）。
-4. 外部依赖失败时的降级路径。
-5. 核心成功路径与关键返回文案。
-6. `extra.docs` schema、树关系与 help 自动发现行为。
-
-建议：
-
-1. 使用 `AsyncMock` 隔离外部 I/O。
-2. 对包含启动副作用的包入口做隔离（参照 `tests/conftest.py` 对 `src.plugins.water` 的处理方式）。
-3. 测试代码同样遵守 Message 注入约束：
-   - 纯文本测试消息使用安全 helper 或 `MessageSegment.text(...)` 组装。
-   - 需要图片、艾特、回复段时，显式构造对应 `MessageSegment`。
-   - 仅作类型标注的 `Message` 导入允许保留。
-
----
-
-## 10. 代码质量门禁
-
-涉及 Python 代码改动时，提交前必须通过：
+有 Python 代码、依赖或影响 Python 行为的配置改动时，默认在仓库根目录依次执行：
 
 ```bash
 uv run ruff check --fix
@@ -316,57 +24,77 @@ uv run ruff format
 uv run pyright
 ```
 
-同时建议执行：
+- 默认检查全仓库，不能因为改动文件少就假定没有跨模块影响。
+- 只有能说明调用关系、公共接口及配置均不受影响，且局部检查方案已获用户审查时，才允许缩小范围。
+- 仅修改 Markdown、skill 说明/元数据、规则备份或这些文件的 Git 忽略例外，且没有代码、依赖或运行/检查配置改动时，可明确说明隔离依据，改做备份、链接、skill 和差异检查。
+- Ruff 自动修复/格式化后检查完整差异，区分本次结果与用户原有改动。出现超出批准范围的修复，交回用户审查。
+- 不得用 pyright baseline 替代全局 pyright，不得通过刷新基线、降级诊断、添加无依据的忽略来制造通过。
+- 检查失败必须报告真实结果。相关错误在批准范围内修复；存量或无关错误需要扩展范围时，重新提交计划，不能宣称门禁已通过。
+- 上述命令不代替行为回归测试。行为变化需验证相应成功、拒绝/非法输入及失败路径；公共基础设施或跨插件变更须评估更广的回归范围。
 
-```bash
-uv run pytest
+## 3. 用户文案必须 i18n
+
+所有机器人向最终用户展示的产品文案必须经过项目 i18n，代码中不得硬编码裸字符串或拼接未本地化的短语。
+
+覆盖回复、错误、权限拒绝、等待提示、通知、帮助包装、插件名称/描述、图片文字和转发标题/摘要。使用完整模板与命名占位符；用户输入、名称、查询结果等作为参数传入。
+
+词典源为 `src/locales/zh_cn.py`、`lzh.py`、`x_meme.py`；类型键由生成器维护。解析事件/群组语言后调用 `tr(...)`，再按消息计划规范组装输出。命令标识、协议字段、内部日志及用户原始内容按其数据属性处理；它们一旦被用作产品说明，仍须本地化包装。
+
+详细接入步骤和例外边界见[文案与 i18n](.agents/skills/sakuraisenrin-message-delivery/references/i18n.md)。现有不符合项记录在插件总表，迁移实现需另经计划审查。
+
+## 4. 插件组成与现状
+
+[插件总表](docs/development/plugin-catalog.md)集中维护新插件组成要求、现有插件/子插件/hook、入口、触发、权限、数据、i18n、文档、测试和已知缺项。
+
+- 入口负责注册与薄编排；解析/交互、业务规则、数据访问按职责分开。简单插件允许单文件，不为满足模板创建空目录。
+- 每个可加载插件声明 `create_plugin_metadata(...)`，提供 `author/version/trigger/permission/docs`；名称和描述使用 i18n，并提供对应 `extra.i18n` 键。
+- `extra.docs` 是帮助注册接口，slug 全仓唯一，子节点显式设置 parent_slug，权限、可见性与实际能力一致。优先使用项目元数据/文档 helper，避免复制完整字典。
+- 多文件命令插件提供 `docs/README.MD`，覆盖命令、参数、示例和权限；其他形态提供引擎实际支持的文档来源。普通组织包不冒充可加载插件。
+- 新增、删除插件，或改变入口、命令、公开接口、数据归属、文档/测试位置时，同步更新总表相关行。
+- 元数据权限说明不能代替 matcher/service 中的实际鉴权。`no_check` 默认不设；需要绕过统一检查时，必须在计划和文档里解释系统级用途。
+
+## 5. 专项 skill：按任务读取
+
+遇到下列任务，实施前必须读取对应 skill；细则只在 skill 正文及其 references 中维护，不复制到本文件或 Claude 入口。
+
+| 任务 | 必须读取 |
+| --- | --- |
+| 访问公共数据、跨插件消费数据、新建插件 namespace、迁移、writer/cache/备份接入 | [sakuraisenrin-database](.agents/skills/sakuraisenrin-database/SKILL.md) |
+| 用户文案、回复/通知、消息计划、图片/艾特/回复段、合并转发、消息资产缓存 | [sakuraisenrin-message-delivery](.agents/skills/sakuraisenrin-message-delivery/SKILL.md) |
+
+skill 不扩大批准范围，也不自动授权执行真实数据库操作、备份恢复或对外发送。只读取当前任务需要的参考部分。
+
+## 6. 数据与输出边界
+
+公共数据通过现有 service/repository 访问；跨插件优先消费所有者公开 API。插件独立数据使用自己的 namespace，遵守数据库 skill 的初始化、写入、迁移、审计和备份契约。
+
+插件/hook 的正式输出使用 `DeliveryPlan` 与 `deliver_message_plan(...)`，或 `message_plan` 提供的统一便捷函数。业务层表达内容，发送形态、复用和 fallback 交给统一层。不得在插件中复制底层发送/转发缓存链路。
+
+纯文本用 `MessageSegment.text(...)`、安全文本 helper 或计划的 `TextBlock`；不得用 `Message(raw_text)` 重新解析外部内容为 CQ 码。消息安全和缓存上下文细则见消息投递 skill。
+
+## 7. 测试与运行时
+
+测试覆盖实际具备且本次影响的行为；没有命令、外部调用或持久化的插件，不必为了凑清单制造对应测试。已有测试足以覆盖等价重构时，可以复用并说明依据。
+
+NoneBot matcher/会话/事件/API 交互测试优先使用 NoneBug；纯 service/repository 逻辑可以用普通 pytest，隔离外部 I/O 和插件加载副作用。测试构造消息也遵守安全分段规则。
+
+事件避免机器人自触发循环；外部调用需失败降级；定时任务有唯一 id、幂等控制和失败日志。修改这些行为时选择相应回归测试，不以 lint/type 检查代替。
+
+## 8. Git 与交付
+
+提交格式：
+
+```text
+emoji action(scope): msg
 ```
 
-约束：
+使用 gitmoji，例如 `📝 docs(agents): 重整开发规范与技能入口`、`✨ feat(water): 增加查询能力`。按完整、可审查的工作单元组织，不强制固定提交数量。提交、推送等动作应在已确认计划范围内；只提交本次工作，不夹带用户原有变更。
 
-1. 不允许带已知 lint/type error 合并。
-2. 若自动修复后引入行为变化，必须补测试。
-3. 若只改文档（如本次），可跳过 Python 质量命令。
+交付时说明改动、实际验证结果、未通过项和待审事项。先写初稿的任务交付可审查差异，等待下一阶段指示。
 
----
+## 9. 单一来源
 
-## 11. 插件开发流程（团队协作）
-
-1. 先给计划，再执行改动（Plan -> Confirm -> Act）。
-2. 新插件先提交最小骨架，再补功能与测试，避免一次性大补丁。
-3. PR 描述至少包含：
-   - 变更点
-   - 风险点
-   - 回归验证命令与结果
-   - 文档接口变更说明（`extra.docs` schema、slug/parent_slug、输出示例）
-4. 严禁顺手修复无关模块导致范围失控，除非明确在 PR 中声明。
-
----
-
-## 12. 对 AI Coding Agent 的附加规则
-
-1. 修改代码前先阅读目标目录上下文与现有模式。
-2. 不得跳过本文件规定的质量门禁（除非用户显式要求且说明风险）。
-3. 保持变更最小化：优先复用现有工具函数、repo、writer、枚举。
-4. 发现运行时危险操作（破坏性命令、越权访问）时必须先征求用户确认。
-5. 默认新增或更新测试，而不是只改功能代码。
-
----
-
-## 13. Done 定义（DoD）
-
-一个插件需求“完成”必须同时满足：
-
-1. 代码实现符合本文件分层与权限规则。
-2. 已提供 `extra.docs` schema 且可被 `help` 自动发现、构树与渲染。
-3. 若为命令插件，`docs/README.MD` 或同等规范化模块文档已补齐。
-4. 测试覆盖核心行为与边界路径。
-5. 质量门禁通过（有 Python 改动时）。
-6. 无新增高优先级安全或数据一致性风险。
-
-## 14. Commit Policy
-- After each completed feature or independently deliverable unit of work, create
-  exactly one git commit before moving on to the next feature.
-- Use a gitmoji-based commit message format.
-- Preferred format: `<gitmoji> <type>(<scope>): <summary>`.
-- Example: `✨ feat(xxx): 完成xxx功能`
+- 本文件维护共同规则；`CLAUDE.md` 通过导入共享本文件。
+- skill 正文保存在 `.agents/skills/`；`.claude/skills/` 仅提供读取同一正文的薄入口，兼容 Windows，不依赖符号链接。
+- 插件事实只集中在总表；专项旧文档只保留导航。
+- 2026-10-18 重写前原文存于 [.agents/backups/2026-10-18-before-rewrite/](.agents/backups/2026-10-18-before-rewrite/)，并附 SHA-256 校验。

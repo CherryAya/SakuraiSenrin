@@ -1,0 +1,4 @@
+interface:
+  display_name: "SakuraiSenrin 消息投递规范"
+  short_description: "SakuraiSenrin 文案国际化、统一消息计划与转发缓存接入规范"
+  default_prompt: "使用 $sakuraisenrin-message-delivery 规划插件的本地化消息输出，并等待我审查后再修改。"

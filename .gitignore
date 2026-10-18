@@ -35,5 +35,6 @@ repo-dev
 tools/snowluma-tui/target/
 output/
 
-# Claude Code 本地设置
-.claude/
+# Claude Code 本地设置；只共享项目 skill 入口
+.claude/*
+!.claude/skills/

@@ -1,6 +1,9 @@
 *
 !.gitignore
 !development/
+!development/plugin-catalog.md
+!development/database-usage.md
+!development/message-delivery.md
 !development/long-task-progress.md
 !development/long-task-progress.json
 !user/
