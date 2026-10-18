@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from importlib import import_module
-import json
-import os
 from pathlib import Path
 import re
 
@@ -21,18 +18,6 @@ from .models import DocNodeKind, DocsMeta, HelpSupportBundle, SupportGroupLink
 
 HELP_SUPPORT_QR_ASSET = (
     Path(__file__).resolve().parents[1] / "assets" / "help-support-qr-double.png"
-)
-HELP_SUPPORT_GROUPS: tuple[SupportGroupLink, ...] = (
-    SupportGroupLink(
-        title="❄️凛雪列車｜描摹重日冷影❄️",
-        group_id="1107576103",
-        url="https://qm.qq.com/q/rnNzj9thG8",
-    ),
-    SupportGroupLink(
-        title="❄️No Senrin No Life❄️｜原来你也喜欢凛凛？",
-        group_id="427842039",
-        url="https://qm.qq.com/q/JrIxb24HsI",
-    ),
 )
 
 
@@ -64,21 +49,16 @@ def support_text_block(locale: LocaleCode) -> str:
 
 
 def resolve_support_groups() -> tuple[SupportGroupLink, ...]:
-    raw_env = os.getenv("HELP_SUPPORT_GROUPS", "").strip()
-    if raw_env:
-        parsed = _parse_support_groups_json(raw_env)
-        if parsed:
-            return parsed
+    from src.config import config
 
-    try:
-        config_module = import_module("src.config")
-    except Exception:
-        return HELP_SUPPORT_GROUPS
-
-    runtime_config = getattr(config_module, "config", None)
-    raw_config = getattr(runtime_config, "HELP_SUPPORT_GROUPS", "")
-    parsed = _parse_support_groups_json(str(raw_config).strip())
-    return parsed or HELP_SUPPORT_GROUPS
+    return tuple(
+        SupportGroupLink(
+            title=group.title,
+            group_id=group.group_id or tr("zh-CN", "docs.render.support.unconfigured"),
+            url=group.url,
+        )
+        for group in config.HELP_SUPPORT_GROUPS
+    )
 
 
 def resolve_main_group_id(locale: LocaleCode = "zh-CN") -> str:
@@ -87,35 +67,6 @@ def resolve_main_group_id(locale: LocaleCode = "zh-CN") -> str:
     if not groups:
         return unconfigured
     return groups[0].group_id or unconfigured
-
-
-def _parse_support_groups_json(raw: str) -> tuple[SupportGroupLink, ...]:
-    if not raw:
-        return ()
-    try:
-        payload: JsonValue = json.loads(raw)
-    except json.JSONDecodeError:
-        return ()
-    if not isinstance(payload, list):
-        return ()
-
-    groups: list[SupportGroupLink] = []
-    for item in payload:
-        if not isinstance(item, dict):
-            continue
-        title = str(item.get("title", "")).strip()
-        group_id = str(item.get("group_id", "")).strip()
-        url = str(item.get("url", "")).strip()
-        if not title or not url:
-            continue
-        groups.append(
-            SupportGroupLink(
-                title=title,
-                group_id=group_id or tr("zh-CN", "docs.render.support.unconfigured"),
-                url=url,
-            )
-        )
-    return tuple(groups)
 
 
 def create_docs_meta(

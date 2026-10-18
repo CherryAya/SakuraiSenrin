@@ -11,7 +11,6 @@ from nonebot.matcher import Matcher
 from nonebot.plugin import on_command
 from nonebot.typing import T_State
 
-from src.config import config as config
 from src.database.core.consts import GroupStatus, Permission
 from src.lib.admin_notifications import deliver_admin_notification_plan
 from src.lib.consts import TriggerType

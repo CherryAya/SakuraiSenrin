@@ -9,22 +9,9 @@ import pytest
 from src.lib.admin_notifications import (
     deliver_admin_notification_i18n,
     deliver_admin_notification_plan,
-    parse_admin_notification_group_ids,
     resolve_admin_notification_targets,
 )
 from src.lib.message_plan import DeliveryPlan
-
-
-def test_parse_admin_notification_group_ids_dedupes_and_trims() -> None:
-    assert parse_admin_notification_group_ids(["10001", " 10002 ", 10001, ""]) == (
-        "10001",
-        "10002",
-    )
-
-
-def test_parse_admin_notification_group_ids_rejects_string_values() -> None:
-    with pytest.raises(ValueError, match="array-like"):
-        parse_admin_notification_group_ids('["10001", "10002"]')
 
 
 def test_resolve_admin_notification_targets_supports_private_and_group(
@@ -37,19 +24,16 @@ def test_resolve_admin_notification_targets_supports_private_and_group(
         notify_module.config,
         "ADMIN_NOTIFY_PRIVATE_ENABLED",
         True,
-        raising=False,
     )
     monkeypatch.setattr(
         notify_module.config,
         "ADMIN_NOTIFY_GROUP_ENABLED",
         True,
-        raising=False,
     )
     monkeypatch.setattr(
         notify_module.config,
         "ADMIN_NOTIFY_GROUP_IDS",
         ("20001", "20002"),
-        raising=False,
     )
 
     targets = resolve_admin_notification_targets()
@@ -73,19 +57,16 @@ async def test_deliver_admin_notification_plan_invokes_callback_for_each_route(
         notify_module.config,
         "ADMIN_NOTIFY_PRIVATE_ENABLED",
         True,
-        raising=False,
     )
     monkeypatch.setattr(
         notify_module.config,
         "ADMIN_NOTIFY_GROUP_ENABLED",
         True,
-        raising=False,
     )
     monkeypatch.setattr(
         notify_module.config,
         "ADMIN_NOTIFY_GROUP_IDS",
         ("20001",),
-        raising=False,
     )
     deliver_mock = AsyncMock(
         side_effect=[
@@ -126,13 +107,11 @@ async def test_deliver_admin_notification_i18n_builds_translated_plan(
         notify_module.config,
         "ADMIN_NOTIFY_PRIVATE_ENABLED",
         True,
-        raising=False,
     )
     monkeypatch.setattr(
         notify_module.config,
         "ADMIN_NOTIFY_GROUP_ENABLED",
         False,
-        raising=False,
     )
     deliver_mock = AsyncMock(
         return_value=SimpleNamespace(

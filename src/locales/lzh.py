@@ -7,6 +7,7 @@ LOCALE: Final[LocaleCode] = "lzh"
 
 CATALOG: Final[dict[str, str]] = {
     **ZH_CATALOG,
+    "admin.backup.restore.invalid_args": "恢復之令僅受 snapshot id 或 latest；倉庫由當前配置定之。",
     "docs.default.empty": "暫無所陳",
     "docs.default.no_description": "暫無所述",
     "docs.default.trigger": "觸發之法",

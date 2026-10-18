@@ -1,14 +1,53 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+from scripts import check_backup as check_backup_script
 from scripts import run_backup as run_backup_script
 from scripts import run_restore as run_restore_script
-from src.services.backup import BackupRemoteProfile
+
+
+@pytest.mark.parametrize(
+    ("parse_args", "argv"),
+    [
+        (run_backup_script.parse_args, ["run_backup.py", "--profile", "dev"]),
+        (check_backup_script.parse_args, ["check_backup.py", "--profile", "prod"]),
+        (
+            run_restore_script.parse_args,
+            ["run_restore.py", "latest", "--apply-local", "--profile", "prod"],
+        ),
+        (
+            run_restore_script.parse_args,
+            [
+                "run_restore.py",
+                "latest",
+                "--apply-local",
+                "--confirm-production-restore",
+            ],
+        ),
+        (run_restore_script.parse_args, ["run_restore.py", "latest"]),
+        (
+            run_restore_script.parse_args,
+            ["run_restore.py", "latest", "--apply-local", "--target", "restore"],
+        ),
+    ],
+)
+def test_removed_options_and_ambiguous_restore_modes_are_rejected(
+    parse_args: Callable[[], argparse.Namespace],
+    argv: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("sys.argv", argv)
+
+    with pytest.raises(SystemExit) as error:
+        parse_args()
+
+    assert error.value.code == 2
 
 
 def test_run_backup_parse_args_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -17,32 +56,6 @@ def test_run_backup_parse_args_defaults(monkeypatch: pytest.MonkeyPatch) -> None
     args = run_backup_script.parse_args()
 
     assert args.force is False
-    assert args.profile is None
-
-
-def test_resolve_default_backup_profile_name_follows_app_env(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from src.services import backup as backup_module
-
-    monkeypatch.setattr(backup_module, "resolve_app_env", lambda: "production")
-    monkeypatch.setattr(
-        backup_module,
-        "_load_backup_profiles",
-        lambda: {
-            "prod": BackupRemoteProfile(
-                name="prod",
-                repository="repo-prod",
-                password="pw-prod",
-            ),
-            "dev": BackupRemoteProfile(
-                name="dev",
-                repository="repo-dev",
-                password="pw-dev",
-            ),
-        },
-    )
-    assert backup_module.resolve_default_backup_profile_name() == "prod"
 
 
 def test_run_restore_parse_args_requires_target(
@@ -57,7 +70,6 @@ def test_run_restore_parse_args_requires_target(
 
     assert args.snapshot == "latest"
     assert args.target == "./data/restore-check"
-    assert args.profile is None
 
 
 def test_run_restore_parse_args_supports_apply_local(
@@ -72,7 +84,6 @@ def test_run_restore_parse_args_supports_apply_local(
 
     assert args.snapshot == "latest"
     assert args.apply_local is True
-    assert args.confirm_production_restore is False
 
 
 @pytest.mark.asyncio
@@ -80,7 +91,7 @@ async def test_run_backup_main_executes_force_flow(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    args = argparse.Namespace(force=True, profile="dev")
+    args = argparse.Namespace(force=True)
     captured: dict[str, Any] = {"info": []}
 
     class _Result:
@@ -121,7 +132,7 @@ async def test_run_backup_main_executes_force_flow(
     monkeypatch.setattr(
         backup_module,
         "build_backup_service_from_config",
-        lambda profile_name=None: _Service(),
+        lambda: _Service(),
     )
     monkeypatch.setattr(
         backup_module,
@@ -137,7 +148,6 @@ async def test_run_backup_main_executes_force_flow(
         "stream_output": True,
     }
     assert "backup completed: backup-1" in str(captured["success"])
-    assert "profile=" in str(captured["success"])
     assert any("manifest:" in str(item) for item in captured["info"])
     assert any("restic snapshot:" in str(item) for item in captured["info"])
 
@@ -149,9 +159,7 @@ async def test_run_restore_main_executes_restore(
     args = argparse.Namespace(
         snapshot="latest",
         target="./data/restore-check",
-        profile="prod",
         apply_local=False,
-        confirm_production_restore=False,
     )
     captured: dict[str, Any] = {}
 
@@ -175,7 +183,7 @@ async def test_run_restore_main_executes_restore(
     monkeypatch.setattr(
         backup_module,
         "build_backup_service_from_config",
-        lambda profile_name=None: _Service(),
+        lambda: _Service(),
     )
 
     await run_restore_script.main()
@@ -187,7 +195,6 @@ async def test_run_restore_main_executes_restore(
     assert "restore completed: latest -> ./data/restore-check" in str(
         captured["success"]
     )
-    assert "profile=" in str(captured["success"])
 
 
 @pytest.mark.asyncio
@@ -198,21 +205,15 @@ async def test_run_restore_main_can_apply_local_restore(
         snapshot="latest",
         target=None,
         apply_local=True,
-        profile="prod",
-        confirm_production_restore=False,
     )
     captured: dict[str, Any] = {}
 
     async def _restore_remote_snapshot_into_local(
         *,
         snapshot: str,
-        profile_name: str | None = None,
-        confirm_production_restore: bool = False,
     ) -> None:
         captured["restore"] = {
             "snapshot": snapshot,
-            "profile_name": profile_name,
-            "confirm_production_restore": confirm_production_restore,
         }
 
     monkeypatch.setattr(run_restore_script.nonebot, "init", lambda: None)
@@ -235,72 +236,5 @@ async def test_run_restore_main_can_apply_local_restore(
 
     assert captured["restore"] == {
         "snapshot": "latest",
-        "profile_name": "prod",
-        "confirm_production_restore": False,
     }
     assert "restore completed and applied locally: latest" in str(captured["success"])
-
-
-@pytest.mark.asyncio
-async def test_backup_service_rejects_cross_env_backup_target(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    from src.services import backup as backup_module
-
-    monkeypatch.setattr(backup_module, "resolve_app_env", lambda: "production")
-    monkeypatch.setattr(
-        backup_module,
-        "_load_backup_profiles",
-        lambda: {
-            "prod": BackupRemoteProfile(
-                name="prod",
-                repository="repo-prod",
-                password="pw-prod",
-                allowed_app_envs_for_backup=("production",),
-                allowed_app_envs_for_restore=("production", "development"),
-            ),
-            "dev": BackupRemoteProfile(
-                name="dev",
-                repository="repo-dev",
-                password="pw-dev",
-                allowed_app_envs_for_backup=("development",),
-                allowed_app_envs_for_restore=("development",),
-            ),
-        },
-    )
-    monkeypatch.setattr(
-        backup_module,
-        "resolve_default_backup_profile_name",
-        lambda: "prod",
-    )
-    monkeypatch.setattr(
-        backup_module,
-        "get_registered_backup_databases",
-        lambda: (),
-    )
-    monkeypatch.setattr(
-        backup_module,
-        "ensure_backup_database_registrations_loaded",
-        lambda: None,
-    )
-
-    # 授权判定与 restic 可用性解耦：探测打桩
-    # 探测照跑会先抛 restic 自身异常
-    # test_backup_service.py 同类用例同处理
-    def _stub_which(command: str) -> str:
-        return f"/bin/{command}"
-
-    monkeypatch.setattr(
-        backup_module.shutil,
-        "which",
-        _stub_which,
-    )
-
-    service = backup_module.build_backup_service_from_config("dev")
-
-    with pytest.raises(RuntimeError, match="cannot backup to profile dev"):
-        await service.run(
-            backup_module.BackupPlan(enabled=True),
-            force=True,
-        )

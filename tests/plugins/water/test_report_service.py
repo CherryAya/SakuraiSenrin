@@ -11,6 +11,7 @@ import arrow
 from pil_utils import BuildImage
 import pytest
 
+from src.config import config as bot_config
 from src.lib.long_task import LongTaskRunner
 from src.lib.message_plan import render_message_plan_input
 from src.lib.messages import text_message
@@ -324,7 +325,7 @@ async def test_run_daily_group_report_push_notifies_superusers_on_start_and_fini
 ) -> None:
     from src.plugins.water.services import report as report_module
 
-    monkeypatch.setattr(report_module.config, "SUPERUSERS", {"1"})
+    monkeypatch.setattr(bot_config, "SUPERUSERS", {"1"})
     monkeypatch.setattr(
         report_module.water_repo,
         "get_settlement_state",
@@ -420,7 +421,7 @@ async def test_run_daily_group_report_push_reports_batch_progress_every_ten_grou
 ) -> None:
     from src.plugins.water.services import report as report_module
 
-    monkeypatch.setattr(report_module.config, "SUPERUSERS", {"1"})
+    monkeypatch.setattr(bot_config, "SUPERUSERS", {"1"})
     monkeypatch.setattr(
         report_module.water_repo,
         "get_settlement_state",
@@ -575,7 +576,7 @@ async def test_send_prepared_daily_group_report_push_reads_artifacts(
 ) -> None:
     from src.plugins.water.services import report as report_module
 
-    monkeypatch.setattr(report_module.config, "SUPERUSERS", set())
+    monkeypatch.setattr(bot_config, "SUPERUSERS", set())
     monkeypatch.setattr(report_module.asyncio, "sleep", AsyncMock(return_value=None))
     deliver_mock = AsyncMock(return_value=None)
     monkeypatch.setattr(report_module, "deliver_message_plan", deliver_mock)

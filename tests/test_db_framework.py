@@ -1375,28 +1375,32 @@ async def test_atomic_session_uses_rollback_journal_for_cross_file_atomicity(
 def test_database_manager_uses_debug_sql_echo_from_config(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from src.config import config
     from src.lib.db.manager import DatabaseManager
 
     manager = DatabaseManager()
+    monkeypatch.setattr(config, "DEBUG_SQL_ECHO", True)
     monkeypatch.setattr(
         nonebot,
         "get_driver",
         lambda: type(
             "_Driver",
             (),
-            {"config": type("_Config", (), {"debug_sql_echo": True})()},
+            {"config": type("_Config", (), {"debug_sql_echo": False})()},
         )(),
     )
 
     assert manager._resolve_sql_echo() is True
 
 
-def test_database_manager_sql_echo_falls_back_when_nonebot_uninitialized(
+def test_database_manager_sql_echo_uses_loaded_config_without_driver_access(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from src.config import config
     from src.lib.db.manager import DatabaseManager
 
     manager = DatabaseManager()
+    monkeypatch.setattr(config, "DEBUG_SQL_ECHO", False)
 
     def _raise() -> object:
         raise ValueError("NoneBot has not been initialized.")

@@ -668,6 +668,22 @@ def test_support_strip_qr_layout_applies_optical_vertical_offset(
     )
 
 
+def test_empty_support_groups_do_not_display_a_cached_qr(monkeypatch: Any) -> None:
+    from src.config import config
+
+    monkeypatch.setattr(config, "HELP_SUPPORT_GROUPS", ())
+    renderer = ProgressiveDisclosureRenderer(impression_color="#74C0FC")
+
+    def load_qr(_path: Path) -> Image.Image:
+        raise AssertionError("empty support groups must not load a cached QR")
+
+    monkeypatch.setattr(renderer, "_load_support_qr_image", load_qr)
+
+    layout = renderer._measure_support_strip(locale="zh-CN", top=240)
+
+    assert layout.qr_rect is None
+
+
 def test_render_with_support_strip_trims_existing_source_footer() -> None:
     renderer = ProgressiveDisclosureRenderer(impression_color="#74C0FC")
     source_height = 720

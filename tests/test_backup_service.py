@@ -103,7 +103,6 @@ async def test_backup_service_runs_restic_and_dispatches_success_event(
         databases=cast(Sequence[BaseDB], [_DB()]),
         local_root=tmp_path / "backup",
         restic=ResticConfig(
-            profile_name="default",
             repository="s3:https://example.test/bucket",
             password="secret",
         ),
@@ -186,7 +185,6 @@ async def test_backup_service_auto_inits_missing_restic_repository(
         databases=cast(Sequence[BaseDB], [_DB()]),
         local_root=tmp_path / "backup",
         restic=ResticConfig(
-            profile_name="default",
             repository="s3:https://example.test/bucket",
             password="secret",
         ),
@@ -251,7 +249,6 @@ async def test_backup_service_does_not_auto_init_non_repository_errors(
         databases=cast(Sequence[BaseDB], [_DB()]),
         local_root=tmp_path / "backup",
         restic=ResticConfig(
-            profile_name="default",
             repository="s3:https://example.test/bucket",
             password="secret",
         ),
@@ -369,7 +366,6 @@ async def test_backup_service_streams_restic_output_in_real_time(
         databases=cast(Sequence[BaseDB], [_DB()]),
         local_root=tmp_path / "backup",
         restic=ResticConfig(
-            profile_name="default",
             repository="s3:https://example.test/bucket",
             password="secret",
         ),
@@ -427,7 +423,6 @@ async def test_backup_service_lists_remote_snapshots(
         databases=[],
         local_root=tmp_path / "backup",
         restic=ResticConfig(
-            profile_name="default",
             repository="s3:https://example.test/bucket",
             password="secret",
         ),
@@ -463,7 +458,6 @@ async def test_backup_service_skips_disabled_plan(
         databases=[],
         local_root=tmp_path,
         restic=ResticConfig(
-            profile_name="default",
             repository=None,
             password=None,
         ),
@@ -521,7 +515,6 @@ async def test_backup_service_collects_segment_archives_and_manifest(
         databases=[db],
         local_root=tmp_path / "backup",
         restic=ResticConfig(
-            profile_name="default",
             repository=None,
             password=None,
             require_restic=False,

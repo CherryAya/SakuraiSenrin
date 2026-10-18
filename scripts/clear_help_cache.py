@@ -14,6 +14,7 @@ import sys
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
+import nonebot
 from sqlalchemy import delete, select
 
 from src.lib.db.ops import affected_rows
@@ -78,6 +79,7 @@ async def count_all_cache() -> None:
 
 
 async def main() -> None:
+    nonebot.init()
     logger.info("=== Clear Help Cache ===")
 
     logger.info("[Before] Cache statistics:")

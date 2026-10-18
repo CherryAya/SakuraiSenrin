@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable, Collection
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Literal, cast
+from typing import Literal
 
 from nonebot.adapters.onebot.v11.bot import Bot
 
@@ -40,27 +40,9 @@ class AdminNotificationDelivery:
     plan_result: DeliveryPlanResult
 
 
-def parse_admin_notification_group_ids(raw: object) -> tuple[str, ...]:
-    if raw is None:
-        return ()
-
-    if not isinstance(raw, (list, tuple, set, frozenset)):
-        raise ValueError("ADMIN_NOTIFY_GROUP_IDS must be an array-like value")
-
-    # 元素类型写成 object：str() 接受任意形态
-    payload = cast("Collection[object]", raw)
-
-    group_ids: list[str] = []
-    for item in payload:
-        value = str(item).strip()
-        if value and value not in group_ids:
-            group_ids.append(value)
-    return tuple(group_ids)
-
-
 def resolve_admin_notification_targets() -> tuple[AdminNotificationTarget, ...]:
     targets: list[AdminNotificationTarget] = []
-    if getattr(config, "ADMIN_NOTIFY_PRIVATE_ENABLED", True):
+    if config.ADMIN_NOTIFY_PRIVATE_ENABLED:
         for superuser_id in sorted(config.SUPERUSERS):
             targets.append(
                 AdminNotificationTarget(
@@ -68,10 +50,8 @@ def resolve_admin_notification_targets() -> tuple[AdminNotificationTarget, ...]:
                     target_id=str(superuser_id),
                 )
             )
-    if getattr(config, "ADMIN_NOTIFY_GROUP_ENABLED", False):
-        for group_id in parse_admin_notification_group_ids(
-            getattr(config, "ADMIN_NOTIFY_GROUP_IDS", ())
-        ):
+    if config.ADMIN_NOTIFY_GROUP_ENABLED:
+        for group_id in config.ADMIN_NOTIFY_GROUP_IDS:
             targets.append(
                 AdminNotificationTarget(
                     channel="group",
@@ -163,6 +143,5 @@ __all__ = [
     "AdminNotificationTarget",
     "deliver_admin_notification_i18n",
     "deliver_admin_notification_plan",
-    "parse_admin_notification_group_ids",
     "resolve_admin_notification_targets",
 ]

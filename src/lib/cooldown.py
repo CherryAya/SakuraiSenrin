@@ -64,7 +64,7 @@ class MemoryCooldown:
         user_id: str | None = None,
         group_id: str | None = None,
     ) -> CooldownAcquireResult:
-        if getattr(config, "DEBUG", False):
+        if config.DEBUG:
             return CooldownAcquireResult(acquired=True, remaining_seconds=0)
 
         key = self.build_key(user_id=user_id, group_id=group_id)

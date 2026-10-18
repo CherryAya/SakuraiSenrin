@@ -13,7 +13,9 @@ from dataclasses import asdict
 import json
 from pathlib import Path
 import sys
-from types import ModuleType, SimpleNamespace
+from types import ModuleType
+
+import nonebot
 
 if str(Path(__file__).resolve().parents[1]) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -32,18 +34,6 @@ def _stub_plugin_packages() -> None:
             module = ModuleType(name)
             module.__path__ = [str(path)]  # type: ignore[attr-defined]
             sys.modules[name] = module
-    if "src.config" not in sys.modules:
-        config_module = ModuleType("src.config")
-        config_module.config = SimpleNamespace(  # type: ignore[attr-defined]
-            SUPERUSERS={"1"},
-            IGNORED_USERS=set(),
-            MAIN_GROUP_ID="10001",
-            DEBUG=False,
-            DEV_TEST_GROUPS=set(),
-            DEV_TEST_USERS=set(),
-            DEBUG_SQL_ECHO=False,
-        )
-        sys.modules["src.config"] = config_module
 
 
 async def main() -> int:
@@ -55,6 +45,7 @@ async def main() -> int:
         help="only report when degraded",
     )
     args = parser.parse_args()
+    nonebot.init()
     _stub_plugin_packages()
 
     from src.services.writer_health import (

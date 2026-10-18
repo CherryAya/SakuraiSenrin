@@ -12,9 +12,9 @@ from dataclasses import dataclass
 import json
 from pathlib import Path
 import sys
-from types import SimpleNamespace
 from typing import TypedDict, cast
 
+import nonebot
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import DeclarativeBase
 
@@ -84,19 +84,6 @@ def _load_stores() -> dict[str, AliasStore[_NoopOps]]:
             module.__path__ = [str(path)]  # type: ignore[attr-defined]
             sys.modules[name] = module
 
-    if "src.config" not in sys.modules:
-        config_module = type(sys)("src.config")
-        config_module.config = SimpleNamespace(  # type: ignore[attr-defined]
-            SUPERUSERS={"1"},
-            IGNORED_USERS=set(),
-            MAIN_GROUP_ID="10001",
-            DEBUG=False,
-            DEV_TEST_GROUPS=set(),
-            DEV_TEST_USERS=set(),
-            DEBUG_SQL_ECHO=False,
-        )
-        sys.modules["src.config"] = config_module
-
     from src.lib.backup.registry import (
         ensure_backup_database_registrations_loaded,
         get_registered_backup_databases,
@@ -135,6 +122,7 @@ async def main() -> int:
     parser = argparse.ArgumentParser(description="Inspect db shard lifecycle")
     parser.add_argument("--json", action="store_true", help="emit raw json")
     args = parser.parse_args()
+    nonebot.init()
 
     stores = _load_stores()
     if not stores:

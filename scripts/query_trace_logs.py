@@ -7,6 +7,7 @@ import json
 import sys
 
 import arrow
+import nonebot
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.instances import log_db
@@ -55,6 +56,7 @@ def _resolve_window(args: argparse.Namespace) -> tuple[arrow.Arrow, arrow.Arrow]
 
 async def main() -> None:
     args = parse_args()
+    nonebot.init()
     # init / map_reduce 归物理分片库
     await log_db.store.init(LogBase)
     start, end = _resolve_window(args)

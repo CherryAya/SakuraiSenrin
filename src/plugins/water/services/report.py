@@ -15,7 +15,6 @@ import arrow
 from nonebot.adapters.onebot.v11.bot import Bot
 from pil_utils import BuildImage
 
-from src.config import config as config
 from src.lib.admin_notifications import deliver_admin_notification_plan
 from src.lib.cooldown import CooldownIsolateLevel, MemoryCooldown
 from src.lib.i18n.catalog import tr

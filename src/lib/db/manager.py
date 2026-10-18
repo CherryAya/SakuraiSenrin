@@ -11,7 +11,6 @@ from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-import nonebot
 from sqlalchemy import event, text
 from sqlalchemy.engine.interfaces import DBAPIConnection
 from sqlalchemy.ext.asyncio import (
@@ -79,10 +78,9 @@ class DatabaseManager:
 
     @staticmethod
     def _resolve_sql_echo() -> bool:
-        try:
-            return bool(getattr(nonebot.get_driver().config, "debug_sql_echo", False))
-        except ValueError:
-            return False
+        from src.config import config
+
+        return config.DEBUG_SQL_ECHO
 
     async def _ensure_engine(self, full_path: str) -> None:
         url = self._engine_key(full_path)

@@ -1,4 +1,4 @@
-"""由 src.locales.zh_cn 生成的消息键。"""
+"""Generated message keys from src.locales.zh_cn."""
 
 from typing import Literal
 
@@ -8,8 +8,8 @@ MessageKey = Literal[
     "admin.backup.check.ok",
     "admin.backup.failed",
     "admin.backup.limit.invalid",
-    "admin.backup.profile",
     "admin.backup.restore.completed",
+    "admin.backup.restore.invalid_args",
     "admin.backup.restore.running",
     "admin.backup.restore.snapshot",
     "admin.backup.restore.snapshot_required",
@@ -1248,8 +1248,8 @@ ALL_MESSAGE_KEYS: tuple[MessageKey, ...] = (
     "admin.backup.check.ok",
     "admin.backup.failed",
     "admin.backup.limit.invalid",
-    "admin.backup.profile",
     "admin.backup.restore.completed",
+    "admin.backup.restore.invalid_args",
     "admin.backup.restore.running",
     "admin.backup.restore.snapshot",
     "admin.backup.restore.snapshot_required",

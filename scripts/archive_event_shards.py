@@ -9,6 +9,8 @@ import sys
 import types
 from typing import Protocol
 
+import nonebot
+
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -117,6 +119,7 @@ def cleanup_stale_sidecars(
 
 async def main() -> None:
     args = parse_args()
+    nonebot.init()
     logger.info(
         "[archive-event-shards] starting "
         f"target={args.target} "

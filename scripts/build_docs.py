@@ -26,6 +26,7 @@ if str(ROOT) not in sys.path:
 
 from typing import Literal, Protocol, cast
 
+import nonebot
 from PIL import Image
 
 from src.database.core.consts import Permission
@@ -351,7 +352,10 @@ def _build_input_hash(*, columns: int) -> str:
         extra={
             "cache_version": BUILD_CACHE_VERSION,
             "columns": columns,
-            "help_support_groups": os.getenv("HELP_SUPPORT_GROUPS", "").strip(),
+            "help_support_groups": [
+                {"title": group.title, "group_id": group.group_id, "url": group.url}
+                for group in resolve_support_groups()
+            ],
         },
     )
 
@@ -884,7 +888,9 @@ def ensure_help_support_qr_asset(*, root: Path | None = None) -> tuple[Path, boo
     asset_path = _support_qr_asset_path(root=root)
     image = _build_support_qr_asset_image()
     if image is None:
-        return asset_path, False
+        changed = asset_path.exists()
+        asset_path.unlink(missing_ok=True)
+        return asset_path, changed
     asset_path.parent.mkdir(parents=True, exist_ok=True)
     buffer = BytesIO()
     image.save(buffer, format="PNG")
@@ -1820,6 +1826,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
+    nonebot.init()
     match args.action:
         case "build":
             return build(

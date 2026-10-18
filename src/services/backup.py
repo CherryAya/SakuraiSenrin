@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 import json
 import os
@@ -11,7 +11,6 @@ from pathlib import Path
 import shutil
 import socket
 import sys
-from typing import cast
 import uuid
 
 from src.config import config
@@ -31,7 +30,7 @@ from src.lib.db.backup import (
     new_backup_manifest,
 )
 from src.lib.db.connectors import BaseDB
-from src.lib.types import JsonObject, JsonValue, as_object, as_str, as_str_tuple
+from src.lib.types import JsonObject, JsonValue, as_object, as_str
 from src.lib.utils.time_utils import get_current_time
 from src.logger import logger
 
@@ -55,29 +54,11 @@ class BackupPlan:
 
 @dataclass(slots=True, frozen=True)
 class ResticConfig:
-    profile_name: str
     repository: str | None
     password: str | None
     access_key_id: str | None = None
     secret_access_key: str | None = None
-    allowed_app_envs_for_backup: tuple[str, ...] = ()
-    allowed_app_envs_for_restore: tuple[str, ...] = ()
-    allow_backup: bool = True
-    allow_restore: bool = True
     require_restic: bool = True
-
-
-@dataclass(slots=True, frozen=True)
-class BackupRemoteProfile:
-    name: str
-    repository: str
-    password: str
-    access_key_id: str | None = None
-    secret_access_key: str | None = None
-    allowed_app_envs_for_backup: tuple[str, ...] = ()
-    allowed_app_envs_for_restore: tuple[str, ...] = ()
-    allow_backup: bool = True
-    allow_restore: bool = True
 
 
 @dataclass(slots=True, frozen=True)
@@ -113,10 +94,6 @@ class BackupService:
         self.restic = restic
         self.snapshotter = snapshotter or SQLiteSnapshotter()
 
-    @property
-    def profile_name(self) -> str:
-        return self.restic.profile_name
-
     async def run(
         self,
         plan: BackupPlan,
@@ -141,20 +118,6 @@ class BackupService:
             BackupStarted(run_id=run_id, plan_id=plan.id, started_at=started_at)
         )
 
-        # 授权判定先于 restic 探测：越权请求零副作用
-        app_env = resolve_app_env()
-        if not self.restic.allow_backup:
-            raise RuntimeError(
-                f"backup profile {self.profile_name!r} does not allow backup"
-            )
-        if (
-            self.restic.allowed_app_envs_for_backup
-            and app_env not in self.restic.allowed_app_envs_for_backup
-        ):
-            raise RuntimeError(
-                f"app_env={app_env} cannot backup to profile {self.profile_name}"
-            )
-
         await self._ensure_restic_repository(stream_output=stream_output)
 
         staging_dir = self.local_root / "staging" / run_id
@@ -165,8 +128,6 @@ class BackupService:
 
         manifest = new_backup_manifest(
             run_id,
-            app_env=app_env,
-            backup_profile=self.profile_name,
             hostname=socket.gethostname(),
         )
 
@@ -245,7 +206,7 @@ class BackupService:
         *,
         stream_output: bool = False,
     ) -> str | None:
-        self._validate_restic_config()
+        self.validate_config()
         stdout, stderr, returncode = await self._run_restic_process(
             "restic",
             "backup",
@@ -281,7 +242,7 @@ class BackupService:
             raise RuntimeError(f"restic forget failed: {message.strip()}")
 
     async def _ensure_restic_repository(self, *, stream_output: bool = False) -> None:
-        self._validate_restic_config()
+        self.validate_config()
         stdout, stderr, returncode = await self._run_restic_process(
             "restic",
             "snapshots",
@@ -311,11 +272,7 @@ class BackupService:
         snapshot: str,
         target: Path,
     ) -> None:
-        self._validate_restic_config()
-        if not self.restic.allow_restore:
-            raise RuntimeError(
-                f"backup profile {self.profile_name!r} does not allow restore"
-            )
+        self.validate_config()
         await asyncio.to_thread(target.mkdir, parents=True, exist_ok=True)
         process = await asyncio.create_subprocess_exec(
             "restic",
@@ -336,7 +293,7 @@ class BackupService:
             raise RuntimeError(f"restic restore failed: {message.strip()}")
 
     async def list_snapshots(self) -> list[ResticSnapshotInfo]:
-        self._validate_restic_config()
+        self.validate_config()
         process = await asyncio.create_subprocess_exec(
             "restic",
             "snapshots",
@@ -354,17 +311,14 @@ class BackupService:
             raise RuntimeError(f"restic snapshots failed: {message.strip()}")
         return _parse_restic_snapshots(stdout.decode("utf-8", errors="ignore"))
 
-    def _validate_restic_config(self) -> None:
+    def validate_config(self) -> None:
+        """在创建暂存文件或调用 restic 前校验当前配置。"""
         if shutil.which("restic") is None and self.restic.require_restic:
             raise RuntimeError("restic command is not installed")
         if not self.restic.repository:
-            raise RuntimeError(
-                f"backup repository is not configured for profile {self.profile_name}"
-            )
+            raise RuntimeError("backup repository is not configured")
         if not self.restic.password:
-            raise RuntimeError(
-                f"backup password is not configured for profile {self.profile_name}"
-            )
+            raise RuntimeError("backup password is not configured")
 
     def _restic_env(self) -> dict[str, str]:
         env = os.environ.copy()
@@ -635,166 +589,21 @@ def build_default_backup_plan() -> BackupPlan:
     )
 
 
-def build_backup_service_from_config(
-    profile_name: str | None = None,
-) -> BackupService:
+def build_backup_service_from_config() -> BackupService:
     ensure_backup_database_registrations_loaded()
-    profile = resolve_backup_profile(profile_name)
     return BackupService(
         databases=get_registered_backup_databases(),
         local_root=Path(config.BACKUP_LOCAL_ROOT),
         restic=ResticConfig(
-            profile_name=profile.name,
-            repository=profile.repository,
-            password=profile.password,
-            access_key_id=profile.access_key_id,
-            secret_access_key=profile.secret_access_key,
-            allowed_app_envs_for_backup=profile.allowed_app_envs_for_backup,
-            allowed_app_envs_for_restore=profile.allowed_app_envs_for_restore,
-            allow_backup=profile.allow_backup,
-            allow_restore=profile.allow_restore,
+            repository=config.BACKUP_RESTIC_REPOSITORY,
+            password=config.BACKUP_RESTIC_PASSWORD,
+            access_key_id=config.R2_ACCESS_KEY_ID,
+            secret_access_key=config.R2_SECRET_ACCESS_KEY,
             require_restic=config.BACKUP_REQUIRE_RESTIC,
         ),
     )
 
 
-def resolve_default_backup_profile_name() -> str:
-    configured = (getattr(config, "BACKUP_REMOTE_PROFILE", None) or "").strip()
-    if configured:
-        return configured
-    profiles = _load_backup_profiles()
-    if len(profiles) == 1:
-        return next(iter(profiles))
-    app_env = resolve_app_env()
-    if app_env == "production":
-        return "prod"
-    if app_env == "development":
-        return "dev"
-    raise RuntimeError("BACKUP_REMOTE_PROFILE is not configured")
-
-
-def resolve_backup_profile(
-    profile_name: str | None = None,
-) -> BackupRemoteProfile:
-    profiles = _load_backup_profiles()
-    if not profiles:
-        raise RuntimeError("no backup profile is configured")
-    resolved_name = (profile_name or resolve_default_backup_profile_name()).strip()
-    profile = profiles.get(resolved_name)
-    if profile is None:
-        raise RuntimeError(f"backup profile not found: {resolved_name}")
-    return profile
-
-
 def _as_optional_str(value: object) -> str | None:
     """把运行期取值收窄成 ``str | None``；非字符串回落 None。"""
     return value if isinstance(value, str) else None
-
-
-def _profile_payload(profile: object) -> dict[str, object]:
-    """把配置里的 profile 对象摊平成 ``dict[str, object]``；字段收窄交由下游。"""
-    dump = getattr(profile, "model_dump", None)
-    if callable(dump):
-        dumped = dump()
-        if isinstance(dumped, Mapping):
-            return {
-                str(key): value
-                for key, value in cast("Mapping[object, object]", dumped).items()
-            }
-        raise RuntimeError("backup profile model_dump() must return a mapping")
-    dunder = getattr(profile, "__dict__", None)
-    if isinstance(dunder, Mapping):
-        return {
-            str(key): value
-            for key, value in cast("Mapping[object, object]", dunder).items()
-        }
-    if isinstance(profile, Mapping):
-        return {
-            str(key): value
-            for key, value in cast("Mapping[object, object]", profile).items()
-        }
-    raise RuntimeError(f"unsupported backup profile: {type(profile)!r}")
-
-
-def _profile_str(payload: Mapping[str, object], key: str, default: str) -> str:
-    value = payload.get(key)
-    return value if isinstance(value, str) else default
-
-
-def _profile_bool(payload: Mapping[str, object], key: str, default: bool) -> bool:
-    value = payload.get(key)
-    return value if isinstance(value, bool) else default
-
-
-def _coerce_backup_profile(name: str, profile: object) -> BackupRemoteProfile:
-    """把配置收窄成 ``BackupRemoteProfile``：必填项缺失即抛 RuntimeError。"""
-    if isinstance(profile, BackupRemoteProfile):
-        return profile
-    payload = _profile_payload(profile)
-    repository = _as_optional_str(payload.get("repository"))
-    password = _as_optional_str(payload.get("password"))
-    if not repository or not password:
-        raise RuntimeError(
-            f"invalid backup profile {name!r}: repository/password are required",
-        )
-    return BackupRemoteProfile(
-        name=_profile_str(payload, "name", name) or name,
-        repository=repository,
-        password=password,
-        access_key_id=_as_optional_str(payload.get("access_key_id")),
-        secret_access_key=_as_optional_str(payload.get("secret_access_key")),
-        allowed_app_envs_for_backup=as_str_tuple(
-            payload.get("allowed_app_envs_for_backup")
-        ),
-        allowed_app_envs_for_restore=as_str_tuple(
-            payload.get("allowed_app_envs_for_restore")
-        ),
-        allow_backup=_profile_bool(payload, "allow_backup", True),
-        allow_restore=_profile_bool(payload, "allow_restore", True),
-    )
-
-
-def _load_backup_profiles() -> dict[str, BackupRemoteProfile]:
-    backup_profiles = getattr(config, "backup_profiles", None)
-    if callable(backup_profiles):
-        profiles = backup_profiles()
-        if not isinstance(profiles, Mapping):
-            raise RuntimeError("backup_profiles() must return a mapping")
-        normalized: dict[str, BackupRemoteProfile] = {}
-        for name, profile in cast("Mapping[object, object]", profiles).items():
-            if not isinstance(name, str) or not name:
-                raise RuntimeError("backup profile name must be a non-empty string")
-            normalized[name] = _coerce_backup_profile(name, profile)
-        return normalized
-
-    repository = _as_optional_str(getattr(config, "BACKUP_RESTIC_REPOSITORY", None))
-    password = _as_optional_str(getattr(config, "BACKUP_RESTIC_PASSWORD", None))
-    if repository and password:
-        profile_name = resolve_legacy_backup_profile_name()
-        return {
-            profile_name: BackupRemoteProfile(
-                name=profile_name,
-                repository=repository,
-                password=password,
-                access_key_id=_as_optional_str(
-                    getattr(config, "R2_ACCESS_KEY_ID", None)
-                ),
-                secret_access_key=_as_optional_str(
-                    getattr(config, "R2_SECRET_ACCESS_KEY", None)
-                ),
-                allowed_app_envs_for_backup=(resolve_app_env(),),
-                allowed_app_envs_for_restore=(resolve_app_env(),),
-                allow_backup=True,
-                allow_restore=True,
-            )
-        }
-    return {}
-
-
-def resolve_legacy_backup_profile_name() -> str:
-    configured = (getattr(config, "BACKUP_REMOTE_PROFILE", None) or "").strip()
-    return configured or "default"
-
-
-def resolve_app_env() -> str:
-    return str(getattr(config, "APP_ENV", "development"))

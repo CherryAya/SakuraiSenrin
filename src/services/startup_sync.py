@@ -11,7 +11,6 @@ import shutil
 
 from nonebot.adapters.onebot.v11 import Bot
 
-from src.config import config as config
 from src.lib.admin_notifications import (
     AdminNotificationTarget,
     deliver_admin_notification_plan,
@@ -32,8 +31,6 @@ from src.repositories import blacklist_repo, group_repo, member_repo, user_repo
 from src.services.backup import (
     ResticSnapshotInfo,
     build_backup_service_from_config,
-    resolve_app_env,
-    resolve_default_backup_profile_name,
 )
 
 
@@ -54,7 +51,6 @@ class PendingStartupRestore:
     remote_latest_at: int
     local_latest_at: int
     prompt_message_id: str
-    profile_name: str
 
 
 _pending_restore_by_prompt: dict[str, PendingStartupRestore] = {}
@@ -97,7 +93,6 @@ def build_startup_sync_reply_context(
             "remote_latest_at": pending.remote_latest_at,
             "local_latest_at": pending.local_latest_at,
             "prompt_message_id": pending.prompt_message_id,
-            "profile_name": pending.profile_name,
         },
     )
 
@@ -113,7 +108,6 @@ def pending_startup_restore_from_payload(
         return 0
 
     snapshot_id = str(payload.get("snapshot_id", "") or "")
-    profile_name = str(payload.get("profile_name", "") or "")
     prompt_message_id = str(payload.get("prompt_message_id", "") or "")
     remote_latest_at = _as_int(payload.get("remote_latest_at", 0))
     local_latest_at = _as_int(payload.get("local_latest_at", 0))
@@ -122,7 +116,6 @@ def pending_startup_restore_from_payload(
         remote_latest_at=remote_latest_at,
         local_latest_at=local_latest_at,
         prompt_message_id=prompt_message_id,
-        profile_name=profile_name,
     )
 
 
@@ -200,7 +193,6 @@ async def handle_startup_sync_reply(
     try:
         await restore_remote_snapshot_into_local(
             snapshot=pending.snapshot_id,
-            profile_name=pending.profile_name,
         )
     except Exception as exc:
         logger.exception(f"[StartupSync] restore failed: {exc}")
@@ -230,54 +222,22 @@ async def handle_startup_sync_reply_target(
 async def restore_latest_remote_snapshot_into_local(*, snapshot_id: str) -> None:
     await restore_remote_snapshot_into_local(
         snapshot=snapshot_id,
-        profile_name=resolve_default_backup_profile_name(),
     )
-
-
-def assert_restore_allowed(
-    *,
-    profile_name: str,
-    confirm_production_restore: bool = False,
-) -> None:
-    service = build_backup_service_from_config(profile_name)
-    profile = service.restic
-    if not profile.allow_restore:
-        raise RuntimeError(f"backup profile {profile_name!r} does not allow restore")
-    app_env = resolve_app_env()
-    if app_env not in profile.allowed_app_envs_for_restore:
-        raise RuntimeError(
-            f"app_env={app_env} cannot restore from profile {profile_name}"
-        )
-    if app_env == "production":
-        default_profile = resolve_default_backup_profile_name()
-        if profile_name != default_profile:
-            raise RuntimeError(
-                "production environment can only restore "
-                "from its default backup profile"
-            )
-        if not confirm_production_restore:
-            raise RuntimeError("production restore requires explicit confirmation flag")
 
 
 async def restore_remote_snapshot_into_local(
     *,
     snapshot: str,
-    profile_name: str | None = None,
-    confirm_production_restore: bool = False,
 ) -> None:
     global _restore_in_progress
-    resolved_profile = (profile_name or resolve_default_backup_profile_name()).strip()
-    assert_restore_allowed(
-        profile_name=resolved_profile,
-        confirm_production_restore=confirm_production_restore,
-    )
     async with _restore_lock:
         _restore_in_progress = True
-        service = build_backup_service_from_config(resolved_profile)
-        restore_root = service.local_root / "restore" / snapshot
-        if restore_root.exists():
-            await asyncio.to_thread(shutil.rmtree, restore_root, True)
         try:
+            service = build_backup_service_from_config()
+            service.validate_config()
+            restore_root = service.local_root / "restore" / snapshot
+            if restore_root.exists():
+                await asyncio.to_thread(shutil.rmtree, restore_root, True)
             async with LongTaskRunner(
                 LongTaskSpec(
                     task_name="startup_sync.remote_restore",
@@ -290,7 +250,6 @@ async def restore_remote_snapshot_into_local(
                     "restoring",
                     metadata={
                         "snapshot": snapshot,
-                        "profile": resolved_profile,
                     },
                 )
                 await service.restore(snapshot=snapshot, target=restore_root)
@@ -298,12 +257,12 @@ async def restore_remote_snapshot_into_local(
                 manifest = _load_restore_manifest(manifest_path)
                 await long_task.advance(
                     "processing_items",
-                    metadata={"snapshot": snapshot, "profile": resolved_profile},
+                    metadata={"snapshot": snapshot},
                 )
                 await _apply_restore_manifest(manifest, manifest_path.parent)
                 await long_task.advance(
                     "submitting",
-                    metadata={"snapshot": snapshot, "profile": resolved_profile},
+                    metadata={"snapshot": snapshot},
                 )
                 await _reload_runtime_state_after_restore()
         finally:
@@ -311,7 +270,7 @@ async def restore_remote_snapshot_into_local(
 
 
 async def _collect_startup_sync_status() -> StartupSyncStatus:
-    service = build_backup_service_from_config(resolve_default_backup_profile_name())
+    service = build_backup_service_from_config()
     local_latest_at = await _get_local_latest_data_mtime()
     try:
         snapshots = await service.list_snapshots()
@@ -368,7 +327,6 @@ async def _notify_superusers_for_remote_restore(
             remote_latest_at=remote_latest_at,
             local_latest_at=local_latest_at,
             prompt_message_id=str(message_id),
-            profile_name=resolve_default_backup_profile_name(),
         )
         _pending_restore_by_prompt[str(message_id)] = pending
         origin_message_type = (

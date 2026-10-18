@@ -2,13 +2,139 @@
 # pyright: reportPrivateUsage=false
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any, cast
+from unittest.mock import AsyncMock
 
 from nonebot.adapters.onebot.v11 import Bot
 import pytest
 
+from src.config import config as bot_config
 from src.services import startup_sync as startup_sync_module
+from src.services.backup import BackupService, ResticConfig
+
+
+async def test_legacy_manifest_metadata_does_not_control_restore(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    restore_root = tmp_path / "restored"
+    restore_root.mkdir()
+    (restore_root / "core.db").write_bytes(b"restored data")
+    target = tmp_path / "current" / "core.db"
+    manifest_path = restore_root / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "app_env": "production",
+                "backup_profile": "prod",
+                "files": [
+                    {
+                        "source_path": str(target),
+                        "snapshot_path": "/old/staging/core.db",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    dispose = AsyncMock()
+    monkeypatch.setattr(startup_sync_module.db_manager, "dispose_all", dispose)
+
+    manifest = startup_sync_module._load_restore_manifest(manifest_path)
+    await startup_sync_module._apply_restore_manifest(manifest, restore_root)
+
+    assert target.read_bytes() == b"restored data"
+    dispose.assert_awaited_once_with()
+
+
+def test_legacy_reply_context_uses_snapshot_without_profile_selection() -> None:
+    pending = startup_sync_module.pending_startup_restore_from_payload(
+        {
+            "snapshot_id": "snapshot-1",
+            "remote_latest_at": 2,
+            "local_latest_at": 1,
+            "prompt_message_id": "123",
+            "profile_name": "prod",
+        }
+    )
+
+    context = startup_sync_module.build_startup_sync_reply_context(pending)
+
+    assert context.payload == {
+        "snapshot_id": "snapshot-1",
+        "remote_latest_at": 2,
+        "local_latest_at": 1,
+        "prompt_message_id": "123",
+    }
+
+
+async def test_restore_failure_clears_in_progress_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    restore = AsyncMock(side_effect=RuntimeError("repository unavailable"))
+    service = type(
+        "_Service",
+        (),
+        {
+            "local_root": tmp_path,
+            "validate_config": lambda self: None,
+            "restore": restore,
+        },
+    )()
+    monkeypatch.setattr(
+        startup_sync_module, "build_backup_service_from_config", lambda: service
+    )
+    monkeypatch.setattr(startup_sync_module, "_restore_in_progress", False)
+
+    with pytest.raises(RuntimeError, match="repository unavailable"):
+        await startup_sync_module.restore_remote_snapshot_into_local(snapshot="latest")
+
+    restore.assert_awaited_once_with(
+        snapshot="latest", target=tmp_path / "restore/latest"
+    )
+    assert not startup_sync_module.is_restore_in_progress()
+
+
+async def test_service_initialization_failure_clears_in_progress_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_initialization() -> None:
+        raise RuntimeError("invalid backup configuration")
+
+    monkeypatch.setattr(
+        startup_sync_module, "build_backup_service_from_config", fail_initialization
+    )
+    monkeypatch.setattr(startup_sync_module, "_restore_in_progress", False)
+
+    with pytest.raises(RuntimeError, match="invalid backup configuration"):
+        await startup_sync_module.restore_remote_snapshot_into_local(snapshot="latest")
+
+    assert not startup_sync_module.is_restore_in_progress()
+
+
+async def test_invalid_configuration_preserves_existing_restore_staging(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    staging = tmp_path / "restore" / "latest"
+    staging.mkdir(parents=True)
+    marker = staging / "previous-backup.db"
+    marker.write_bytes(b"previous staging")
+    service = BackupService(
+        databases=(),
+        local_root=tmp_path,
+        restic=ResticConfig(repository=None, password=None, require_restic=False),
+    )
+    monkeypatch.setattr(
+        startup_sync_module, "build_backup_service_from_config", lambda: service
+    )
+    monkeypatch.setattr(startup_sync_module, "_restore_in_progress", False)
+
+    with pytest.raises(RuntimeError, match="backup repository is not configured"):
+        await startup_sync_module.restore_remote_snapshot_into_local(snapshot="latest")
+
+    assert marker.read_bytes() == b"previous staging"
+    assert not startup_sync_module.is_restore_in_progress()
 
 
 class _Snapshot:
@@ -34,15 +160,6 @@ async def test_startup_sync_notifies_superuser_when_remote_is_newer(
 
     class _Service:
         local_root = Path("data/backup")
-        restic = type(
-            "_Restic",
-            (),
-            {
-                "profile_name": "dev",
-                "allow_restore": True,
-                "allowed_app_envs_for_restore": ("development",),
-            },
-        )()
 
         async def list_snapshots(self) -> list[object]:
             return [
@@ -53,26 +170,11 @@ async def test_startup_sync_notifies_superuser_when_remote_is_newer(
                 )
             ]
 
-    monkeypatch.setattr(startup_sync_module.config, "SUPERUSERS", {"1"})
+    monkeypatch.setattr(bot_config, "SUPERUSERS", {"1"})
     monkeypatch.setattr(
         startup_sync_module,
         "build_backup_service_from_config",
-        lambda profile_name=None: _Service(),
-    )
-    monkeypatch.setattr(
-        startup_sync_module,
-        "resolve_default_backup_profile_name",
-        lambda: "dev",
-    )
-    monkeypatch.setattr(
-        startup_sync_module,
-        "resolve_default_backup_profile_name",
-        lambda: "dev",
-    )
-    monkeypatch.setattr(
-        startup_sync_module,
-        "resolve_default_backup_profile_name",
-        lambda: "dev",
+        lambda: _Service(),
     )
 
     async def _local_latest() -> int:
@@ -109,15 +211,6 @@ async def test_startup_sync_logs_when_local_is_newer(
 
     class _Service:
         local_root = Path("data/backup")
-        restic = type(
-            "_Restic",
-            (),
-            {
-                "profile_name": "dev",
-                "allow_restore": True,
-                "allowed_app_envs_for_restore": ("development",),
-            },
-        )()
 
         async def list_snapshots(self) -> list[object]:
             return [
@@ -128,16 +221,11 @@ async def test_startup_sync_logs_when_local_is_newer(
                 )
             ]
 
-    monkeypatch.setattr(startup_sync_module.config, "SUPERUSERS", {"1"})
+    monkeypatch.setattr(bot_config, "SUPERUSERS", {"1"})
     monkeypatch.setattr(
         startup_sync_module,
         "build_backup_service_from_config",
-        lambda profile_name=None: _Service(),
-    )
-    monkeypatch.setattr(
-        startup_sync_module,
-        "resolve_default_backup_profile_name",
-        lambda: "dev",
+        lambda: _Service(),
     )
 
     async def _local_latest() -> int:
@@ -175,14 +263,12 @@ async def test_startup_sync_reply_yes_runs_restore(
             remote_latest_at=2,
             local_latest_at=1,
             prompt_message_id="123",
-            profile_name="dev",
         )
     )
 
     async def _restore(
         *,
         snapshot: str,
-        profile_name: str | None = None,
     ) -> None:
         restored.append(snapshot)
 
@@ -199,67 +285,6 @@ async def test_startup_sync_reply_yes_runs_restore(
     assert restored == ["snap-123"]
     assert result is not None
     assert "已恢复到本地" in result
-
-
-def test_assert_restore_allowed_rejects_production_restore_without_confirm(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    class _Service:
-        restic = type(
-            "_Restic",
-            (),
-            {
-                "allow_restore": True,
-                "allowed_app_envs_for_restore": ("production", "development"),
-            },
-        )()
-
-    monkeypatch.setattr(startup_sync_module, "resolve_app_env", lambda: "production")
-    monkeypatch.setattr(
-        startup_sync_module,
-        "build_backup_service_from_config",
-        lambda profile_name=None: _Service(),
-    )
-    monkeypatch.setattr(
-        startup_sync_module,
-        "resolve_default_backup_profile_name",
-        lambda: "prod",
-    )
-
-    with pytest.raises(RuntimeError, match="explicit confirmation"):
-        startup_sync_module.assert_restore_allowed(profile_name="prod")
-
-
-def test_assert_restore_allowed_rejects_cross_profile_restore_in_production(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    class _Service:
-        restic = type(
-            "_Restic",
-            (),
-            {
-                "allow_restore": True,
-                "allowed_app_envs_for_restore": ("production", "development"),
-            },
-        )()
-
-    monkeypatch.setattr(startup_sync_module, "resolve_app_env", lambda: "production")
-    monkeypatch.setattr(
-        startup_sync_module,
-        "build_backup_service_from_config",
-        lambda profile_name=None: _Service(),
-    )
-    monkeypatch.setattr(
-        startup_sync_module,
-        "resolve_default_backup_profile_name",
-        lambda: "prod",
-    )
-
-    with pytest.raises(RuntimeError, match="only restore from its default"):
-        startup_sync_module.assert_restore_allowed(
-            profile_name="dev",
-            confirm_production_restore=True,
-        )
 
 
 def test_find_restore_manifest_path_supports_nested_restore_layout(

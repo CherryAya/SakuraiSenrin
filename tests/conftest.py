@@ -1,11 +1,15 @@
 from collections.abc import AsyncIterator, Iterator
 import os
 from pathlib import Path
+import runpy
 import sys
 import types
 from types import SimpleNamespace
+from typing import cast
 
+import nonebot
 from nonebug import NONEBOT_INIT_KWARGS
+from pydantic import BaseModel
 import pytest
 import pytest_asyncio
 
@@ -13,11 +17,25 @@ import pytest_asyncio
 # 失败告警的 task 会落到后续用例 loop
 # 造成连锁失败。
 os.environ.setdefault("SAKURAI_DISABLE_SENTRY_NOTIFY", "1")
+# 部分测试入口在收集阶段初始化 NoneBot，提前隔离开发/生产环境。
+os.environ["ENVIRONMENT"] = "test"
 
 # 收集阶段拦截插件引导：只测子模块
 _root = Path(__file__).resolve().parents[1]
 _water_pkg_path = _root / "src" / "plugins" / "water"
 _wordbank_pkg_path = _root / "src" / "plugins" / "wordbank"
+_TEST_SUPPORT_GROUPS = (
+    {
+        "title": "反馈群 A",
+        "group_id": "10001",
+        "url": "https://example.invalid/group-a",
+    },
+    {
+        "title": "反馈群 B",
+        "group_id": "10002",
+        "url": "https://example.invalid/group-b",
+    },
+)
 
 
 def _ensure_pkg(name: str, path: Path) -> None:
@@ -39,12 +57,17 @@ if "src.config" not in sys.modules:
             SUPERUSERS={"1"},
             IGNORED_USERS=set(),
             MAIN_GROUP_ID="10001",
+            HELP_SUPPORT_GROUPS=tuple(
+                SimpleNamespace(**group) for group in _TEST_SUPPORT_GROUPS
+            ),
+            ADMIN_NOTIFY_PRIVATE_ENABLED=True,
+            ADMIN_NOTIFY_GROUP_ENABLED=False,
+            ADMIN_NOTIFY_GROUP_IDS=(),
             DEBUG=False,
             DEV_TEST_GROUPS=set(),
             DEV_TEST_USERS=set(),
             DEBUG_SQL_ECHO=False,
             HTTP_PROXY=None,
-            OBJECT_STORAGE_DEFAULT_PROVIDER=None,
             R2_ACCOUNT_ID=None,
             R2_ACCESS_KEY_ID=None,
             R2_SECRET_ACCESS_KEY=None,
@@ -61,6 +84,7 @@ if "src.config" not in sys.modules:
             WORDBANK_MEDIA_CACHE_TRIM_TO_BYTES=460 * 1024 * 1024,
             WORDBANK_MEDIA_CACHE_MAX_FILES=5_000,
             WORDBANK_MEDIA_REMOTE_REQUIRED=False,
+            WORDBANK_MEDIA_REMOTE_SYNC_MODE="deferred",
             WORDBANK_MEDIA_MIGRATION_BATCH_SIZE=200,
             BACKUP_ENABLED=False,
             BACKUP_RESTIC_REPOSITORY=None,
@@ -86,15 +110,20 @@ def pytest_configure(config: pytest.Config) -> None:
     # 小写 superusers 才进真实字段
     # 生产 .env 查找会同时填好两者；这里也双写。
     config.stash[NONEBOT_INIT_KWARGS] = {
+        # 明确隔离项目环境文件，测试配置只来自以下字段。
+        "_env_file": (os.devnull,),
         "superusers": {"1"},
         "SUPERUSERS": {"1"},
         "IGNORED_USERS": set(),
         "MAIN_GROUP_ID": "10001",
+        "HELP_SUPPORT_GROUPS": _TEST_SUPPORT_GROUPS,
+        "ADMIN_NOTIFY_PRIVATE_ENABLED": True,
+        "ADMIN_NOTIFY_GROUP_ENABLED": False,
+        "ADMIN_NOTIFY_GROUP_IDS": (),
         "DEBUG": False,
         "DEV_TEST_GROUPS": set(),
         "DEV_TEST_USERS": set(),
         "DEBUG_SQL_ECHO": False,
-        "OBJECT_STORAGE_DEFAULT_PROVIDER": None,
         "R2_ACCOUNT_ID": None,
         "R2_ACCESS_KEY_ID": None,
         "R2_SECRET_ACCESS_KEY": None,
@@ -111,6 +140,7 @@ def pytest_configure(config: pytest.Config) -> None:
         "WORDBANK_MEDIA_CACHE_TRIM_TO_BYTES": 460 * 1024 * 1024,
         "WORDBANK_MEDIA_CACHE_MAX_FILES": 5_000,
         "WORDBANK_MEDIA_REMOTE_REQUIRED": False,
+        "WORDBANK_MEDIA_REMOTE_SYNC_MODE": "deferred",
         "WORDBANK_MEDIA_MIGRATION_BATCH_SIZE": 200,
         "BACKUP_ENABLED": False,
         "BACKUP_RESTIC_REPOSITORY": None,
@@ -122,7 +152,30 @@ def pytest_configure(config: pytest.Config) -> None:
         "BACKUP_RETENTION_WEEKLY": 4,
         "BACKUP_RETENTION_MONTHLY": 6,
         "BACKUP_REQUIRE_RESTIC": True,
-        "COMMAND_START": {"#", "/"},
+        "command_start": {"#", "/"},
+    }
+    # 入口测试在收集阶段注册 matcher，须先使用同一份测试配置。
+    nonebot.init(**config.stash[NONEBOT_INIT_KWARGS])
+
+
+@pytest.fixture
+def config_schema(monkeypatch: pytest.MonkeyPatch) -> type[BaseModel]:
+    # 只加载真实配置模型，测试不会读取本地账号、启动机器人或插件。
+    with monkeypatch.context() as loader:
+        loader.setattr(nonebot, "get_plugin_config", lambda model: None)
+        namespace = runpy.run_path(str(_root / "src/config.py"))
+    return cast("type[BaseModel]", namespace["GlobalConfig"])
+
+
+@pytest.fixture
+def config_values() -> dict[str, object]:
+    return {
+        "SUPERUSERS": set(),
+        "IGNORED_USERS": set(),
+        "MAIN_GROUP_ID": "",
+        "GITHUB_TOKEN": "",
+        "GITHUB_REPO": "",
+        "GITHUB_BRANCH": "master",
     }
 
 

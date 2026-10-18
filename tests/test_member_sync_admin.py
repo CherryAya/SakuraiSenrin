@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from src.config import config as bot_config
 from src.lib.i18n.catalog import tr
 from src.plugins.admin._services import member_sync as admin_sync_module
 from src.plugins.admin._services.member_sync import (
@@ -47,7 +48,7 @@ async def test_run_sync_members_for_all_groups_reports_final_batch(
         ]
     )
     bot = cast(admin_sync_module.Bot, SimpleNamespace(get_group_list=get_group_list))
-    monkeypatch.setattr(admin_sync_module.config, "SUPERUSERS", {"1"})
+    monkeypatch.setattr(bot_config, "SUPERUSERS", {"1"})
     monkeypatch.setattr(
         admin_sync_module,
         "sync_members_from_api",
@@ -97,7 +98,7 @@ async def test_run_sync_members_for_all_groups_respects_locale(
         return_value=[{"group_id": 20001, "group_name": ""}],
     )
     bot = cast(admin_sync_module.Bot, SimpleNamespace(get_group_list=get_group_list))
-    monkeypatch.setattr(admin_sync_module.config, "SUPERUSERS", {"1"})
+    monkeypatch.setattr(bot_config, "SUPERUSERS", {"1"})
     monkeypatch.setattr(
         admin_sync_module,
         "sync_members_from_api",
@@ -210,7 +211,7 @@ async def test_run_sync_members_for_all_groups_reports_every_ten_groups(
     ]
     get_group_list = AsyncMock(return_value=groups)
     bot = cast(admin_sync_module.Bot, SimpleNamespace(get_group_list=get_group_list))
-    monkeypatch.setattr(admin_sync_module.config, "SUPERUSERS", {"1"})
+    monkeypatch.setattr(bot_config, "SUPERUSERS", {"1"})
     monkeypatch.setattr(
         admin_sync_module,
         "sync_members_from_api",

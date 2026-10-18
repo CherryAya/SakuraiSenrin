@@ -36,7 +36,6 @@ from src.services.backup import (
     ResticSnapshotInfo,
     build_backup_service_from_config,
     build_default_backup_plan,
-    resolve_default_backup_profile_name,
 )
 from src.services.startup_sync import restore_remote_snapshot_into_local
 
@@ -75,7 +74,7 @@ __plugin_meta__ = create_plugin_metadata(
     description=description,
     extra={
         "author": "SakuraiCora",
-        "version": "0.2.0",
+        "version": "0.3.0",
         "trigger": TriggerType.COMMAND,
         "permission": Permission.SUPERUSER,
         "i18n": {
@@ -134,13 +133,10 @@ def _format_snapshot(locale: LocaleCode, snapshot: ResticSnapshotInfo) -> str:
 def _format_run_result(
     locale: LocaleCode,
     result: BackupResult,
-    *,
-    profile_name: str,
 ) -> str:
     return "\n".join(
         [
             tr(locale, "admin.backup.run.completed"),
-            tr(locale, "admin.backup.profile", profile=profile_name),
             tr(locale, "admin.backup.run.run_id", run_id=result.run_id),
             # manifest_path 统一 POSIX 形式
             tr(
@@ -175,21 +171,11 @@ def _parse_restore_snapshot(raw: str | None) -> str:
     return snapshot
 
 
-def _parse_restore_args(args: list[str]) -> tuple[str, str | None, bool]:
+def _parse_restore_args(args: list[str]) -> str:
     snapshot = _parse_restore_snapshot(args[1] if len(args) > 1 else None)
-    profile_name: str | None = None
-    confirm_production_restore = False
-    for extra in args[2:]:
-        token = extra.strip()
-        if not token:
-            continue
-        if token in {"confirm-production", "--confirm-production-restore"}:
-            confirm_production_restore = True
-            continue
-        if profile_name is None:
-            profile_name = token
-            continue
-    return snapshot, profile_name, confirm_production_restore
+    if len(args) != 2:
+        raise ValueError("admin.backup.restore.invalid_args")
+    return snapshot
 
 
 def _build_progress_sink(bot: Bot, event: MessageEvent) -> CompositeProgressSink:
@@ -252,11 +238,6 @@ async def _(
                 message="\n".join(
                     [
                         tr(locale, "admin.backup.check.ok", count=len(snapshots)),
-                        tr(
-                            locale,
-                            "admin.backup.profile",
-                            profile=service.profile_name,
-                        ),
                         tr(locale, "admin.backup.check.latest"),
                         _format_snapshot(locale, latest),
                     ]
@@ -293,7 +274,6 @@ async def _(
                 )
                 return
             lines = [
-                tr(locale, "admin.backup.profile", profile=service.profile_name),
                 tr(
                     locale,
                     "admin.backup.snapshots.title",
@@ -340,7 +320,6 @@ async def _(
                 message=_format_run_result(
                     locale,
                     result,
-                    profile_name=service.profile_name,
                 ),
                 source_kind="admin_backup",
             )
@@ -348,11 +327,7 @@ async def _(
 
         if action == "restore":
             try:
-                (
-                    snapshot,
-                    profile_name,
-                    confirm_production_restore,
-                ) = _parse_restore_args(args)
+                snapshot = _parse_restore_args(args)
             except ValueError:
                 await finish_with_message(
                     bot,
@@ -360,7 +335,12 @@ async def _(
                     event=event,
                     message=_build_error_demo(
                         locale,
-                        tr(locale, "admin.backup.restore.snapshot_required"),
+                        tr(
+                            locale,
+                            "admin.backup.restore.invalid_args"
+                            if len(args) > 2
+                            else "admin.backup.restore.snapshot_required",
+                        ),
                         "restore",
                     ),
                     source_kind="admin_backup",
@@ -374,19 +354,12 @@ async def _(
                 ),
                 sink=_build_progress_sink(bot, event),
             ) as long_task:
-                default_profile_name = resolve_default_backup_profile_name()
-                resolved_profile = profile_name or default_profile_name
                 await long_task.advance(
                     "restoring",
-                    metadata={
-                        "snapshot": snapshot,
-                        "profile": resolved_profile,
-                    },
+                    metadata={"snapshot": snapshot},
                 )
                 await restore_remote_snapshot_into_local(
                     snapshot=snapshot,
-                    profile_name=resolved_profile,
-                    confirm_production_restore=confirm_production_restore,
                 )
             await finish_with_message(
                 bot,
@@ -395,11 +368,6 @@ async def _(
                 message="\n".join(
                     [
                         tr(locale, "admin.backup.restore.completed"),
-                        tr(
-                            locale,
-                            "admin.backup.profile",
-                            profile=profile_name or default_profile_name,
-                        ),
                         tr(
                             locale,
                             "admin.backup.restore.snapshot",

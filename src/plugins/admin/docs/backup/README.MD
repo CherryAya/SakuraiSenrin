@@ -25,7 +25,7 @@
 #### 说明
 适合在改配置、换密钥、迁移机器后先确认远端仓库仍然可访问。
 #### 前置条件
-当前环境需要已配置可用的备份 profile，以及对应的 restic 仓库和 R2 `AK/SK`。
+当前配置需要包含 restic 仓库地址、密码及远端存储所需的凭据。
 #### 完整流程
 直接执行命令即可。
 ```demo
@@ -64,9 +64,9 @@ BOT: 最近 2 个快照：
 - 指令: `#admin.backup run`
 - Demo: admin-backup-run.webp
 #### 说明
-该命令会复用当前环境默认的正式备份 profile，等价于运维侧执行 `uv run python scripts/run_backup.py --force`。
+该命令使用当前配置中的备份仓库，等价于运维侧执行 `uv run python scripts/run_backup.py --force`。
 #### 前置条件
-当前环境必须已经完成 restic 仓库初始化。
+需要已安装 restic，并填写仓库地址、密码和所需凭据；仓库不存在时会自动初始化。
 #### 完整流程
 直接执行命令，等待返回 `run_id`、manifest 路径和 snapshot id。
 ```demo
@@ -81,18 +81,17 @@ snapshot: d3da8f8f5d690393...
 ### `restore` 恢复到本地
 - 摘要: 把指定远端快照恢复到当前本地数据，并立即刷新运行时状态。
 - 别名: 恢复到本地
-- 指令: `#admin.backup restore <snapshot_id|latest> [profile] [confirm-production]`
+- 指令: `#admin.backup restore <snapshot_id|latest>`
 #### 说明
-该命令会直接覆盖当前 bot 使用的本地数据库文件，适合在启动同步被跳过后，或需要手动回滚到某个远端快照时使用。开发环境可显式指定生产 profile 做覆盖恢复；生产环境只允许从自身默认 profile 恢复，并且必须额外带上 `confirm-production`。
+该命令会直接覆盖当前 bot 使用的本地数据库文件，适合在启动同步被跳过后，或需要手动回滚到某个远端快照时使用。所有操作只使用当前配置中的单一仓库；如需更换来源，由运维人员调整当前配置。
 #### 前置条件
-当前环境必须可以访问目标备份 profile 对应的远端 restic 仓库，且命令执行者确认本地现有数据可以被覆盖。
+当前配置必须可以访问对应的远端 restic 仓库，且命令执行者确认本地现有数据可以被覆盖。
 #### 完整流程
-显式传入快照 ID，或使用 `latest` 恢复最近快照；可选再带一个 profile 名；恢复完成后会立即刷新核心仓库缓存，以及 `wordbank`、`water` 的运行时状态。
+显式传入快照 ID，或使用 `latest` 恢复最近快照；恢复完成后会立即刷新核心仓库缓存，以及 `wordbank`、`water` 的运行时状态。
 ```demo
 USER: #admin.backup restore latest
 BOT: 远端快照已恢复到本地，并已刷新运行时状态。
-BOT: profile: dev
 BOT: 快照引用: latest
 ```
 #### 失败情况
-如果快照不存在、远端仓库不可读、manifest 缺失、profile 不允许当前环境恢复，或运行时刷新失败，会直接返回失败原因。
+如果快照不存在、远端仓库不可读、manifest 缺失、恢复所需配置缺失，或运行时刷新失败，会直接返回失败原因。

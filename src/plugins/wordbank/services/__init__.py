@@ -49,11 +49,7 @@ def _build_wordbank_media_service() -> WordbankMediaService:
         cache_storage=cache_storage,
         remote_required=config.WORDBANK_MEDIA_REMOTE_REQUIRED,
         remote_provider=provider,
-        remote_sync_mode=getattr(
-            config,
-            "WORDBANK_MEDIA_REMOTE_SYNC_MODE",
-            "deferred",
-        ),
+        remote_sync_mode=config.WORDBANK_MEDIA_REMOTE_SYNC_MODE,
         prewarm_local_cache=config.WORDBANK_MEDIA_CACHE_ENABLED,
     )
 

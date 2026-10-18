@@ -119,7 +119,7 @@ async def _runtime_check(bot: Bot, event: Event, matcher: Matcher) -> None:
     if is_user_event:
         user_id = str(_user_id)
 
-    if getattr(config, "DEBUG", False):
+    if config.DEBUG:
         allowed_users: set[str] = config.DEV_TEST_USERS
         allowed_groups: set[str] = config.DEV_TEST_GROUPS
         if is_user_event and user_id in allowed_users:

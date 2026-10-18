@@ -92,8 +92,6 @@ async def test_admin_backup_check_returns_latest_snapshot(
     )
 
     class _Service:
-        profile_name = "default"
-
         async def list_snapshots(self) -> list[object]:
             return [
                 _Snapshot(
@@ -119,12 +117,11 @@ async def test_admin_backup_check_returns_latest_snapshot(
     monkeypatch.setattr(
         backup_plugin,
         "build_backup_service_from_config",
-        lambda profile_name=None: _Service(),
+        lambda: _Service(),
     )
     expected = "\n".join(
         [
             tr("zh-CN", "admin.backup.check.ok", count=2),
-            tr("zh-CN", "admin.backup.profile", profile="default"),
             tr("zh-CN", "admin.backup.check.latest"),
             tr("zh-CN", "admin.backup.snapshot.id", snapshot_id="snap-1"),
             tr(
@@ -194,8 +191,6 @@ async def test_admin_backup_run_returns_backup_result(
         restic_snapshot_id = "snap-1"
 
     class _Service:
-        profile_name = "dev"
-
         async def run(self, plan: object, *, force: bool = False) -> object:
             assert force is True
             return _Result()
@@ -205,13 +200,12 @@ async def test_admin_backup_run_returns_backup_result(
     monkeypatch.setattr(
         backup_plugin,
         "build_backup_service_from_config",
-        lambda profile_name=None: _Service(),
+        lambda: _Service(),
     )
     monkeypatch.setattr(backup_plugin, "build_default_backup_plan", lambda: object())
     expected = "\n".join(
         [
             tr("zh-CN", "admin.backup.run.completed"),
-            tr("zh-CN", "admin.backup.profile", profile="dev"),
             tr("zh-CN", "admin.backup.run.run_id", run_id="backup-1"),
             tr(
                 "zh-CN",
@@ -240,30 +234,20 @@ async def test_admin_backup_restore_reloads_local_runtime_state(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     event = build_private_message_event(
-        "#admin.backup restore latest prod", user_id=SUPERUSER_ID
+        "#admin.backup restore latest", user_id=SUPERUSER_ID
     )
 
     from src.plugins.admin import backup as backup_plugin
 
     restored: list[dict[str, object]] = []
 
-    monkeypatch.setattr(
-        backup_plugin,
-        "resolve_default_backup_profile_name",
-        lambda: "dev",
-    )
-
     async def _restore_remote_snapshot_into_local(
         *,
         snapshot: str,
-        profile_name: str | None = None,
-        confirm_production_restore: bool = False,
     ) -> None:
         restored.append(
             {
                 "snapshot": snapshot,
-                "profile_name": profile_name,
-                "confirm_production_restore": confirm_production_restore,
             }
         )
 
@@ -275,7 +259,6 @@ async def test_admin_backup_restore_reloads_local_runtime_state(
     expected = "\n".join(
         [
             tr("zh-CN", "admin.backup.restore.completed"),
-            tr("zh-CN", "admin.backup.profile", profile="prod"),
             tr("zh-CN", "admin.backup.restore.snapshot", snapshot_id="latest"),
         ]
     )
@@ -292,10 +275,47 @@ async def test_admin_backup_restore_reloads_local_runtime_state(
     assert restored == [
         {
             "snapshot": "latest",
-            "profile_name": "prod",
-            "confirm_production_restore": False,
         }
     ]
+
+
+@pytest.mark.parametrize(
+    "extra", ["prod", "confirm-production", "--confirm-production-restore"]
+)
+async def test_admin_backup_restore_rejects_removed_arguments(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+    extra: str,
+) -> None:
+    _freeze_error_demo(monkeypatch)
+    event = build_private_message_event(
+        f"#admin.backup restore latest {extra}", user_id=SUPERUSER_ID
+    )
+    from src.plugins.admin import backup as backup_plugin
+
+    restore = AsyncMock()
+    monkeypatch.setattr(backup_plugin, "restore_remote_snapshot_into_local", restore)
+    expected = _build_error_demo(
+        "zh-CN", tr("zh-CN", "admin.backup.restore.invalid_args"), "restore"
+    )
+
+    async with app.test_matcher(admin_backup) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        ctx.receive_event(bot, event)
+        ctx.should_call_send(event, render_message_plan_input(expected), bot=bot)
+        ctx.should_finished(admin_backup)
+
+    restore.assert_not_awaited()
+
+
+async def test_admin_backup_restore_rejects_non_superuser(app: App) -> None:
+    user_id = 2 if SUPERUSER_ID != 2 else 3
+    event = build_private_message_event("#admin.backup restore latest", user_id=user_id)
+
+    async with app.test_matcher(admin_backup) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        ctx.receive_event(bot, event)
+        ctx.should_not_pass_permission(admin_backup)
 
 
 @pytest.mark.asyncio

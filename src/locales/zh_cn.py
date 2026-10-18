@@ -352,10 +352,10 @@ CATALOG: Final[dict[str, str]] = {
         "  snapshots [数量]\n"
         "\n"
         "3.手动执行备份\n"
-        "  run [profile]\n"
+        "  run\n"
         "\n"
         "4.恢复到本地\n"
-        "  restore <snapshot_id|latest> [profile] [confirm-production]\n"
+        "  restore <snapshot_id|latest>\n"
         "\n"
         "5.帮助信息\n"
         "  help / 帮助"
@@ -1404,7 +1404,6 @@ CATALOG: Final[dict[str, str]] = {
     ("admin.backup.snapshot.hostname"): ("  主机: {hostname}"),
     ("admin.backup.snapshot.files"): ("  文件数: {count}"),
     ("admin.backup.snapshot.bytes"): ("  字节数: {count}"),
-    ("admin.backup.profile"): ("profile: {profile}"),
     ("admin.backup.run.completed"): ("备份已完成。"),
     ("admin.backup.run.run_id"): ("run_id: {run_id}"),
     ("admin.backup.run.manifest"): ("manifest: {path}"),
@@ -1426,6 +1425,9 @@ CATALOG: Final[dict[str, str]] = {
     ("admin.backup.restore.snapshot"): ("快照引用: {snapshot_id}"),
     ("admin.backup.restore.snapshot_required"): (
         "请显式提供要恢复的 snapshot id，或使用 latest。"
+    ),
+    ("admin.backup.restore.invalid_args"): (
+        "恢复命令只接受 snapshot id 或 latest；仓库由当前配置决定。"
     ),
     ("admin.backup.unknown_command"): ("未知子命令：{action}\n{docs}"),
     ("admin.backup.failed"): ("备份操作失败: {message}"),

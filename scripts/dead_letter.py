@@ -14,7 +14,9 @@ from collections.abc import Sequence
 import json
 from pathlib import Path
 import sys
-from types import ModuleType, SimpleNamespace
+from types import ModuleType
+
+import nonebot
 
 if str(Path(__file__).resolve().parents[1]) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -30,18 +32,6 @@ def _stub_plugin_packages() -> None:
             module = ModuleType(name)
             module.__path__ = [str(path)]  # type: ignore[attr-defined]
             sys.modules[name] = module
-    if "src.config" not in sys.modules:
-        config_module = ModuleType("src.config")
-        config_module.config = SimpleNamespace(  # type: ignore[attr-defined]
-            SUPERUSERS={"1"},
-            IGNORED_USERS=set(),
-            MAIN_GROUP_ID="10001",
-            DEBUG=False,
-            DEV_TEST_GROUPS=set(),
-            DEV_TEST_USERS=set(),
-            DEBUG_SQL_ECHO=False,
-        )
-        sys.modules["src.config"] = config_module
 
 
 def _build_handlers() -> dict[str, object]:
@@ -94,6 +84,7 @@ async def main() -> int:
     parser.add_argument("--keep", type=int, default=2000, help="--prune keep rows")
     parser.add_argument("--json", action="store_true", help="emit raw json")
     args = parser.parse_args()
+    nonebot.init()
     _stub_plugin_packages()
 
     # 独立脚本绕开 on_startup，须自行应用建表/补丁

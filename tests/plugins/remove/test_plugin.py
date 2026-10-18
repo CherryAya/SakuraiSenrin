@@ -9,6 +9,7 @@ from nonebot.exception import ActionFailed
 from nonebug import App
 import pytest
 
+from src.config import config as bot_config
 from src.lib.message_assets import message_asset_repo
 from src.lib.messages import text_message
 
@@ -128,7 +129,7 @@ async def test_remove_succeeds_for_admin(
     )
     update_status = AsyncMock()
     monkeypatch.setattr(remove_plugin.group_repo, "update_status", update_status)
-    monkeypatch.setattr(remove_plugin.config, "SUPERUSERS", {"2"})
+    monkeypatch.setattr(bot_config, "SUPERUSERS", {"2"})
     monkeypatch.setattr(
         message_asset_repo,
         "get_asset",

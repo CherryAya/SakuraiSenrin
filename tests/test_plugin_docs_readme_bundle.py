@@ -1,5 +1,7 @@
 # 测试直取内部符号：pyright 私有访问豁免
 # pyright: reportPrivateUsage=false
+from types import SimpleNamespace
+
 import src.lib.plugin_docs.meta as plugin_docs_meta_module
 from tests.test_plugin_docs_support import *
 
@@ -528,26 +530,42 @@ def test_support_note_uses_generic_multi_group_copy() -> None:
     )
 
 
-def test_resolve_support_groups_falls_back_to_env_when_runtime_config_is_unavailable(
+def test_resolve_support_groups_reads_only_the_loaded_configuration(
     monkeypatch: Any,
 ) -> None:
-    def _raise_config_import(name: str) -> Any:
-        if name == "src.config":
-            raise ValueError("NoneBot has not been initialized.")
-        raise AssertionError(f"unexpected import: {name}")
+    from src.config import config
 
     monkeypatch.setenv(
         "HELP_SUPPORT_GROUPS",
-        '[{"title":"测试群","group_id":"20002","url":"https://example.com/group"}]',
+        "invalid process value must not be read again",
     )
-    monkeypatch.setattr(plugin_docs_meta_module, "import_module", _raise_config_import)
+    monkeypatch.setattr(
+        config,
+        "HELP_SUPPORT_GROUPS",
+        (
+            SimpleNamespace(
+                title="测试群", group_id="20002", url="https://example.invalid/group"
+            ),
+        ),
+    )
 
     groups = plugin_docs_meta_module.resolve_support_groups()
 
     assert len(groups) == 1
     assert groups[0].title == "测试群"
     assert groups[0].group_id == "20002"
-    assert groups[0].url == "https://example.com/group"
+    assert groups[0].url == "https://example.invalid/group"
+
+
+def test_empty_support_group_configuration_stays_empty(monkeypatch: Any) -> None:
+    from src.config import config
+
+    monkeypatch.setattr(config, "HELP_SUPPORT_GROUPS", ())
+
+    assert plugin_docs_meta_module.resolve_support_groups() == ()
+    assert plugin_docs_meta_module.resolve_main_group_id() == tr(
+        "zh-CN", "docs.render.support.unconfigured"
+    )
 
 
 def test_support_text_block_contains_group_ids_only() -> None:
@@ -555,8 +573,8 @@ def test_support_text_block_contains_group_ids_only() -> None:
 
     assert "反馈与交流群" in block
     assert "如需进一步支持" not in block
-    assert "群号 1107576103" in block
-    assert "群号 427842039" in block
+    assert "群号 10001" in block
+    assert "群号 10002" in block
 
 
 def test_load_plugin_doc_bundle_preserves_inline_backticks_in_meta_value() -> None:

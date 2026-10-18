@@ -9,6 +9,7 @@ wheels/
 # venv
 .venv
 .env.*
+!.env.template
 
 .devtest
 .devtest/**/*.db

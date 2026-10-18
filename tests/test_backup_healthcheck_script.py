@@ -14,14 +14,13 @@ def test_check_backup_parse_args_defaults(monkeypatch: pytest.MonkeyPatch) -> No
     args = check_backup_script.parse_args()
 
     assert args.limit == 3
-    assert args.profile is None
 
 
 @pytest.mark.asyncio
 async def test_check_backup_main_lists_snapshots(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    args = argparse.Namespace(limit=2, profile="dev")
+    args = argparse.Namespace(limit=2)
     captured: dict[str, Any] = {"info": []}
 
     class _Snapshot:
@@ -89,13 +88,12 @@ async def test_check_backup_main_lists_snapshots(
     monkeypatch.setattr(
         backup_module,
         "build_backup_service_from_config",
-        lambda profile_name=None: _Service(),
+        lambda: _Service(),
     )
 
     await check_backup_script.main()
 
     assert "backup healthcheck ok: 3 remote snapshots" in str(captured["success"])
-    assert "profile=" in str(captured["success"])
     assert len(captured["info"]) == 2
     assert "snapshot: snap-1" in str(captured["info"][0])
     assert "snapshot: snap-2" in str(captured["info"][1])

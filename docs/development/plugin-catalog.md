@@ -11,6 +11,7 @@
 - i18n 列表示已观察到的键与元数据情况，不宣称每一条历史文案均已迁移。
 - 新增、删除或改变插件入口、命令、公开接口、数据归属、文档/测试位置时，更新对应行；字段未知时写明待核对，不臆测。
 - 组件规范见下节，数据库和消息细则分别只维护在两项项目 skill 中。
+- 运行配置统一由 `src/config.py::GlobalConfig` 解析；remove、water report、admin member_sync 和 startup_sync 不再转导 `config`，调用方直接使用 `src.config.config`。
 
 ## 2. 新插件应包含什么
 
@@ -83,7 +84,7 @@
 | admin.user | admin user / 用户管理；SUPERUSER | 公共用户状态、封禁/解封、权限管理 | [文档](../../src/plugins/admin/docs/user/README.MD)；admin 公共入口/时长测试 |
 | admin.invite | admin invite / 邀请管理，以及审批/拒绝回复路由；SUPERUSER，no_check | 公共邀请与群组数据、邀请审批 | [文档](../../src/plugins/admin/docs/invite/README.MD)；admin 入口与 notice 邀请测试 |
 | admin.i18n | admin i18n / 语言管理；SUPERUSER | i18n_repo：全局默认和群组覆盖 | [文档](../../src/plugins/admin/docs/i18n/README.MD)；admin 入口和 test_i18n_runtime |
-| admin.backup | admin backup / 备份管理；SUPERUSER | 全部已注册 store 的备份、健康检查、恢复服务；非私有业务库 | [文档](../../src/plugins/admin/docs/backup/README.MD)；[test_backup.py](../../tests/plugins/admin/test_backup.py)及公共备份测试 |
+| admin.backup | admin backup / 备份管理；SUPERUSER | 全部已注册 store 的备份、健康检查、恢复服务；统一读取当前配置的单一仓库，restore 仅接受快照参数；非私有业务库 | [文档](../../src/plugins/admin/docs/backup/README.MD)；[test_backup.py](../../tests/plugins/admin/test_backup.py)及公共备份测试 |
 | notice.group | 入群/离群/禁言/群名事件；PASSIVE，元数据 SUPERUSER，no_check | 公共群组/成员/快照同步与通知 | [文档](../../src/plugins/notice/docs/group/README.MD)；[test_group.py](../../tests/plugins/notice/test_group.py) |
 | notice.user | 请求事件处理；PASSIVE，元数据 SUPERUSER，no_check | 好友请求相关 API 与通知 | [文档](../../src/plugins/notice/docs/user/README.MD)；未定位专属 test_user |
 | notice.invite | 群邀请 request / 机器人入群 notice；PASSIVE，元数据 SUPERUSER，no_check | 邀请记录、审批状态与群组处理 | [文档](../../src/plugins/notice/docs/invite/README.MD)；[test_invite.py](../../tests/plugins/notice/test_invite.py) |
@@ -96,7 +97,7 @@
 | --- | --- | --- | --- |
 | [plugin.py](../../src/hooks/plugin.py) | 当前为插件扩展点总览元数据，无处理器实现；PASSIVE / SUPERUSER，slug hook.plugin | [文档](../../src/hooks/docs/plugin/README.MD)；公共文档测试 | plugin.hook_plugin；有 extra.i18n |
 | [processor.py](../../src/hooks/processor.py) | 事件上下文、同步、忽略/超管/黑名单/授权/禁言检查与清理；PASSIVE / SUPERUSER，slug hook.processor | [文档](../../src/hooks/docs/processor/README.MD)；[tests/hooks/test_processor.py](../../tests/hooks/test_processor.py) | 公共用户/群组/成员与审计；plugin.hook_processor 及对应运行时键 |
-| [startup_sync.py](../../src/hooks/startup_sync.py) | 超管启动备份恢复确认的回复路由；matcher 显式 SUPERUSER；缺插件元数据 | 无专属 docs；[test_startup_sync.py](../../tests/test_startup_sync.py) | startup_sync 服务拥有恢复与文案；此模块只路由/投递 |
+| [startup_sync.py](../../src/hooks/startup_sync.py) | 超管启动备份恢复确认的回复路由；matcher 显式 SUPERUSER；缺插件元数据 | 无专属 docs；[test_startup_sync.py](../../tests/test_startup_sync.py) | startup_sync 服务拥有当前配置仓库的恢复与文案，不按环境选择 profile；此模块只路由/投递 |
 
 ## 7. 私有 namespace 与公开访问
 

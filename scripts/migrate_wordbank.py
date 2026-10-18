@@ -10,6 +10,8 @@ from pathlib import Path
 import sys
 import types
 
+import nonebot
+
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -186,6 +188,7 @@ def build_progress_logger(
 
 async def main() -> None:
     args = parse_args()
+    nonebot.init()
     old_repo_root, image_root, mapping_path = resolve_script_paths(args)
     progress = build_progress_logger(args.progress_step)
     append_mode = bool(args.append_from_report or args.append_from_error_report)

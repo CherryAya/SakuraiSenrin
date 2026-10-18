@@ -1346,6 +1346,25 @@ def test_ensure_help_support_qr_asset_writes_double_qr_png_from_support_groups(
     assert image.getpixel((image.width - 8, 8)) == (0, 128, 255, 255)
 
 
+def test_empty_support_groups_remove_an_old_qr_asset(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    asset_path = plugin_docs_script._support_qr_asset_path(root=tmp_path)
+    asset_path.parent.mkdir(parents=True)
+    asset_path.write_bytes(b"old QR asset")
+    monkeypatch.setattr(plugin_docs_script, "resolve_support_groups", lambda: ())
+
+    result, changed = plugin_docs_script.ensure_help_support_qr_asset(root=tmp_path)
+
+    assert result == asset_path
+    assert changed is True
+    assert not asset_path.exists()
+    assert plugin_docs_script.ensure_help_support_qr_asset(root=tmp_path) == (
+        asset_path,
+        False,
+    )
+
+
 def test_build_help_assets_refreshes_support_qr_asset_before_rendering(
     tmp_path: Path,
     monkeypatch: Any,

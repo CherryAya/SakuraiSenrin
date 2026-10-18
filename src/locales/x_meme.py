@@ -7,6 +7,7 @@ LOCALE: Final[LocaleCode] = "x-meme"
 
 CATALOG: Final[dict[str, str]] = {
     **ZH_CATALOG,
+    "admin.backup.restore.invalid_args": "恢复只收 snapshot id 或 latest，仓库看当前配置。",
     "docs.default.empty": "暂无说明，先脑补一下。",
     "hook.processor.debug_only": "DEBUG 模式现在只接 DEV_TEST_GROUPS / DEV_TEST_USERS 的活。",
     "hook.processor.user_ignored": "这个用户被全局配置忽略了。",

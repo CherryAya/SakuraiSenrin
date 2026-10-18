@@ -1858,7 +1858,9 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
     ) -> _SupportStripLayout:
         bundle = build_help_support_bundle(locale=locale)
         side = self.theme.hero_side_padding
-        qr_image = self._load_support_qr_image(bundle.qr_asset_path)
+        qr_image = (
+            self._load_support_qr_image(bundle.qr_asset_path) if bundle.groups else None
+        )
         qr_width = qr_image.width if qr_image is not None else 0
         qr_frame_width = (
             qr_width + self.SUPPORT_STRIP_QR_FRAME_PADDING_X * 2
