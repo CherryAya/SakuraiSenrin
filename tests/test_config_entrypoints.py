@@ -16,7 +16,6 @@ ENTRYPOINTS = [
     ("scripts.archive_event_shards", ["archive_event_shards.py"], "archive_targets"),
     ("scripts.query_trace_logs", ["query_trace_logs.py"], "log_db.store.init"),
     ("scripts.clear_help_cache", ["clear_help_cache.py"], "count_all_cache"),
-    ("scripts.migrate_wordbank", ["migrate_wordbank.py"], "resolve_script_paths"),
 ]
 
 

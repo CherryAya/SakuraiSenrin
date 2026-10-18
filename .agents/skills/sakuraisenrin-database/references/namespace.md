@@ -55,6 +55,7 @@ from sqlalchemy import select
 from .instances import example_db
 from .tables import ExampleBase, ExampleState
 
+
 class ExampleRepository:
     @classmethod
     async def init_all_tables(cls) -> None:

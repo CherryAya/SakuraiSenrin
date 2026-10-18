@@ -1,10 +1,15 @@
 *
 !.gitignore
+!README.md
 !development/
 !development/plugin-catalog.md
 !development/database-usage.md
 !development/message-delivery.md
-!development/long-task-progress.md
-!development/long-task-progress.json
+!development/build-docs.md
+!development/nonebug-plugin-testing-spec.md
+!development/nonebug-plugin-testing-checklist.md
+!operations/
+!operations/backup.md
+!operations/trace-logs.md
 !user/
 !user/**

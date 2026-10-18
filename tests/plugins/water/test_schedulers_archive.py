@@ -74,6 +74,10 @@ async def test_summary_archive_job_runs_in_process_and_reports_failure(
         "archive_summary_shards",
         AsyncMock(return_value=_report_failed()),
     )
+    backfill_mock = AsyncMock(return_value={"copied": 0, "shards": {}})
+    monkeypatch.setattr(
+        schedulers.water_repo, "backfill_expiring_summaries", backfill_mock
+    )
     prune_mock = AsyncMock(return_value=3)
     monkeypatch.setattr(schedulers.water_repo, "prune_hot_summaries", prune_mock)
     monkeypatch.setattr(schedulers, "run_water_subprocess_job", subprocess_mock)
@@ -85,6 +89,7 @@ async def test_summary_archive_job_runs_in_process_and_reports_failure(
     subprocess_mock.assert_not_awaited()
     success_mock.assert_not_called()
     exception_mock.assert_called()
+    backfill_mock.assert_awaited_once()
     prune_mock.assert_awaited_once()
 
 
