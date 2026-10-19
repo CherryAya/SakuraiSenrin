@@ -106,7 +106,7 @@ DOCS_ROOTS = (
     ROOT / "src" / "plugins",
     ROOT / "src" / "hooks",
 )
-BUILD_CACHE_VERSION = 2
+BUILD_CACHE_VERSION = 3
 BUILD_CACHE_HISTORY_LIMIT = 50
 
 
@@ -325,7 +325,15 @@ def _hash_files(paths: list[Path], *, extra: dict[str, object] | None = None) ->
 
 
 def _collect_build_input_paths() -> list[Path]:
-    paths: list[Path] = [Path(__file__), ROOT / "src" / "lib" / "demo_theme.py"]
+    paths: list[Path] = [
+        Path(__file__),
+        ROOT / "src/lib/demo_theme.py",
+        ROOT / "src/lib/consts.py",
+        ROOT / "pyproject.toml",
+        ROOT / "uv.lock",
+    ]
+    for suffix in ("*.ttf", "*.otf", "*.ttc"):
+        paths.extend((ROOT / "data/font").glob(suffix))
     paths.extend(iter_readmes())
     plugin_docs_root = ROOT / "src" / "lib" / "plugin_docs"
     if plugin_docs_root.is_dir():

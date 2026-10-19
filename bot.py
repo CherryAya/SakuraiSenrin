@@ -19,8 +19,8 @@ from src.services.message_asset_startup import run_startup_message_asset_check
 
 nonebot.init()
 configure_logging(log_role="app")
-init_fonts()
 init_docs_assets()
+init_fonts()
 install_message_delivery_hooks()
 
 from src.services.backup_scheduler import install_backup_scheduler

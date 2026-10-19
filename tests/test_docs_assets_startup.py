@@ -12,7 +12,7 @@ from src.lib.docs_assets import DocsAssetsError
 
 
 @pytest.mark.parametrize("download_fails", [False, True])
-def test_bot_checks_fonts_and_images_before_loading_plugins(
+def test_bot_downloads_resources_before_installing_fonts_and_loading_plugins(
     monkeypatch: pytest.MonkeyPatch,
     download_fails: bool,
 ) -> None:
@@ -69,7 +69,6 @@ def test_bot_checks_fonts_and_images_before_loading_plugins(
     assert events == [
         "configuration",
         "logging",
-        "fonts",
         "images",
-        *([] if download_fails else ["plugins"]),
+        *([] if download_fails else ["fonts", "plugins"]),
     ]

@@ -78,12 +78,16 @@ def assets_root(tmp_path: Path) -> Path:
     qr = tmp_path / docs_assets.SUPPORT_QR_PATH
     qr.parent.mkdir(parents=True)
     qr.write_bytes(b"png-example")
+    for name in docs_assets.STATIC_ASSET_PATHS:
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(f"resource:{name}".encode())
     return tmp_path
 
 
-def _remove_images(root: Path, lock: docs_assets.AssetLock) -> None:
+def _remove_resources(root: Path, lock: docs_assets.AssetLock) -> None:
     for entry in lock.files:
-        if Path(entry.path).suffix in {".png", ".webp"}:
+        if not entry.path.endswith("/manifest.json"):
             (root / entry.path).unlink(missing_ok=True)
 
 
@@ -108,7 +112,7 @@ async def test_empty_checkout_downloads_without_rendering_and_second_start_is_of
     expected = {
         entry.path: (assets_root / entry.path).read_bytes() for entry in lock.files
     }
-    _remove_images(assets_root, lock)
+    _remove_resources(assets_root, lock)
     shutil.rmtree(assets_root / "output")
     storage.downloads = 0
 
@@ -233,6 +237,51 @@ async def test_publication_rejects_missing_manifest_target(assets_root: Path) ->
     with pytest.raises(DocsAssetsError, match="missing generated asset declared"):
         await docs_assets.publish_assets(assets_root, storage=storage)
     assert storage.uploads == 0
+
+
+@pytest.mark.parametrize(
+    "contents", [None, b"version https://git-lfs.github.com/spec/v1\n"]
+)
+async def test_publish_rejects_missing_fonts_or_lfs_pointers(
+    assets_root: Path, contents: bytes | None
+) -> None:
+    font = assets_root / "data/font/LXGW_NERD_NOTO.ttf"
+    if contents is None:
+        font.unlink()
+    else:
+        font.write_bytes(contents)
+    storage = MemoryStorage()
+    with pytest.raises(DocsAssetsError, match="missing"):
+        await docs_assets.publish_assets(assets_root, storage=storage)
+    assert storage.uploads == 0
+
+
+async def test_font_revision_is_locked_and_damaged_font_is_restored(
+    assets_root: Path,
+) -> None:
+    storage = MemoryStorage()
+    first = await docs_assets.publish_assets(assets_root, storage=storage)
+    font = assets_root / "data/font/LXGW_NERD_NOTO.ttf"
+    font.write_bytes(b"new font contents")
+    second = await docs_assets.publish_assets(assets_root, storage=storage)
+    assert first.input_hash != second.input_hash
+    font.write_bytes(b"damaged")
+    assert not docs_assets.check_assets(assets_root).ready
+    assert (await docs_assets.pull_assets(assets_root, storage=storage)).ready
+    assert font.read_bytes() == b"new font contents"
+
+
+async def test_lock_rejects_omitted_static_resource(assets_root: Path) -> None:
+    lock = await docs_assets.publish_assets(assets_root, storage=MemoryStorage())
+    payload = asdict(lock)
+    payload["files"] = [
+        entry
+        for entry in payload["files"]
+        if entry["path"] not in docs_assets.STATIC_ASSET_PATHS
+    ]
+    (assets_root / docs_assets.LOCK_FILENAME).write_text(json.dumps(payload))
+    with pytest.raises(DocsAssetsError, match="missing required"):
+        docs_assets.load_lock(assets_root)
 
 
 @pytest.mark.parametrize(

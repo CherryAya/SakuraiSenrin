@@ -980,6 +980,17 @@ def test_plugin_docs_build_skips_when_cached_content_hash_matches(
     assert cache_payload["latest"]["content_hash"]
     assert len(cache_payload["history"]) == 1
 
+    fonts = tmp_path / "data/font"
+    fonts.mkdir(parents=True)
+    font = fonts / "LXGW_NERD_NOTO.ttf"
+    font.write_bytes(b"first font revision")
+    assert plugin_docs_script.build(workers=1, columns=2) == 0
+    assert calls == ["generate", "compose", "help-assets", "validate"]
+    calls.clear()
+    font.write_bytes(b"updated font revision")
+    assert plugin_docs_script.build(workers=1, columns=2) == 0
+    assert calls == ["generate", "compose", "help-assets", "validate"]
+
 
 def test_plugin_docs_build_rebuilds_when_output_hash_changes(
     tmp_path: Path,

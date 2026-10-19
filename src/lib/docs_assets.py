@@ -1,4 +1,4 @@
-"""预构建帮助图片的版本清单、R2 分发和本地同步。
+"""字体、绘图素材和预构建帮助图片的版本清单、R2 分发和本地同步。
 
 导入本模块不读取配置、不加载插件；本地校验通过时不访问对象存储。
 """
@@ -33,6 +33,14 @@ ROOT = Path(__file__).resolve().parents[2]
 LOCK_FILENAME = "docs-assets.lock.json"
 OBJECT_PREFIX = "docs-assets/"
 SUPPORT_QR_PATH = "src/lib/assets/help-support-qr-double.png"
+STATIC_ASSET_PATHS = frozenset(
+    {
+        "data/font/LXGW_NERD_NOTO.ttf",
+        "data/font/MapleMono-NF-CN-Regular.ttf",
+        "src/lib/assets/senrin-demo-avatar.png",
+        "src/lib/assets/senrin-demo-standee.png",
+    }
+)
 MAX_ARCHIVE_BYTES = 128 * 1024 * 1024
 MAX_UNPACKED_BYTES = 256 * 1024 * 1024
 TRANSFER_TIMEOUT = 120
@@ -81,7 +89,7 @@ def _is_generated_path(name: str) -> bool:
         or any(part in {".", ".."} for part in parts)
     ):
         return False
-    if name == SUPPORT_QR_PATH:
+    if name == SUPPORT_QR_PATH or name in STATIC_ASSET_PATHS:
         return True
     return (
         len(parts) >= 6
@@ -107,7 +115,8 @@ def _asset_path(root: Path, name: str) -> Path:
 
 
 def generated_paths(root: Path) -> tuple[Path, ...]:
-    paths = [root / SUPPORT_QR_PATH]
+    """所有分发资源；保留原函数名供现有构建工具使用。"""
+    paths = [root / name for name in (*STATIC_ASSET_PATHS, SUPPORT_QR_PATH)]
     for owner in ("plugins", "hooks"):
         base = root / "src" / owner
         if base.is_dir():
@@ -140,25 +149,21 @@ def source_paths(root: Path) -> tuple[Path, ...]:
             paths.extend(base.rglob("*.py"))
             paths.extend(base.rglob("README.MD"))
             paths.extend(base.rglob("demos/manifest.json"))
-    assets = root / "src/lib/assets"
-    if assets.is_dir():
-        paths.extend(
-            p for p in assets.iterdir() if p.name != Path(SUPPORT_QR_PATH).name
-        )
-    fonts = root / "data/font"
-    if fonts.is_dir():
-        paths.extend(
-            p for p in fonts.iterdir() if p.suffix.lower() in {".ttf", ".otf", ".ttc"}
-        )
     return tuple(sorted({p for p in paths if p.is_file()}, key=str))
 
 
-def input_fingerprint(root: Path) -> str:
+def input_fingerprint(root: Path, files: tuple[AssetFile, ...]) -> str:
+    """源码与锁定素材摘要；空资源目录也能在下载前核对代码版本。"""
     digest = sha256()
     for path in source_paths(root):
         digest.update(path.relative_to(root).as_posix().encode())
         digest.update(b"\0")
         digest.update(sha256(path.read_bytes()).digest())
+    for entry in sorted(files, key=lambda entry: entry.path):
+        if entry.path in STATIC_ASSET_PATHS:
+            digest.update(entry.path.encode())
+            digest.update(b"\0")
+            digest.update(bytes.fromhex(entry.sha256))
     return digest.hexdigest()
 
 
@@ -186,7 +191,7 @@ def load_lock(root: Path) -> AssetLock:
     if not isinstance(payload, dict):
         raise DocsAssetsError("invalid asset lock object")
     version = payload.get("version")
-    if type(version) is not int or version != 1:
+    if type(version) is not int or version != 2:
         raise DocsAssetsError("unsupported asset lock version")
     archive_hash = _digest(payload.get("archive_sha256"))
     key = payload.get("archive_key")
@@ -210,6 +215,8 @@ def load_lock(root: Path) -> AssetLock:
         files.append(
             AssetFile(name, _digest(item.get("sha256")), _size(item.get("size")))
         )
+    if not STATIC_ASSET_PATHS.issubset(names) or SUPPORT_QR_PATH not in names:
+        raise DocsAssetsError("asset lock is missing required fonts or artwork")
     archive_size = _size(payload.get("archive_size"))
     if (
         archive_size > MAX_ARCHIVE_BYTES
@@ -217,7 +224,7 @@ def load_lock(root: Path) -> AssetLock:
     ):
         raise DocsAssetsError("asset package is too large")
     return AssetLock(
-        1,
+        2,
         _digest(payload.get("input_hash")),
         key,
         archive_hash,
@@ -228,7 +235,7 @@ def load_lock(root: Path) -> AssetLock:
 
 def check_assets(root: Path, lock: AssetLock | None = None) -> AssetStatus:
     lock = lock or load_lock(root)
-    if input_fingerprint(root) != lock.input_hash:
+    if input_fingerprint(root, lock.files) != lock.input_hash:
         raise DocsAssetsError(
             "docs build inputs changed; build and publish assets for this checkout"
         )
@@ -263,7 +270,7 @@ def _atomic_write(path: Path, data: bytes) -> None:
 
 
 def build_archive(root: Path) -> tuple[AssetLock, bytes]:
-    fingerprint = input_fingerprint(root)
+    source_fingerprint = input_fingerprint(root, ())
     files: list[AssetFile] = []
     buffer = BytesIO()
     with tarfile.open(fileobj=buffer, mode="w", format=tarfile.USTAR_FORMAT) as archive:
@@ -271,6 +278,11 @@ def build_archive(root: Path) -> tuple[AssetLock, bytes]:
             name = path.relative_to(root).as_posix()
             _asset_path(root, name)
             data = path.read_bytes()
+            if name in STATIC_ASSET_PATHS and (
+                not data
+                or data.startswith(b"version https://git-lfs.github.com/spec/v1")
+            ):
+                raise DocsAssetsError(f"missing resource content (LFS pointer): {name}")
             files.append(AssetFile(name, sha256(data).hexdigest(), len(data)))
             info = tarfile.TarInfo(name)
             info.size = len(data)
@@ -279,6 +291,8 @@ def build_archive(root: Path) -> tuple[AssetLock, bytes]:
     if not files or sum(f.size for f in files) > MAX_UNPACKED_BYTES:
         raise DocsAssetsError("missing or oversized generated assets")
     names = {entry.path for entry in files}
+    if not STATIC_ASSET_PATHS.issubset(names):
+        raise DocsAssetsError("missing required fonts or artwork; pull assets first")
     if SUPPORT_QR_PATH not in names:
         raise DocsAssetsError("missing generated support QR asset")
     for entry in files:
@@ -307,15 +321,20 @@ def build_archive(root: Path) -> tuple[AssetLock, bytes]:
     if len(data) > MAX_ARCHIVE_BYTES:
         raise DocsAssetsError("asset archive is too large")
     archive_hash = sha256(data).hexdigest()
+    fingerprint = input_fingerprint(root, tuple(files))
     lock = AssetLock(
-        1,
+        2,
         fingerprint,
         f"{OBJECT_PREFIX}{archive_hash}.tar.zst",
         archive_hash,
         len(data),
         tuple(files),
     )
-    if fingerprint != input_fingerprint(root):
+    if source_fingerprint != input_fingerprint(root, ()) or any(
+        sha256((root / entry.path).read_bytes()).hexdigest() != entry.sha256
+        for entry in files
+        if entry.path in STATIC_ASSET_PATHS
+    ):
         raise DocsAssetsError("build inputs changed while packing assets")
     return lock, data
 
@@ -472,7 +491,7 @@ async def publish_assets(
             )
         remote = await _transfer(lambda: client.get_bytes(lock.archive_key))
         _validate_archive(root, lock, remote)
-        if input_fingerprint(root) != lock.input_hash:
+        if not check_assets(root, lock).ready:
             raise DocsAssetsError(
                 "build inputs changed during publication; lock was not updated"
             )
@@ -516,7 +535,10 @@ async def pull_assets(
             client = storage or _storage()
             data = await _transfer(lambda: client.get_bytes(lock.archive_key))
         files = _validate_archive(root, lock, data)
-        if load_lock(root) != lock or input_fingerprint(root) != lock.input_hash:
+        if (
+            load_lock(root) != lock
+            or input_fingerprint(root, lock.files) != lock.input_hash
+        ):
             raise DocsAssetsError(
                 "checkout changed during synchronization; retry after updating code"
             )

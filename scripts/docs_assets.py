@@ -1,4 +1,4 @@
-"""预构建帮助图片管理入口；--help 不初始化配置。"""
+"""字体、绘图素材和预构建帮助图片管理入口；--help 不初始化配置。"""
 
 from __future__ import annotations
 
@@ -25,7 +25,9 @@ from src.lib.docs_assets import (
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Manage prebuilt documentation assets")
+    parser = argparse.ArgumentParser(
+        description="Manage fonts and prebuilt image assets"
+    )
     actions = parser.add_subparsers(dest="action", required=True)
     pull = actions.add_parser(
         "pull", help="fetch the asset revision locked by this checkout"

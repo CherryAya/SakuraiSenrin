@@ -17,7 +17,7 @@ RESERVED_USER_FLAG = "RESERVED_USER"
 PERMANENT_BAN_FLAG = -1
 
 
-# 文件名须匹配 data/font/ 实际跟踪资源
+# 文件名须匹配 docs-assets.lock.json 锁定的 R2 字体资源
 LXGW_FONG_PATH = Path("./data/font/LXGW_NERD_NOTO.ttf")
 MAPLE_FONT_PATH = Path("./data/font/MapleMono-NF-CN-Regular.ttf")
 MAPLE_FONT_NAME = "Maple Mono NF CN"

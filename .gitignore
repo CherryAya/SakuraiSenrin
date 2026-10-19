@@ -37,12 +37,14 @@ repo-dev
 tools/snowluma-tui/target/
 output/
 
-# 帮助图片由本机构建并发布，生产启动时按 docs-assets.lock.json 同步。
+# 字体、绘图素材和帮助图片由 R2 分发，启动时按 docs-assets.lock.json 同步。
 src/plugins/**/docs/**/demos/*.png
 src/plugins/**/docs/**/demos/*.webp
 src/hooks/**/docs/**/demos/*.png
 src/hooks/**/docs/**/demos/*.webp
 src/lib/assets/help-support-qr-double.png
+src/lib/assets/senrin-demo-avatar.png
+src/lib/assets/senrin-demo-standee.png
 
 # Claude Code 本地设置；只共享项目 skill 入口
 .claude/*
