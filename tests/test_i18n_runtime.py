@@ -119,7 +119,7 @@ async def test_send_private_i18n_keeps_template_params(
         locale_group_id="20001",
         group_id="20001",
         group_name="测试群",
-        inviter_id="10001",
+        inviter_label="邀请者（10001）",
         main_group_id="10086",
     )
 

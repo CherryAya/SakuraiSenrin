@@ -4,6 +4,7 @@ from src.lib.i18n.types import LocaleCode
 
 LOCALE: Final[LocaleCode] = "zh-CN"
 CATALOG: Final[dict[str, str]] = {
+    "notice.invite.inviter_label": "{inviter_name}（{inviter_id}）",
     ("i18n.missing"): ("[missing:{key}]"),
     ("i18n.wait_prompt_words"): (
         "请稍候|请稍等|请稍后|处理中|执行中|整理中|搜索中|加载中"
@@ -295,6 +296,7 @@ CATALOG: Final[dict[str, str]] = {
         "  示例: #admin.invite approve -g <群号>\n"
         "  快捷操作: 对邀请通知消息直接回复 y / 同意\n"
         "  兜底命令: #admin.invite approve -g <群号>\n"
+        "  机器人已入群时，执行本地群授权；尚未入群时，同意有效的机器人邀请。\n"
         "\n"
         "3.拒绝邀请\n"
         "  reject / 拒绝\n"
@@ -302,6 +304,7 @@ CATALOG: Final[dict[str, str]] = {
         "  批量操作: #admin.invite reject --all\n"
         "  快捷操作: 对邀请通知消息直接回复 n / 拒绝\n"
         "  兜底命令: #admin.invite reject -g <群号>\n"
+        "  机器人已入群时，执行退群；尚未入群时，拒绝有效的机器人邀请。\n"
         "\n"
         "4.忽略邀请\n"
         "  ignore / 忽略\n"
@@ -1530,6 +1533,13 @@ CATALOG: Final[dict[str, str]] = {
     ),
     ("admin.user.result"): ("[{user_id}|{user_name}] {message}"),
     ("admin.invite.lookup_failed"): ("无法使用所提供的信息找到对应的邀请。"),
+    ("admin.invite.state_unavailable"): (
+        "暂时无法确认机器人当前是否在群，请稍后重试。"
+    ),
+    ("admin.invite.request_unavailable"): (
+        "邀请已失效，或旧记录无法确认邀请对象，请重新邀请机器人。"
+    ),
+    ("admin.invite.action_failed"): ("平台处理失败，请稍后重试。"),
     ("admin.invite.processed"): (
         "邀请已被 {operator_name}({operator_id}) 处理，无法操作。\n"
         "当前状态：{status}\n"
@@ -1548,6 +1558,13 @@ CATALOG: Final[dict[str, str]] = {
         "邀请 flag：{flag}\n"
         ""
     ),
+    ("admin.invite.authorization_done"): (
+        "群聊{action}完成\n"
+        "待办编号：{invitation_id}\n"
+        "群号：{group_id}\n"
+        "群名：{group_name}\n"
+        "邀请者：{inviter_name}"
+    ),
     ("admin.invite.pending.none"): ("当前没有待处理的邀请。"),
     ("admin.invite.list.processing"): ("正在整理待处理邀请并生成头像预览，请稍等。"),
     ("admin.invite.reject.none"): ("当前没有需要拒绝的待处理邀请。"),
@@ -1556,6 +1573,8 @@ CATALOG: Final[dict[str, str]] = {
     ("admin.invite.need_unban_first"): ("该群当前处于封禁状态，请先解封再同意邀请。"),
     ("admin.invite.action.approve"): ("同意"),
     ("admin.invite.action.reject"): ("拒绝"),
+    ("admin.invite.action.authorize"): ("授权"),
+    ("admin.invite.action.leave"): ("退群"),
     ("admin.invite.args_error.detail"): ("参数格式不正确，请检查指令用法。"),
     ("admin.invite.args_error"): ("参数错误:\n{message}"),
     ("admin.invite.log.unavailable"): ("邀请处理日志暂未开放。"),
@@ -1600,7 +1619,7 @@ CATALOG: Final[dict[str, str]] = {
         "🚫 自动拒绝\n"
         "群号：{group_id}\n"
         "群名：{group_name}\n"
-        "邀请者：{inviter_id}\n"
+        "邀请者：{inviter_label}\n"
         "群聊已被拉黑，凛凛不想加入此群组。\n"
         "如果你仍是该群管理层，也可以直接发送「#自助解封」或「#self.unban」，按提示选择群聊并填写理由发起自助解封。\n"
         "如有异议，请及时加入反馈群「{main_group_id}」并联系群管【加入白名单】"
@@ -1610,13 +1629,13 @@ CATALOG: Final[dict[str, str]] = {
         "黑名单群组发起邀请，已自动拒绝\n"
         "群号：{group_id}\n"
         "群名：{group_name}\n"
-        "邀请者：{inviter_id}"
+        "邀请者：{inviter_label}"
     ),
     ("notice.invite.received"): (
         "📩 谢谢您对凛凛发起的邀请 ^_^\n"
         "群号：{group_id}\n"
         "群名：{group_name}\n"
-        "邀请者：{inviter_id}\n"
+        "邀请者：{inviter_label}\n"
         "\n"
         "======重要提示======\n"
         "请及时加入反馈群「{main_group_id}」并联系群管【加入白名单】\n"
@@ -1630,20 +1649,39 @@ CATALOG: Final[dict[str, str]] = {
         "—— 来自 SakuraiSenrin (•◡•) /💕"
     ),
     ("notice.invite.report"): (
-        "📩 新的邀请事件通知\n"
+        "📩 机器人入群邀请待处理\n"
         "群号：{group_id}\n"
         "群名：{group_name}\n"
-        "邀请者：{inviter_id}\n"
+        "邀请者：{inviter_label}\n"
         "邀请 flag：{flag}\n"
         "\n"
-        "回复 y 可同意\n"
-        "回复 n 可拒绝\n"
+        "回复 y 同意机器人入群；若已入群，则授权此群\n"
+        "回复 n 拒绝机器人入群；若已入群，则退出此群\n"
+        "入群后仍可回复本条通知处理群授权\n"
         "主动命令：#admin.invite approve -g {group_id}\n"
         "主动命令：#admin.invite reject -g {group_id}\n"
         "查看列表：#admin.invite list"
     ),
+    ("notice.invite.authorization_report"): (
+        "📩 机器人已入群，等待群授权\n"
+        "群号：{group_id}\n"
+        "群名：{group_name}\n"
+        "邀请者：{inviter_label}\n"
+        "\n"
+        "回复 y 授权此群\n"
+        "回复 n 退出此群\n"
+        "授权命令：#admin.invite approve -g {group_id}\n"
+        "退群命令：#admin.invite reject -g {group_id}\n"
+        "查看列表：#admin.invite list"
+    ),
+    ("notice.invite.processing_failed"): (
+        "⚠️ 群邀请处理未完成\n群号：{group_id}\n{reason}"
+    ),
     ("notice.user.superuser_event"): ("用户事件通知\n用户：{user_id}"),
     ("notice.user.friend_request"): ("收到了新的好友请求，已同意：{user_id}"),
+    ("notice.user.friend_request_failed"): (
+        "好友请求处理未确认成功：{user_id}。请检查好友状态，必要时重新发起请求。"
+    ),
     ("water.common.group_only"): ("这个命令要在群里用喔~"),
     ("water.common.working"): ("凛凛统计中，请稍后喔……"),
     ("water.common.cooldown"): ("冷却时间 {seconds}s，请耐心等待 qwq"),

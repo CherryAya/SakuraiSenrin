@@ -15,25 +15,39 @@ from nonebot.adapters.onebot.v11.event import (
     GroupIncreaseNoticeEvent,
     GroupRequestEvent,
 )
+from nonebot.exception import ActionFailed, NetworkError
 from nonebot.matcher import Matcher
 from nonebot.rule import is_type, to_me
 
 from src.config import config
 from src.database.consts import WritePolicy
-from src.database.core.consts import InvitationStatus, Permission
+from src.database.core.consts import InvitationStage, InvitationStatus, Permission
 from src.lib.admin_notifications import (
     AdminNotificationTarget,
     deliver_admin_notification_plan,
 )
 from src.lib.consts import TriggerType
+from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import resolve_locale, send_private_i18n, tr
+from src.lib.i18n.types import LocaleCode
 from src.lib.message_plan import DeliveryPlan, DeliveryPlanResult
 from src.lib.plugin_docs import create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
 from src.lib.reply_router import ReplyContextSpec, record_reply_context_from_send_result
+from src.lib.request_flags import is_valid_request_flag
 from src.logger import logger
 from src.repositories import group_repo, invite_repo, user_repo
-from src.services.info import resolve_group_name, resolve_user_name
+from src.repositories.invite import InvitationEventResult
+from src.services.invitation import (
+    InvitationGroupState,
+    InvitationStateError,
+    invitation_display_name,
+    invitation_event_names,
+    invitation_lock,
+    is_invite_target,
+    is_request_unavailable,
+    read_invitation_group_state,
+)
 
 name = tr("zh-CN", "plugin.notice_invite.name")
 description = tr("zh-CN", "plugin.notice_invite.description")
@@ -76,53 +90,68 @@ __plugin_meta__ = create_plugin_metadata(
 )
 
 
-async def is_invite_request(event: GroupRequestEvent) -> bool:
-    return event.sub_type == "invite"
+async def is_invite_request(bot: Bot, event: GroupRequestEvent) -> bool:
+    accepted = is_invite_target(bot, event)
+    if not accepted:
+        reason = (
+            "unverified_target" if is_valid_request_flag(event.flag) else "invalid_flag"
+        )
+        logger.debug(
+            f"[NoticeInvite] request ignored reason={reason} "
+            f"group_id={event.group_id} sub_type={event.sub_type}"
+        )
+    return accepted
+
+
+def _inviter_label(locale: LocaleCode, inviter_id: str, inviter_name: str) -> str:
+    if inviter_name == inviter_id:
+        return inviter_id
+    return tr(
+        locale,
+        "notice.invite.inviter_label",
+        inviter_name=inviter_name,
+        inviter_id=inviter_id,
+    )
 
 
 async def _ensure_invitation_dependencies(
-    bot: Bot,
     *,
     inviter_id: str,
     group_id: str,
-    group_name: str,
-) -> None:
+    group_name: str | None,
+    inviter_name: str | None = None,
+) -> tuple[str, str]:
     # biz_invitation 外键校验数据库行
     inviter = await user_repo.get_user(inviter_id)
-    inviter_name = ""
+    stored_user_name = invitation_display_name(
+        inviter.display_name if inviter is not None else None
+    )
+    resolved_user_name = inviter_name or stored_user_name or inviter_id
     if inviter is None:
-        inviter_name = await resolve_user_name(bot, inviter_id)
         await user_repo.save_user(
             user_id=inviter_id,
-            user_name=inviter_name,
+            user_name=resolved_user_name,
             policy=WritePolicy.IMMEDIATE,
         )
-    else:
-        inviter_name = str(getattr(inviter, "display_name", "") or "")
-    await user_repo.ensure_persisted(inviter_id, inviter_name)
+    elif inviter_name is not None and inviter_name != stored_user_name:
+        await user_repo.save_user(user_id=inviter_id, user_name=inviter_name)
+    await user_repo.ensure_persisted(inviter_id, resolved_user_name)
 
     group = await group_repo.get_group(group_id)
+    stored_group_name = invitation_display_name(
+        group.display_name if group is not None else None
+    )
+    resolved_group_name = group_name or stored_group_name or group_id
     if group is None:
         await group_repo.save_group(
             group_id=group_id,
-            group_name=group_name,
+            group_name=resolved_group_name,
             policy=WritePolicy.IMMEDIATE,
         )
-    await group_repo.ensure_persisted(group_id, group_name)
-
-
-async def _ensure_request_dependencies(
-    bot: Bot,
-    event: GroupRequestEvent,
-    *,
-    group_name: str,
-) -> None:
-    await _ensure_invitation_dependencies(
-        bot,
-        inviter_id=str(event.user_id),
-        group_id=str(event.group_id),
-        group_name=group_name,
-    )
+    elif group_name is not None and group_name != stored_group_name:
+        await group_repo.save_group(group_id=group_id, group_name=group_name)
+    await group_repo.ensure_persisted(group_id, resolved_group_name)
+    return resolved_group_name, resolved_user_name
 
 
 def _build_invite_reply_context_spec(
@@ -212,120 +241,257 @@ async def _(
     event: GroupRequestEvent | GroupIncreaseNoticeEvent,
     matcher: Matcher,
 ) -> None:
-    # fmt: off
-    inviter_id = str(
-        event.user_id
-        if isinstance(event, GroupRequestEvent)
-        else event.operator_id
-    )
-    # fmt: on
-    group_id = str(event.group_id)
-    group = await group_repo.get_group(group_id)
-    group_name = await resolve_group_name(bot, group_id)
-    flag = event.flag if isinstance(event, GroupRequestEvent) else None
     if isinstance(event, GroupRequestEvent):
-        await _ensure_request_dependencies(bot, event, group_name=group_name)
-    else:
-        await _ensure_invitation_dependencies(
-            bot,
-            inviter_id=inviter_id,
-            group_id=group_id,
-            group_name=group_name,
-        )
-    group = await group_repo.get_group(group_id)
-    invitation = await invite_repo.create_invitation(
-        group_id=group_id,
-        inviter_id=inviter_id,
-        flag=flag,
-        sub_type=event.sub_type,
+        if not is_invite_target(bot, event):
+            return
+    elif str(event.user_id) != str(bot.self_id):
+        return
+
+    group_id = str(event.group_id)
+    async with invitation_lock(str(bot.self_id), group_id):
+        await _handle_invitation_event(bot, event)
+    await _finish_event(matcher)
+
+
+async def _notify_failure(bot: Bot, group_id: str, key: MessageKey) -> None:
+    locale = await resolve_locale(group_id)
+    await deliver_admin_notification_plan(
+        bot,
+        plan=DeliveryPlan(
+            messages=(
+                tr(
+                    locale,
+                    "notice.invite.processing_failed",
+                    group_id=group_id,
+                    reason=tr(locale, key),
+                ),
+            ),
+            source_kind="notice_invite_failure",
+            allow_asset_reuse=False,
+        ),
     )
 
-    if group and group.status.is_working:
-        await _ensure_invitation_dependencies(
-            bot,
-            inviter_id=str(bot.self_id),
-            group_id=group_id,
-            group_name=group_name,
+
+async def _handle_invitation_event(
+    bot: Bot,
+    event: GroupRequestEvent | GroupIncreaseNoticeEvent,
+) -> None:
+    group_id = str(event.group_id)
+    group_state = await _read_current_group_state(bot, group_id)
+    if group_state is None:
+        return
+    joined = group_state.joined
+    if isinstance(event, GroupIncreaseNoticeEvent) and not joined:
+        logger.debug(f"[NoticeInvite] stale join notice ignored group_id={group_id}")
+        return
+
+    inviter_id = str(
+        event.user_id if isinstance(event, GroupRequestEvent) else event.operator_id
+    )
+    event_group_name, event_inviter_name = invitation_event_names(event, inviter_id)
+    group_name, inviter_name = await _ensure_invitation_dependencies(
+        inviter_id=inviter_id,
+        group_id=group_id,
+        group_name=event_group_name or group_state.group_name,
+        inviter_name=event_inviter_name,
+    )
+    invitation = await invite_repo.reconcile_event(
+        group_id=group_id,
+        inviter_id=inviter_id,
+        flag=event.flag if isinstance(event, GroupRequestEvent) else None,
+        joined=joined,
+        event_time=event.time,
+    )
+    if invitation.status.is_processed:
+        logger.debug(
+            "[NoticeInvite] processed event ignored "
+            f"group_id={group_id} invitation_id={invitation.invitation_id}"
         )
-        if isinstance(event, GroupRequestEvent):
-            await bot.set_group_add_request(
-                flag=event.flag,
-                sub_type=event.sub_type,
-                approve=True,
+        return
+    if not joined and invitation.sub_type == InvitationStage.JOINED:
+        # 已入群阶段的原 flag 只是重放键；离群后的旧事件不能再次审批。
+        logger.debug(
+            "[NoticeInvite] joined request replay ignored "
+            f"group_id={group_id} invitation_id={invitation.invitation_id}"
+        )
+        return
+    if invitation.inviter_id != inviter_id:
+        original_inviter = await user_repo.get_user(invitation.inviter_id)
+        inviter_name = (
+            invitation_display_name(
+                original_inviter.display_name if original_inviter is not None else None
             )
+            or invitation.inviter_id
+        )
+    group = await group_repo.get_group(group_id)
+    if group and group.status.is_working:
+        if not joined and isinstance(event, GroupRequestEvent):
+            try:
+                await bot.set_group_add_request(
+                    flag=event.flag, sub_type="invite", approve=True
+                )
+            except (ActionFailed, NetworkError) as exc:
+                logger.warning(
+                    "[NoticeInvite] auto approve failed "
+                    f"group_id={group_id} error={exc}"
+                )
+                joined = await _read_current_membership(bot, group_id)
+                if joined is None:
+                    return
+                if not joined:
+                    await _notify_failure(
+                        bot,
+                        group_id,
+                        "admin.invite.request_unavailable"
+                        if is_request_unavailable(exc)
+                        else "admin.invite.action_failed",
+                    )
+                    return
+                await invite_repo.mark_joined(invitation.invitation_id)
+        await _ensure_invitation_dependencies(
+            inviter_id=str(bot.self_id), group_id=group_id, group_name=group_name
+        )
         await invite_repo.update_status(
-            invitation.id,
+            invitation.invitation_id,
             status=InvitationStatus.APPROVED,
             operator_id=str(bot.self_id),
         )
-        await _finish_event(matcher)
+        return
 
-    elif group and group.status.is_banned:
-        await _ensure_invitation_dependencies(
+    if group and group.status.is_banned:
+        rejected = await _reject_banned_invitation(
             bot,
-            inviter_id=str(bot.self_id),
+            invitation_id=invitation.invitation_id,
             group_id=group_id,
-            group_name=group_name,
+            flag=event.flag if isinstance(event, GroupRequestEvent) else None,
+            joined=joined,
         )
-        if isinstance(event, GroupIncreaseNoticeEvent):
-            await bot.set_group_leave(group_id=event.group_id)
-        else:
-            await bot.set_group_add_request(
-                flag=event.flag,
-                sub_type=event.sub_type,
-                approve=False,
-            )
+        if not rejected:
+            return
+        await _ensure_invitation_dependencies(
+            inviter_id=str(bot.self_id), group_id=group_id, group_name=group_name
+        )
         await invite_repo.update_status(
-            invitation.id,
+            invitation.invitation_id,
             status=InvitationStatus.REJECTED,
             operator_id=str(bot.self_id),
         )
-        await send_private_i18n(
+        await _notify_inviter(
             bot,
-            int(inviter_id),
-            "notice.invite.auto_reject",
-            locale_group_id=group_id,
-            group_id=group_id,
+            invitation,
             group_name=group_name,
-            inviter_id=inviter_id,
-            main_group_id=config.MAIN_GROUP_ID,
+            inviter_name=inviter_name,
+            key="notice.invite.auto_reject",
         )
-        detail_message = tr(
-            await resolve_locale(group_id),
-            "notice.invite.auto_reject.details",
-            group_id=group_id,
-            group_name=group_name,
-            inviter_id=inviter_id,
-        )
+        locale = await resolve_locale(group_id)
         await deliver_admin_notification_plan(
             bot,
             plan=DeliveryPlan(
-                messages=(detail_message,),
+                messages=(
+                    tr(
+                        locale,
+                        "notice.invite.auto_reject.details",
+                        group_id=group_id,
+                        group_name=group_name,
+                        inviter_label=_inviter_label(
+                            locale, invitation.inviter_id, inviter_name
+                        ),
+                    ),
+                ),
                 source_kind="notice_invite_auto_reject",
                 allow_asset_reuse=False,
             ),
         )
-        await _finish_event(matcher)
+        return
 
-    await send_private_i18n(
+    if invitation.should_notify:
+        await _report_pending(
+            bot, invitation, group_name=group_name, inviter_name=inviter_name
+        )
+
+
+async def _read_current_group_state(
+    bot: Bot, group_id: str
+) -> InvitationGroupState | None:
+    try:
+        return await read_invitation_group_state(bot, group_id)
+    except InvitationStateError as exc:
+        logger.warning(
+            f"[NoticeInvite] state unavailable group_id={group_id} error={exc}"
+        )
+        await _notify_failure(bot, group_id, "admin.invite.state_unavailable")
+        return None
+
+
+async def _read_current_membership(bot: Bot, group_id: str) -> bool | None:
+    state = await _read_current_group_state(bot, group_id)
+    return state.joined if state is not None else None
+
+
+async def _reject_banned_invitation(
+    bot: Bot, *, invitation_id: int, group_id: str, flag: str | None, joined: bool
+) -> bool:
+    if not joined:
+        if not is_valid_request_flag(flag):
+            await _notify_failure(bot, group_id, "admin.invite.request_unavailable")
+            return False
+        try:
+            await bot.set_group_add_request(flag=flag, sub_type="invite", approve=False)
+            return True
+        except (ActionFailed, NetworkError) as exc:
+            logger.warning(
+                f"[NoticeInvite] auto reject failed group_id={group_id} error={exc}"
+            )
+            current_membership = await _read_current_membership(bot, group_id)
+            if current_membership is None:
+                return False
+            if not current_membership:
+                await _notify_failure(
+                    bot,
+                    group_id,
+                    "admin.invite.request_unavailable"
+                    if is_request_unavailable(exc)
+                    else "admin.invite.action_failed",
+                )
+                return False
+            await invite_repo.mark_joined(invitation_id)
+    try:
+        await bot.set_group_leave(group_id=int(group_id))
+    except (ActionFailed, NetworkError) as exc:
+        logger.warning(
+            f"[NoticeInvite] auto leave failed group_id={group_id} error={exc}"
+        )
+        still_joined = await _read_current_membership(bot, group_id)
+        if still_joined is None:
+            return False
+        if still_joined:
+            await _notify_failure(bot, group_id, "admin.invite.action_failed")
+            return False
+    return True
+
+
+async def _report_pending(
+    bot: Bot, invitation: InvitationEventResult, *, group_name: str, inviter_name: str
+) -> None:
+    group_id = invitation.group_id
+    inviter_id = invitation.inviter_id
+    await _notify_inviter(
         bot,
-        int(inviter_id),
-        "notice.invite.received",
-        locale_group_id=group_id,
-        group_id=group_id,
+        invitation,
         group_name=group_name,
-        inviter_id=inviter_id,
-        main_group_id=config.MAIN_GROUP_ID,
+        inviter_name=inviter_name,
+        key="notice.invite.received",
     )
-
     locale = await resolve_locale(group_id)
     report_message = tr(
         locale,
-        "notice.invite.report",
+        "notice.invite.authorization_report"
+        if invitation.sub_type == InvitationStage.JOINED
+        else "notice.invite.report",
         group_id=group_id,
         group_name=group_name,
-        inviter_id=inviter_id,
-        flag=flag,
+        inviter_label=_inviter_label(locale, inviter_id, inviter_name),
+        flag=invitation.flag,
     )
 
     async def _on_delivered(
@@ -334,10 +500,10 @@ async def _(
     ) -> None:
         await _record_invitation_notice_delivery(
             bot,
-            invitation_id=invitation.id,
+            invitation_id=invitation.invitation_id,
             group_id=group_id,
             inviter_id=inviter_id,
-            flag=flag,
+            flag=invitation.flag,
             report_message=report_message,
             target=target,
             plan_result=plan_result,
@@ -352,3 +518,35 @@ async def _(
         ),
         on_delivered=_on_delivered,
     )
+
+
+async def _notify_inviter(
+    bot: Bot,
+    invitation: InvitationEventResult,
+    *,
+    group_name: str,
+    inviter_name: str,
+    key: MessageKey,
+) -> None:
+    inviter_id = invitation.inviter_id
+    if not inviter_id.isascii() or not inviter_id.isdecimal() or int(inviter_id) < 1:
+        return
+    try:
+        locale = await resolve_locale(invitation.group_id)
+        await send_private_i18n(
+            bot,
+            int(inviter_id),
+            key,
+            locale_group_id=invitation.group_id,
+            group_id=invitation.group_id,
+            group_name=group_name,
+            inviter_label=_inviter_label(locale, inviter_id, inviter_name),
+            main_group_id=config.MAIN_GROUP_ID,
+        )
+    except Exception as exc:
+        # 可选的邀请者私聊失败，不能阻止管理员获得有效待办。
+        logger.warning(
+            "[NoticeInvite] inviter notice failed "
+            f"invitation_id={invitation.invitation_id} group_id={invitation.group_id} "
+            f"error={type(exc).__name__}: {exc}"
+        )

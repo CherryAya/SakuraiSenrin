@@ -10,10 +10,11 @@ import asyncio
 from pathlib import Path
 import random
 
-from nonebot.adapters.onebot.v11 import ActionFailed
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import FriendRequestEvent
+from nonebot.exception import ActionFailed, NetworkError
 from nonebot.plugin import on_request
+from nonebot.rule import is_type
 
 from src.database.consts import WritePolicy
 from src.database.core.consts import Permission
@@ -22,6 +23,8 @@ from src.lib.consts import TriggerType
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.plugin_docs import create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
+from src.lib.request_flags import is_valid_request_flag
+from src.lib.types import as_str, is_object_mapping
 from src.logger import logger
 from src.repositories import user_repo
 
@@ -56,28 +59,63 @@ __plugin_meta__ = create_plugin_metadata(
 )
 
 
-@on_request(priority=5).handle()
+async def is_friend_request(event: FriendRequestEvent) -> bool:
+    if event.user_id < 1:
+        logger.warning(
+            f"[NoticeUser] friend request skipped reason=invalid_user_id "
+            f"user_id={event.user_id}"
+        )
+        return False
+    if not is_valid_request_flag(event.flag):
+        logger.warning(
+            "[NoticeUser] friend request skipped reason=invalid_flag "
+            f"user_id={event.user_id}"
+        )
+        return False
+    return True
+
+
+async def _wait_before_accept() -> None:
+    await asyncio.sleep(random.randint(10, 20))
+
+
+friend_request = on_request(
+    priority=5, rule=is_type(FriendRequestEvent) & is_friend_request
+)
+
+
+@friend_request.handle()
 async def _(
     bot: Bot,
     event: FriendRequestEvent,
 ) -> None:
+    if not await is_friend_request(event):
+        return
     user_id = str(event.user_id)
-    # 事件上下文随延迟失效：user_id 提前校验。
-    if not user_id.isdigit() or int(user_id) < 1:
+    await _wait_before_accept()
+    try:
+        await bot.set_friend_add_request(flag=event.flag, approve=True)
+    except (ActionFailed, NetworkError) as exc:
         logger.warning(
-            f"[NoticeUser] friend request skipped reason=invalid_user_id "
-            f"user_id={user_id or '-'} flag={event.flag}"
+            f"[NoticeUser] friend approval unconfirmed user_id={user_id} error={exc}"
+        )
+        await deliver_admin_notification_i18n(
+            bot,
+            locale=await resolve_locale(None),
+            key="notice.user.friend_request_failed",
+            source_kind="notice_user_friend_request_failed",
+            user_id=user_id,
         )
         return
 
-    await asyncio.sleep(random.randint(10, 20))
-    await bot.set_friend_add_request(flag=event.flag, approve=True)
-
     user_name = ""
     try:
-        stranger_info = await bot.get_stranger_info(user_id=int(user_id))
-        user_name = str(stranger_info.get("nickname", "") or "")
-    except ActionFailed as exc:
+        stranger_info: object = await bot.get_stranger_info(user_id=int(user_id))
+        if is_object_mapping(stranger_info):
+            user_name = as_str(stranger_info.get("nickname"))
+        else:
+            logger.warning(f"[NoticeUser] invalid stranger info user_id={user_id}")
+    except (ActionFailed, NetworkError) as exc:
         # 拉取资料失败仍继续入库与通报。
         logger.warning(
             f"[NoticeUser] get_stranger_info failed user_id={user_id} "

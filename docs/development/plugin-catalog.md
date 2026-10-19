@@ -52,14 +52,22 @@
 | --- | --- | --- | --- |
 | admin.group | admin group / 群组管理；SUPERUSER | 公共群组授权、封禁、退群/状态操作 | [文档](../../src/plugins/admin/docs/group/README.MD)；admin 公共入口测试 |
 | admin.user | admin user / 用户管理；SUPERUSER | 公共用户状态、封禁/解封、权限管理 | [文档](../../src/plugins/admin/docs/user/README.MD)；admin 公共入口/时长测试 |
-| admin.invite | admin invite / 邀请管理，以及审批/拒绝回复路由；SUPERUSER，no_check | 公共邀请与群组数据、邀请审批 | [文档](../../src/plugins/admin/docs/invite/README.MD)；admin 入口与 notice 邀请测试 |
+| admin.invite | admin invite / 邀请管理，以及审批/拒绝回复路由；SUPERUSER，no_check | 经 invitation 共享服务确认入群状态，处理有效机器人邀请或本地授权/退群；公共 invite_repo / group_repo | [文档](../../src/plugins/admin/docs/invite/README.MD)；[审批回归](../../tests/plugins/admin/test_invite_review.py)、admin 入口与 notice 邀请测试 |
 | admin.i18n | admin i18n / 语言管理；SUPERUSER | i18n_repo：全局默认和群组覆盖 | [文档](../../src/plugins/admin/docs/i18n/README.MD)；admin 入口和 test_i18n_runtime |
 | admin.backup | admin backup / 备份管理；SUPERUSER | 全部已注册 store 的备份、健康检查、恢复服务；统一读取当前配置的单一仓库，restore 仅接受快照参数；非私有业务库 | [文档](../../src/plugins/admin/docs/backup/README.MD)；[test_backup.py](../../tests/plugins/admin/test_backup.py)及公共备份测试 |
 | notice.group | 入群/离群/禁言/群名事件；PASSIVE，元数据 SUPERUSER，no_check | 公共群组/成员/快照同步与通知 | [文档](../../src/plugins/notice/docs/group/README.MD)；[test_group.py](../../tests/plugins/notice/test_group.py) |
-| notice.user | 请求事件处理；PASSIVE，元数据 SUPERUSER，no_check | 好友请求相关 API 与通知 | [文档](../../src/plugins/notice/docs/user/README.MD)；未定位专属 test_user |
-| notice.invite | 群邀请 request / 机器人入群 notice；PASSIVE，元数据 SUPERUSER，no_check | 邀请记录、审批状态与群组处理 | [文档](../../src/plugins/notice/docs/invite/README.MD)；[test_invite.py](../../tests/plugins/notice/test_invite.py) |
+| notice.user | 好友请求事件处理；PASSIVE，元数据 SUPERUSER，no_check | 有效好友请求自动同意；非法 ID/空白 flag 拦截；接口失败上报，资料失败降级 | [文档](../../src/plugins/notice/docs/user/README.MD)；[请求回归](../../tests/plugins/notice/test_user_requests.py) |
+| notice.invite | 明确邀请机器人本人的群 request / 机器人本人入群 notice；PASSIVE，元数据 SUPERUSER，no_check | 经 invitation 共享服务合并邀请与入群待办、审批状态与群组处理；邀请对象缺失/无效/非本人只记诊断，不审批 | [文档](../../src/plugins/notice/docs/invite/README.MD)；[test_invite.py](../../tests/plugins/notice/test_invite.py) |
 
 子模块位于 `src/plugins/admin/` 和 `src/plugins/notice/`，各自声明元数据、文档和 plugin.* i18n 键；父节点分别为 admin 和 notice。
+
+邀请流程的共享编排由 [src/services/invitation.py](../../src/services/invitation.py) 拥有，持久化通过公共 [invite_repo](../../src/repositories/invite.py) 接口完成，不新建 namespace 或修改表结构。请求阶段使用既有 `sub_type=bot_invite`，入群待授权阶段使用 `sub_type=joined`；同一邀请的 request / notice（任意顺序）以及同 flag 重放合并为同一待办，保留已建立的通知回复关联和原始邀请者身份，避免改变 remove 的邀请人权限判断。
+
+好友请求、群邀请、管理员审批和邀请持久化统一通过 [request_flags](../../src/lib/request_flags.py) 校验非空白 flag，合法标识不作裁剪。无 flag 的机器人入群 notice 仍是有效的本地授权事件。已知平台拒绝与网络故障按实时成员状态降级，不把未确认的操作记为成功。
+
+邀请通知的名称优先使用事件扩展字段，群名还会复用本次实时群列表结果，缺失时依次回退到本地资料和 ID，不额外请求名称 API。有效名称通过已有 repository 更新缓存与保存，通知保留昵称及 ID；合并事件仍显示原邀请者，不将机器人或后续操作者名称错配给原邀请者。
+
+只有 `invited_id` 明确等于机器人 ID 的请求进入审批；缺失、非法或其他对象的请求记录诊断后忽略。执行审批/授权前通过 `get_group_list` 实时确认机器人是否在群：已入群时同意只做本地群授权、拒绝则退群；尚未入群时，仅处理可确认对象的有效机器人邀请。不能确认状态、失效邀请和不可信旧记录均不标记成功。已授权群自动同意仅适用于确证邀请机器人本人且机器人尚未在群的请求。
 
 ## hook 模块
 

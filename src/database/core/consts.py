@@ -56,6 +56,13 @@ class GroupStatus(LocalizedMixin, StrEnum):
         return self == GroupStatus.DORMANT
 
 
+class InvitationStage(StrEnum):
+    """邀请目标已验证的请求，以及机器人已入群后的本地授权阶段。"""
+
+    INVITED = "bot_invite"
+    JOINED = "joined"
+
+
 class InvitationStatus(LocalizedMixin, StrEnum):
     PENDING = "PENDING"
     APPROVED = "APPROVED"

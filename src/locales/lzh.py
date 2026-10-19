@@ -7,7 +7,48 @@ LOCALE: Final[LocaleCode] = "lzh"
 
 CATALOG: Final[dict[str, str]] = {
     **ZH_CATALOG,
+    "notice.invite.inviter_label": "{inviter_name}（{inviter_id}）",
     "admin.backup.restore.invalid_args": "恢復之令僅受 snapshot id 或 latest；倉庫由當前配置定之。",
+    "admin.invite.state_unavailable": "暫未能察機器人是否在群，請稍後再試。",
+    "admin.invite.request_unavailable": "邀請已失效，或舊錄未能明其所邀者，請重邀機器人。",
+    "admin.invite.action_failed": "平台處置未成，請稍後再試。",
+    "admin.invite.action.authorize": "授權",
+    "admin.invite.action.leave": "退群",
+    "admin.invite.authorization_done": (
+        "群聊{action}已成\n"
+        "待辦編號：{invitation_id}\n"
+        "群號：{group_id}\n"
+        "群名：{group_name}\n"
+        "邀者：{inviter_name}"
+    ),
+    "notice.invite.report": (
+        "📩 邀機器人入群，待君裁定\n"
+        "群號：{group_id}\n"
+        "群名：{group_name}\n"
+        "邀者：{inviter_label}\n"
+        "邀請 flag：{flag}\n"
+        "\n"
+        "回覆 y 許其入群；若已在群，則授權此群\n"
+        "回覆 n 辭其邀請；若已在群，則退出此群\n"
+        "入群後仍可回覆此訊，處置群授權\n"
+        "許可之令：#admin.invite approve -g {group_id}\n"
+        "拒絕之令：#admin.invite reject -g {group_id}\n"
+        "觀待辦：#admin.invite list"
+    ),
+    "notice.invite.authorization_report": (
+        "📩 機器人已入群，待授權\n"
+        "群號：{group_id}\n"
+        "群名：{group_name}\n"
+        "邀者：{inviter_label}\n"
+        "\n"
+        "回覆 y 授權此群\n"
+        "回覆 n 退出此群\n"
+        "授權之令：#admin.invite approve -g {group_id}\n"
+        "退群之令：#admin.invite reject -g {group_id}\n"
+        "觀待辦：#admin.invite list"
+    ),
+    "notice.invite.processing_failed": "⚠️ 群邀處置未成\n群號：{group_id}\n{reason}",
+    "notice.user.friend_request_failed": "好友之請未能確認已成：{user_id}。請察好友狀態，必要時重發申請。",
     "docs.default.empty": "暫無所陳",
     "docs.default.no_description": "暫無所述",
     "docs.default.trigger": "觸發之法",

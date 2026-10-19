@@ -528,7 +528,7 @@ async def test_admin_invite_reply_persists_operator_when_approving(
     invitation = SimpleNamespace(
         id=7,
         flag="flag-7",
-        sub_type="invite:manual-review",
+        sub_type="bot_invite",
         status=SimpleNamespace(is_processed=False),
         group=SimpleNamespace(
             status=GroupStatus.UNAUTHORIZED,
@@ -543,6 +543,16 @@ async def test_admin_invite_reply_persists_operator_when_approving(
         invite_plugin.invite_repo,
         "get_by_message_id",
         AsyncMock(return_value=invitation),
+    )
+    monkeypatch.setattr(
+        invite_plugin.invite_repo,
+        "get_by_id",
+        AsyncMock(return_value=invitation),
+    )
+    monkeypatch.setattr(
+        invite_plugin,
+        "is_bot_in_group",
+        AsyncMock(return_value=False),
     )
     monkeypatch.setattr(
         invite_plugin,
@@ -578,7 +588,7 @@ async def test_admin_invite_reply_persists_operator_when_approving(
 
     bot.set_group_add_request.assert_awaited_once_with(
         flag="flag-7",
-        sub_type="invite:manual-review",
+        sub_type="invite",
         approve=True,
     )
     save_user_mock.assert_awaited_once()
@@ -615,6 +625,11 @@ async def test_admin_invite_processed_message_handles_missing_operator(
     monkeypatch.setattr(
         invite_plugin.invite_repo,
         "get_by_flag",
+        AsyncMock(return_value=invitation),
+    )
+    monkeypatch.setattr(
+        invite_plugin.invite_repo,
+        "get_by_id",
         AsyncMock(return_value=invitation),
     )
     monkeypatch.setattr(invite_plugin, "_send_reusable_text", send_text_mock)

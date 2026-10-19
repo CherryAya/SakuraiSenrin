@@ -14,13 +14,13 @@ from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 import io
 from pathlib import Path
-from typing import NoReturn, Protocol, TypedDict, cast
+from typing import Literal, NoReturn, Protocol, TypedDict, cast
 
 import arrow
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent
 from nonebot.adapters.onebot.v11.message import Message
-from nonebot.exception import ParserExit
+from nonebot.exception import ActionFailed, NetworkError, ParserExit
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 from nonebot.permission import SUPERUSER
@@ -67,11 +67,20 @@ from src.lib.reply_router import (
     dispatch_reply_route,
     register_reply_route,
 )
+from src.lib.request_flags import is_valid_request_flag
 from src.lib.types import UNSET, Unset, is_set
 from src.lib.utils.img import QQAvatar
 from src.lib.utils.time_utils import get_current_time
+from src.logger import logger
 from src.repositories import group_repo, invite_repo, user_repo
 from src.services.info import resolve_user_name
+from src.services.invitation import (
+    InvitationStateError,
+    invitation_lock,
+    is_bot_in_group,
+    is_request_unavailable,
+    is_verified_invitation,
+)
 from src.services.runtime_policy import resolve_invitation_transition
 
 admin_command_group = CommandGroup("admin")
@@ -659,6 +668,125 @@ async def handle_invitation(ctx: InviteContext) -> bool:
         )
         return False
 
+    async with invitation_lock(str(ctx.bot.self_id), invitation.group_id):
+        current = await invite_repo.get_by_id(invitation.id)
+        if current is None:
+            return False
+        return await _handle_current_invitation(ctx, current)
+
+
+async def _send_invitation_error(ctx: InviteContext, message: str) -> None:
+    if not ctx.silent:
+        await _send_reusable_text(
+            ctx.bot,
+            ctx.matcher,
+            ctx.event,
+            message=message,
+        )
+
+
+async def _apply_joined_action(ctx: InviteContext, invitation: Invitation) -> bool:
+    await invite_repo.mark_joined(invitation.id)
+    if ctx.approve:
+        return True
+    try:
+        await ctx.bot.set_group_leave(group_id=int(invitation.group_id))
+    except (ActionFailed, NetworkError) as exc:
+        logger.warning(
+            "[AdminInvite] leave failed "
+            f"bot_id={ctx.bot.self_id} group_id={invitation.group_id} "
+            f"invitation_id={invitation.id} error={exc}"
+        )
+        try:
+            in_group = await is_bot_in_group(ctx.bot, invitation.group_id)
+        except InvitationStateError:
+            await _send_invitation_error(
+                ctx, tr(ctx.locale, "admin.invite.state_unavailable")
+            )
+            return False
+        if in_group:
+            await _send_invitation_error(
+                ctx, tr(ctx.locale, "admin.invite.action_failed")
+            )
+            return False
+    return True
+
+
+async def _apply_invitation_action(
+    ctx: InviteContext, invitation: Invitation
+) -> Literal["platform", "local"] | None:
+    try:
+        in_group = await is_bot_in_group(ctx.bot, invitation.group_id)
+    except InvitationStateError as exc:
+        logger.warning(
+            "[AdminInvite] membership lookup failed "
+            f"bot_id={ctx.bot.self_id} group_id={invitation.group_id} "
+            f"invitation_id={invitation.id} error={exc}"
+        )
+        await _send_invitation_error(
+            ctx, tr(ctx.locale, "admin.invite.state_unavailable")
+        )
+        return None
+
+    if in_group:
+        return "local" if await _apply_joined_action(ctx, invitation) else None
+
+    if not is_valid_request_flag(invitation.flag) or not is_verified_invitation(
+        invitation.sub_type
+    ):
+        logger.info(
+            "[AdminInvite] request unavailable "
+            f"bot_id={ctx.bot.self_id} group_id={invitation.group_id} "
+            f"invitation_id={invitation.id} stage={invitation.sub_type} "
+            f"has_flag={bool(invitation.flag)}"
+        )
+        await _send_invitation_error(
+            ctx, tr(ctx.locale, "admin.invite.request_unavailable")
+        )
+        return None
+
+    try:
+        await ctx.bot.set_group_add_request(
+            flag=invitation.flag,
+            sub_type="invite",
+            approve=ctx.approve,
+        )
+    except (ActionFailed, NetworkError) as exc:
+        logger.warning(
+            "[AdminInvite] platform request failed "
+            f"bot_id={ctx.bot.self_id} group_id={invitation.group_id} "
+            f"invitation_id={invitation.id} approve={ctx.approve} error={exc}"
+        )
+        try:
+            in_group = await is_bot_in_group(ctx.bot, invitation.group_id)
+        except InvitationStateError as state_exc:
+            logger.warning(
+                "[AdminInvite] membership recheck failed "
+                f"bot_id={ctx.bot.self_id} group_id={invitation.group_id} "
+                f"invitation_id={invitation.id} error={state_exc}"
+            )
+            await _send_invitation_error(
+                ctx, tr(ctx.locale, "admin.invite.state_unavailable")
+            )
+            return None
+        if in_group:
+            return "local" if await _apply_joined_action(ctx, invitation) else None
+        await _send_invitation_error(
+            ctx,
+            tr(
+                ctx.locale,
+                "admin.invite.request_unavailable"
+                if is_request_unavailable(exc)
+                else "admin.invite.action_failed",
+            ),
+        )
+        return None
+    return "platform"
+
+
+async def _handle_current_invitation(
+    ctx: InviteContext, invitation: Invitation
+) -> bool:
     if invitation.status.is_processed:
         if not ctx.silent:
             await _send_reusable_text(
@@ -684,20 +812,9 @@ async def handle_invitation(ctx: InviteContext) -> bool:
             )
         return False
 
-    if flag := invitation.flag:
-        await ctx.bot.set_group_add_request(
-            flag=flag,
-            sub_type=invitation.sub_type,
-            approve=ctx.approve,
-        )
-    elif not ctx.approve:
-        await ctx.bot.set_group_leave(group_id=int(invitation.group_id))
-
-    action = (
-        tr(ctx.locale, "admin.invite.action.approve")
-        if ctx.approve
-        else tr(ctx.locale, "admin.invite.action.reject")
-    )
+    action_kind = await _apply_invitation_action(ctx, invitation)
+    if action_kind is None:
+        return False
 
     operator_id = str(ctx.operator_id) if is_set(ctx.operator_id) else None
     if operator_id is not None:
@@ -717,20 +834,40 @@ async def handle_invitation(ctx: InviteContext) -> bool:
         blocks: list[ReplyRefBlock | TextBlock] = []
         if message_id is not None:
             blocks.append(ReplyRefBlock(message_id=str(message_id)))
-        blocks.append(
-            TextBlock(
-                tr(
-                    ctx.locale,
-                    "admin.invite.action_done",
-                    action=action,
-                    invitation_id=invitation.id,
-                    group_id=invitation.group_id,
-                    group_name=invitation.group.group_name,
-                    inviter_name=invitation.inviter.user_name,
-                    flag=invitation.flag,
-                )
+        if action_kind == "local":
+            action = tr(
+                ctx.locale,
+                "admin.invite.action.authorize"
+                if ctx.approve
+                else "admin.invite.action.leave",
             )
-        )
+            message = tr(
+                ctx.locale,
+                "admin.invite.authorization_done",
+                action=action,
+                invitation_id=invitation.id,
+                group_id=invitation.group_id,
+                group_name=invitation.group.group_name,
+                inviter_name=invitation.inviter.user_name,
+            )
+        else:
+            action = tr(
+                ctx.locale,
+                "admin.invite.action.approve"
+                if ctx.approve
+                else "admin.invite.action.reject",
+            )
+            message = tr(
+                ctx.locale,
+                "admin.invite.action_done",
+                action=action,
+                invitation_id=invitation.id,
+                group_id=invitation.group_id,
+                group_name=invitation.group.group_name,
+                inviter_name=invitation.inviter.user_name,
+                flag=invitation.flag,
+            )
+        blocks.append(TextBlock(message))
         await deliver_message_plan(
             ctx.bot,
             plan=DeliveryPlan(
@@ -1047,8 +1184,8 @@ async def _(
             return
 
     action = args.action
-    flag = getattr(args, "flag", UNSET)
-    group_id = getattr(args, "gid", UNSET)
+    flag = getattr(args, "flag", None) or UNSET
+    group_id = getattr(args, "gid", None) or UNSET
     is_all = getattr(args, "all", False)
 
     ctx = AdminInviteContext(

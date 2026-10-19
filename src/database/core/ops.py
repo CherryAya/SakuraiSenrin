@@ -16,10 +16,11 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import aliased, selectinload
 
 from src.lib.db.ops import BaseOps, affected_rows
+from src.lib.request_flags import is_valid_request_flag
 from src.lib.types import JsonObject
 from src.lib.utils.time_utils import get_current_time
 
-from .consts import GroupStatus, InvitationStatus, Permission
+from .consts import GroupStatus, InvitationStage, InvitationStatus, Permission
 from .tables import (
     Blacklist,
     Group,
@@ -558,6 +559,142 @@ class MemberOps(BaseOps[Member]):
 
 
 class InvitationOps(BaseOps[Invitation]):
+    async def _find_event_flag(
+        self,
+        group_id: str,
+        flag: str,
+    ) -> Invitation | None:
+        stmt = (
+            select(Invitation)
+            .where(Invitation.group_id == group_id, Invitation.flag == flag)
+            .order_by(
+                case((Invitation.status == InvitationStatus.PENDING, 0), else_=1),
+                Invitation.id.desc(),
+            )
+            .limit(1)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().one_or_none()
+
+    async def _needs_notification(self, invitation: Invitation) -> bool:
+        if invitation.status != InvitationStatus.PENDING:
+            return False
+        result = await self.session.execute(
+            select(InvitationMessage.id)
+            .where(InvitationMessage.invitation_id == invitation.id)
+            .limit(1),
+        )
+        return result.scalar_one_or_none() is None
+
+    async def reconcile_event(
+        self,
+        *,
+        group_id: str,
+        inviter_id: str,
+        flag: str | None,
+        joined: bool,
+        event_time: int,
+    ) -> tuple[Invitation, bool, bool]:
+        """关联同一入群流程；调用者须先取得写锁，返回记录、通知与重放标记。"""
+        if flag is not None and not is_valid_request_flag(flag):
+            raise ValueError("request flag must not be blank")
+        if not joined and flag is None:
+            raise ValueError("a platform invitation requires a request flag")
+        invitation = (
+            await self._find_event_flag(group_id, flag) if flag is not None else None
+        )
+        replayed = invitation is not None
+
+        if invitation is None:
+            result = await self.session.execute(
+                select(Invitation)
+                .where(
+                    Invitation.group_id == group_id,
+                    Invitation.status == InvitationStatus.PENDING,
+                )
+                .order_by(Invitation.created_at.desc(), Invitation.id.desc())
+                .limit(1),
+            )
+            invitation = result.scalars().one_or_none()
+
+        if invitation is not None:
+            if invitation.status != InvitationStatus.PENDING:
+                return invitation, False, replayed
+
+            flag_changed = flag is not None and flag != invitation.flag
+            if flag_changed:
+                old_flag = invitation.flag
+                alias = None
+                if is_valid_request_flag(old_flag):
+                    result = await self.session.execute(
+                        select(Invitation.id)
+                        .where(
+                            Invitation.group_id == group_id,
+                            Invitation.flag == old_flag,
+                            Invitation.id != invitation.id,
+                        )
+                        .limit(1),
+                    )
+                    alias = result.scalar_one_or_none()
+                if is_valid_request_flag(old_flag) and alias is None:
+                    # 保留原 flag 的持久重放键，旧消息继续指向 canonical 记录。
+                    self.session.add(
+                        Invitation(
+                            group_id=group_id,
+                            inviter_id=invitation.inviter_id,
+                            flag=old_flag,
+                            sub_type=invitation.sub_type,
+                            status=InvitationStatus.IGNORED,
+                            created_at=invitation.created_at,
+                            updated_at=get_current_time(),
+                        ),
+                    )
+                invitation.flag = flag
+
+            if joined:
+                invitation.sub_type = InvitationStage.JOINED
+            elif flag_changed or invitation.sub_type != InvitationStage.JOINED:
+                invitation.sub_type = InvitationStage.INVITED
+            if self.session.is_modified(invitation):
+                invitation.updated_at = get_current_time()
+            await self.session.flush()
+            return invitation, await self._needs_notification(invitation), replayed
+
+        if joined:
+            result = await self.session.execute(
+                select(Invitation)
+                .where(Invitation.group_id == group_id)
+                .order_by(Invitation.updated_at.desc(), Invitation.id.desc())
+                .limit(1),
+            )
+            latest = result.scalars().one_or_none()
+            if latest is not None and event_time <= latest.updated_at:
+                return latest, False, True
+
+        event_now = get_current_time()
+        invitation = Invitation(
+            group_id=group_id,
+            inviter_id=inviter_id,
+            flag=flag,
+            sub_type=InvitationStage.JOINED if joined else InvitationStage.INVITED,
+            status=InvitationStatus.PENDING,
+            created_at=event_now,
+            updated_at=event_now,
+        )
+        self.session.add(invitation)
+        await self.session.flush()
+        return invitation, True, False
+
+    async def mark_joined(self, invitation_id: int) -> None:
+        await self.session.execute(
+            update(Invitation)
+            .where(
+                Invitation.id == invitation_id,
+                Invitation.sub_type != InvitationStage.JOINED,
+            )
+            .values(sub_type=InvitationStage.JOINED, updated_at=get_current_time()),
+        )
+
     async def create_invitation(
         self,
         group_id: str,

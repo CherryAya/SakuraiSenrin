@@ -7,7 +7,48 @@ LOCALE: Final[LocaleCode] = "x-meme"
 
 CATALOG: Final[dict[str, str]] = {
     **ZH_CATALOG,
+    "notice.invite.inviter_label": "{inviter_name}（{inviter_id}）",
     "admin.backup.restore.invalid_args": "恢复只收 snapshot id 或 latest，仓库看当前配置。",
+    "admin.invite.state_unavailable": "凛凛暂时确认不了自己在不在群里，请稍后再试。",
+    "admin.invite.request_unavailable": "这份邀请已过期，或旧记录没写清楚邀请谁，请重新邀请凛凛。",
+    "admin.invite.action_failed": "平台这次没处理成，请稍后再试。",
+    "admin.invite.action.authorize": "授权",
+    "admin.invite.action.leave": "退群",
+    "admin.invite.authorization_done": (
+        "群聊{action}办好了\n"
+        "待办编号：{invitation_id}\n"
+        "群号：{group_id}\n"
+        "群名：{group_name}\n"
+        "邀请者：{inviter_name}"
+    ),
+    "notice.invite.report": (
+        "📩 有群邀请凛凛，等管理员点头\n"
+        "群号：{group_id}\n"
+        "群名：{group_name}\n"
+        "邀请者：{inviter_label}\n"
+        "邀请 flag：{flag}\n"
+        "\n"
+        "回复 y 同意入群；已经进群的话，就给这个群授权\n"
+        "回复 n 拒绝邀请；已经进群的话，就退出这个群\n"
+        "进群之后也能回复这条消息处理授权，入口还在\n"
+        "同意命令：#admin.invite approve -g {group_id}\n"
+        "拒绝命令：#admin.invite reject -g {group_id}\n"
+        "看看待办：#admin.invite list"
+    ),
+    "notice.invite.authorization_report": (
+        "📩 凛凛已进群，等管理员发授权卡\n"
+        "群号：{group_id}\n"
+        "群名：{group_name}\n"
+        "邀请者：{inviter_label}\n"
+        "\n"
+        "回复 y 给这个群授权\n"
+        "回复 n 让凛凛退群\n"
+        "授权命令：#admin.invite approve -g {group_id}\n"
+        "退群命令：#admin.invite reject -g {group_id}\n"
+        "看看待办：#admin.invite list"
+    ),
+    "notice.invite.processing_failed": "⚠️ 群邀请还没处理好\n群号：{group_id}\n{reason}",
+    "notice.user.friend_request_failed": "好友申请还没确认处理成功：{user_id}。先看下好友状态，必要时重新申请。",
     "docs.default.empty": "暂无说明，先脑补一下。",
     "hook.processor.debug_only": "DEBUG 模式现在只接 DEV_TEST_GROUPS / DEV_TEST_USERS 的活。",
     "hook.processor.user_ignored": "这个用户被全局配置忽略了。",
