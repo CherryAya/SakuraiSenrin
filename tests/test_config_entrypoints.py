@@ -13,6 +13,7 @@ ENTRYPOINTS = [
     ("scripts.writer_health", ["writer_health.py", "--json"], "_stub_plugin_packages"),
     ("scripts.db_shard_status", ["db_shard_status.py", "--json"], "_load_stores"),
     ("scripts.build_docs", ["build_docs.py", "build"], "build"),
+    ("scripts.docs_assets", ["docs_assets.py", "pull"], "_run"),
     ("scripts.archive_event_shards", ["archive_event_shards.py"], "archive_targets"),
     ("scripts.query_trace_logs", ["query_trace_logs.py"], "log_db.store.init"),
     ("scripts.clear_help_cache", ["clear_help_cache.py"], "count_all_cache"),

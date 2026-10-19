@@ -24,6 +24,7 @@ wheels/
 backup/
 !src/lib/backup/
 !src/lib/backup/*.py
+!src/plugins/admin/docs/backup/
 
 data/*
 data/**/*.db
@@ -35,6 +36,13 @@ data/db/**
 repo-dev
 tools/snowluma-tui/target/
 output/
+
+# 帮助图片由本机构建并发布，生产启动时按 docs-assets.lock.json 同步。
+src/plugins/**/docs/**/demos/*.png
+src/plugins/**/docs/**/demos/*.webp
+src/hooks/**/docs/**/demos/*.png
+src/hooks/**/docs/**/demos/*.webp
+src/lib/assets/help-support-qr-double.png
 
 # Claude Code 本地设置；只共享项目 skill 入口
 .claude/*

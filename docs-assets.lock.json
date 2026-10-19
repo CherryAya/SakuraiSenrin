@@ -1,0 +1,769 @@
+{
+  "version": 1,
+  "input_hash": "b95e32d700b870015a5c3eb2fc0ea7fe6c64d99dcfd6e5388fcbb63de81b1b98",
+  "archive_key": "docs-assets/e1aab0b49d28dacd2f477e550ac5dffa958e2ffef296439d16a64e0b56255153.tar.zst",
+  "archive_sha256": "e1aab0b49d28dacd2f477e550ac5dffa958e2ffef296439d16a64e0b56255153",
+  "archive_size": 22884150,
+  "files": [
+    {
+      "path": "src/hooks/docs/plugin/demos/README-guide--3ddec434cb.webp",
+      "sha256": "6bc6d324d3ef74d8896801c2e453546736967669a894932a0b252da35bca0914",
+      "size": 109562
+    },
+    {
+      "path": "src/hooks/docs/plugin/demos/README-guide--a689f041ff.webp",
+      "sha256": "900a8c24422e7c0bbc2cac5b9c4fa9ec3308486cbb5a698b07a267566fec66e2",
+      "size": 64856
+    },
+    {
+      "path": "src/hooks/docs/plugin/demos/README-summary--4e8f2db8ee.webp",
+      "sha256": "c557342807228d9ee9be142cc3f5f9ad7d460ea67082db711e226a59125c0755",
+      "size": 72114
+    },
+    {
+      "path": "src/hooks/docs/plugin/demos/hook-plugin-collection.webp",
+      "sha256": "957c091976e57a660077182e2faea2aff5a6f205794b298a24c105b4087b2aaa",
+      "size": 34326
+    },
+    {
+      "path": "src/hooks/docs/plugin/demos/hook-plugin-placeholder.webp",
+      "sha256": "823eac923b65c28a9855a749fd6f29b80ae6e559ec02d31fe52677dbd8dad8f2",
+      "size": 111362
+    },
+    {
+      "path": "src/hooks/docs/plugin/demos/manifest.json",
+      "sha256": "cf29c41fa813935b0296e00749a227f2a525f0599e9ef5142f3c5416db943b22",
+      "size": 644
+    },
+    {
+      "path": "src/hooks/docs/processor/demos/README-guide--641629acaa.webp",
+      "sha256": "2197635bf1a521b24d2066fd943c523d931ec34a126fe98949bec5d3abc53975",
+      "size": 149042
+    },
+    {
+      "path": "src/hooks/docs/processor/demos/README-guide--b13af9c481.webp",
+      "sha256": "c99772a5871d7b9411a08736e10ac409238758623b01ff5143ff4953a4b09f3d",
+      "size": 63000
+    },
+    {
+      "path": "src/hooks/docs/processor/demos/README-summary--23e808d48a.webp",
+      "sha256": "291a2a2b2b0af5bff167c8f509106fc0a4a8b99da11e28e07fa0fb45ba022fc2",
+      "size": 70188
+    },
+    {
+      "path": "src/hooks/docs/processor/demos/hook-processor-collection.webp",
+      "sha256": "e50bf475fcbe264c063c214e34f634edca1944c4f706ca7fb58f2edc1ea6719d",
+      "size": 30680
+    },
+    {
+      "path": "src/hooks/docs/processor/demos/hook-processor-main.webp",
+      "sha256": "ccb6e8425698e46be9ed3cbbd805992c215394aec5efb173965d905237218561",
+      "size": 151066
+    },
+    {
+      "path": "src/hooks/docs/processor/demos/manifest.json",
+      "sha256": "b690446b2e884ca9fd12177c938245fb4a8e7351c20045ee1f8d44c40064461c",
+      "size": 649
+    },
+    {
+      "path": "src/lib/assets/help-support-qr-double.png",
+      "sha256": "3439500c36e862901b5d45cd9e5e6f6581a9a88e3be5528b4aaccce3130fd8a8",
+      "size": 2008
+    },
+    {
+      "path": "src/plugins/admin/docs/backup/demos/README-guide--c58581d855.webp",
+      "sha256": "97ad0988eb78bcd2c96a8df5c3c8cf7a2b7b6f8c5ce76c1cc29bd8f0197766fe",
+      "size": 364482
+    },
+    {
+      "path": "src/plugins/admin/docs/backup/demos/README-summary--fa73fc2259.webp",
+      "sha256": "f753b1e09a23b6e9275047a75cd90ede8ddebfbf2f42e84ffd6e5c3920fcd06a",
+      "size": 124066
+    },
+    {
+      "path": "src/plugins/admin/docs/backup/demos/admin-backup-check.webp",
+      "sha256": "be850c4d2f2ef35a8f0bf5173f1bd2760609b3269ec04bf92373006be8235e88",
+      "size": 141680
+    },
+    {
+      "path": "src/plugins/admin/docs/backup/demos/admin-backup-collection.webp",
+      "sha256": "221e33ea39d526567eb431830e34d1fe913c7b1e01be0579191bc7525a425f1a",
+      "size": 99808
+    },
+    {
+      "path": "src/plugins/admin/docs/backup/demos/admin-backup-restore.webp",
+      "sha256": "21428c4a9e99bef4bb29951e307e5b4c3136331d2b4d9246e0018e157fdd8c8c",
+      "size": 163232
+    },
+    {
+      "path": "src/plugins/admin/docs/backup/demos/admin-backup-run.webp",
+      "sha256": "98c03436f045bde7cb4877ae309eb2d4857f4f9dd7adbd6273ba408e45320e12",
+      "size": 132084
+    },
+    {
+      "path": "src/plugins/admin/docs/backup/demos/admin-backup-snapshots.webp",
+      "sha256": "85469a8c793a6571d5fa222c7866c85350d24176a66659447dcf81903563be4b",
+      "size": 116468
+    },
+    {
+      "path": "src/plugins/admin/docs/backup/demos/manifest.json",
+      "sha256": "f4e277e20bbaa3847b516680736e5be4303babfb290f266d00144c9c6ffd7cf7",
+      "size": 1483
+    },
+    {
+      "path": "src/plugins/admin/docs/demos/README-guide--bbca3d9148.webp",
+      "sha256": "5d65df5aee84446130c818f1ee6fd6daac40a70ad997e1f2e9d3fe2e0be79fa8",
+      "size": 383530
+    },
+    {
+      "path": "src/plugins/admin/docs/demos/README-guide--f1c9d53765.webp",
+      "sha256": "5d65df5aee84446130c818f1ee6fd6daac40a70ad997e1f2e9d3fe2e0be79fa8",
+      "size": 383530
+    },
+    {
+      "path": "src/plugins/admin/docs/demos/README-summary--87e47fc3c8.webp",
+      "sha256": "cde41efc9525f45c990bb2c8cb7b7b1bf56eed2cf9046fb65f1f08ed8e38f9d3",
+      "size": 82692
+    },
+    {
+      "path": "src/plugins/admin/docs/demos/admin-collection.webp",
+      "sha256": "7eeee936a0e550a42db58f9c9da2c89fa956161d2155d9a78ce4d6c0b695c063",
+      "size": 97278
+    },
+    {
+      "path": "src/plugins/admin/docs/demos/admin-overview-backup.webp",
+      "sha256": "1e5d4cd376d90d1f1872b6baa3525ffc5d69d4e7c7973a66003e041d9942c3dd",
+      "size": 138292
+    },
+    {
+      "path": "src/plugins/admin/docs/demos/admin-overview-group.webp",
+      "sha256": "d925cb6fee49c711eeb7b5c35e213f56eda1649b17165c523dd8231cde89be5e",
+      "size": 135204
+    },
+    {
+      "path": "src/plugins/admin/docs/demos/admin-overview-i18n.webp",
+      "sha256": "64db2c05694ad3d9964bbb6ecdb347b95f5daad0b166386be7942b333afe9fef",
+      "size": 130092
+    },
+    {
+      "path": "src/plugins/admin/docs/demos/admin-overview-invite.webp",
+      "sha256": "7fee5db7489f01eb991679deabb6a936400de82e801962234ce9f95022ba5591",
+      "size": 137474
+    },
+    {
+      "path": "src/plugins/admin/docs/demos/admin-overview-user.webp",
+      "sha256": "c478a94b6cc3fdcb6f850468583bc19d9d116e4ec5ce79a68494ce4e18660d57",
+      "size": 128246
+    },
+    {
+      "path": "src/plugins/admin/docs/demos/manifest.json",
+      "sha256": "e5e1caf71a8f1dce26ef18e72e10e5e85338aad38db094af329829e7c3996df9",
+      "size": 1681
+    },
+    {
+      "path": "src/plugins/admin/docs/group/demos/README-guide--02866ae0f6.webp",
+      "sha256": "70a757e9593eff3c693a1fdf015ab528b28fb95faa0ba63374b103bd16dbc80c",
+      "size": 515500
+    },
+    {
+      "path": "src/plugins/admin/docs/group/demos/README-summary--f6a489ab0e.webp",
+      "sha256": "873e2bb17d7ac810ef0279ee238a56680ec4926f185e3b78c8c8d9a8dded48cf",
+      "size": 109136
+    },
+    {
+      "path": "src/plugins/admin/docs/group/demos/admin-group-auth.webp",
+      "sha256": "2e1043073969f8546dc10ab42e8e00535e32fcd02f40bce58cca8df0105995e8",
+      "size": 118278
+    },
+    {
+      "path": "src/plugins/admin/docs/group/demos/admin-group-ban.webp",
+      "sha256": "938d112c78773bb619a282f032264ee2a251167c06a9eb16682dc7a34a69a87d",
+      "size": 120658
+    },
+    {
+      "path": "src/plugins/admin/docs/group/demos/admin-group-collection.webp",
+      "sha256": "0e33dbcedae7fd96ae4dc7dd8a20884889fa1dafad4923eadaaf960e4c11143d",
+      "size": 153144
+    },
+    {
+      "path": "src/plugins/admin/docs/group/demos/admin-group-leave.webp",
+      "sha256": "978c84955b21dbdc63240559a0e17e51c7b19e7df9c0559f04fd99c3963618b8",
+      "size": 121024
+    },
+    {
+      "path": "src/plugins/admin/docs/group/demos/admin-group-status.webp",
+      "sha256": "d504e6a1bffac12fce0b602c14a0d48ff22c0faf10b82d5c2cd05186e40c2648",
+      "size": 113218
+    },
+    {
+      "path": "src/plugins/admin/docs/group/demos/admin-group-sync-members-all.webp",
+      "sha256": "e0d9722ab86751db2f6a6d76a23e1b201a377c59429d18dad545e0e841a6ba11",
+      "size": 164466
+    },
+    {
+      "path": "src/plugins/admin/docs/group/demos/admin-group-unauth.webp",
+      "sha256": "3544780d2a6369f80e725a21b88228610c97a620fab8d497b20160dff96e55ad",
+      "size": 119652
+    },
+    {
+      "path": "src/plugins/admin/docs/group/demos/admin-group-unban.webp",
+      "sha256": "f215ca87c30fb3aac20a6e26f2f96912262782a0b9158819df0a84c74cabb39d",
+      "size": 148402
+    },
+    {
+      "path": "src/plugins/admin/docs/group/demos/manifest.json",
+      "sha256": "e3dcf69be5be4d8925f6d28525a4a8d98adf70fa9370e02e51577ad19bec2b15",
+      "size": 2157
+    },
+    {
+      "path": "src/plugins/admin/docs/i18n/demos/README-guide--b8f61815f3.webp",
+      "sha256": "aab6947f21e55c55ef30f28fb2403ffcfd5d744fa16b6831d362d4e33d05b8dd",
+      "size": 338260
+    },
+    {
+      "path": "src/plugins/admin/docs/i18n/demos/README-summary--b86b444530.webp",
+      "sha256": "94990768fae624ecf79a77cf70b803f51600fcb562c03816c7648dbedcb2674f",
+      "size": 107920
+    },
+    {
+      "path": "src/plugins/admin/docs/i18n/demos/admin-i18n-clear.webp",
+      "sha256": "6a4658939d9a0fc69dd457550f09f8a2241f16617472f5b3b55d6f13b53261a1",
+      "size": 119716
+    },
+    {
+      "path": "src/plugins/admin/docs/i18n/demos/admin-i18n-collection.webp",
+      "sha256": "a1e462158edd15ca70727fc1dd22c0e0219a72eaffa7a9c217849b3151f5fbd5",
+      "size": 112674
+    },
+    {
+      "path": "src/plugins/admin/docs/i18n/demos/admin-i18n-default.webp",
+      "sha256": "ade5bdeff0cffbd673230ad051042b5329c2d92717adbc5ce50f097fad263d6e",
+      "size": 120442
+    },
+    {
+      "path": "src/plugins/admin/docs/i18n/demos/admin-i18n-list.webp",
+      "sha256": "c5caf5846495c8ae61b29c6dce8e4469a9f8fe7cec92669f37e5c36835e38dd6",
+      "size": 113484
+    },
+    {
+      "path": "src/plugins/admin/docs/i18n/demos/admin-i18n-set.webp",
+      "sha256": "21ef52642c457e5b1eb72bdcfbde677dfd81cec6f4d5a7d77534398977ad0a41",
+      "size": 124020
+    },
+    {
+      "path": "src/plugins/admin/docs/i18n/demos/admin-i18n-show.webp",
+      "sha256": "3fccede0d0cef1c8ee9f8775b2a67de25faf2b9348a112e52677ecd866118424",
+      "size": 123390
+    },
+    {
+      "path": "src/plugins/admin/docs/i18n/demos/manifest.json",
+      "sha256": "7a968213904a8988b30a18c3985105e073a07174d7549c1ef479e7fad914cedf",
+      "size": 1626
+    },
+    {
+      "path": "src/plugins/admin/docs/invite/demos/README-guide--cf575a0c19.webp",
+      "sha256": "b5ff55e8da0afe027ad65e5359528d7d48c76d06bc5ef02e94293cd8bea6a40c",
+      "size": 665518
+    },
+    {
+      "path": "src/plugins/admin/docs/invite/demos/README-summary--71902e65f4.webp",
+      "sha256": "c9b47ccdb4c000f23b45346332e4113030eb0cd951ea3c955da5ad5bdf9abe94",
+      "size": 290336
+    },
+    {
+      "path": "src/plugins/admin/docs/invite/demos/admin-invite-approve.webp",
+      "sha256": "2faf4e1bc7e3b270b5ffe0e1746d0c5af0aa39437bd35863fdc298e36e246a03",
+      "size": 160898
+    },
+    {
+      "path": "src/plugins/admin/docs/invite/demos/admin-invite-collection.webp",
+      "sha256": "4b4a6fe6856b407743187248dc68dacb17704201eb5f9f376b32b155425a52c7",
+      "size": 153064
+    },
+    {
+      "path": "src/plugins/admin/docs/invite/demos/admin-invite-ignore.webp",
+      "sha256": "ddaf2ec1f89cf100cfe2ba0defc78894235903a57b9c41ba42d4106c13562ef3",
+      "size": 131852
+    },
+    {
+      "path": "src/plugins/admin/docs/invite/demos/admin-invite-list.webp",
+      "sha256": "339826005f6a9cf002cf55a8422a6ad1e1ea3eb704f0c51dc0dcb8d9de9c59a0",
+      "size": 122028
+    },
+    {
+      "path": "src/plugins/admin/docs/invite/demos/admin-invite-log.webp",
+      "sha256": "bc6b1580d22331aa20c6ee33bb73dd3fcb3b2810012fde394c063fc5722e6abc",
+      "size": 115700
+    },
+    {
+      "path": "src/plugins/admin/docs/invite/demos/admin-invite-reject.webp",
+      "sha256": "53adf4d0f0d24cc03f179b162923c2e6a1d9b31bf2c5ee9497fade1b923d360b",
+      "size": 161418
+    },
+    {
+      "path": "src/plugins/admin/docs/invite/demos/admin-invite-reply-shortcut.webp",
+      "sha256": "2dc8ce5475046e24026ad27355c64a23085ab0c3d188c8e34fa80520fb420ae8",
+      "size": 198484
+    },
+    {
+      "path": "src/plugins/admin/docs/invite/demos/manifest.json",
+      "sha256": "31e61f53ee7d48103c28ff1d0fbf1b966937a361553a62a5327220d0c654b74a",
+      "size": 1967
+    },
+    {
+      "path": "src/plugins/admin/docs/user/demos/README-guide--e07509f111.webp",
+      "sha256": "0279abc7f6cc5407350f922677283d66f30d4415561e931529b3929645b49c1c",
+      "size": 242786
+    },
+    {
+      "path": "src/plugins/admin/docs/user/demos/README-summary--b3f4187611.webp",
+      "sha256": "77ea30670143ae9c8dcddba336dd9e90cdf1af067546f3a3e30830a925c86240",
+      "size": 98864
+    },
+    {
+      "path": "src/plugins/admin/docs/user/demos/admin-user-ban.webp",
+      "sha256": "27f76a8427461372d7ca1d800e69b32df954a060847337c809663a7f8cffcac0",
+      "size": 133056
+    },
+    {
+      "path": "src/plugins/admin/docs/user/demos/admin-user-collection.webp",
+      "sha256": "6a59a121d325cba28546b099f69cf886b9c1ae6d8dd76c47cd944bf9fde1f525",
+      "size": 77448
+    },
+    {
+      "path": "src/plugins/admin/docs/user/demos/admin-user-status.webp",
+      "sha256": "4000cd41bb0b11f6d308d42d39020730e66a59462465fe771749e4719bc3c47c",
+      "size": 117180
+    },
+    {
+      "path": "src/plugins/admin/docs/user/demos/admin-user-unban.webp",
+      "sha256": "a85329bec94d3610f7bdf6568d10b034f46883c78b6b16ba0219d366789d4ac3",
+      "size": 120202
+    },
+    {
+      "path": "src/plugins/admin/docs/user/demos/manifest.json",
+      "sha256": "8010270c9d9fd8124186dbf752553919f7baa4d2d9c525f2d65f48eaa11a4220",
+      "size": 1197
+    },
+    {
+      "path": "src/plugins/community_invite/docs/demos/community-invite-main.webp",
+      "sha256": "b99bf9df2a9a968b0d8ecbfdcca478ba3a5411f1c25e195f1add9562b7b65df3",
+      "size": 265464
+    },
+    {
+      "path": "src/plugins/community_invite/docs/demos/manifest.json",
+      "sha256": "3a3fc5563518107eb5831502f150c06df9f6c1d6ba28beb18cc35dd5c00b67bd",
+      "size": 307
+    },
+    {
+      "path": "src/plugins/community_miaomiao/docs/demos/community-miaomiao-main.webp",
+      "sha256": "a2b552d1095efd10d17727071b37cb7b0121b7fc6dbddc53f995072a023702ef",
+      "size": 177762
+    },
+    {
+      "path": "src/plugins/community_miaomiao/docs/demos/manifest.json",
+      "sha256": "eeae5292bd3b62e0fbcdcfb00cb9e2132cb92f982d5f6947a0c1e267afaf3b59",
+      "size": 319
+    },
+    {
+      "path": "src/plugins/community_mima/docs/demos/community-mima-main.webp",
+      "sha256": "5605f634c0f4272c6e2c8566b491552b8f345eb340b3eba8b836ef66f3f18868",
+      "size": 116868
+    },
+    {
+      "path": "src/plugins/community_mima/docs/demos/manifest.json",
+      "sha256": "8c6a72ee929ea3458822f620d7b6fe813076d0c201fb83c311806b046d75f678",
+      "size": 304
+    },
+    {
+      "path": "src/plugins/help/docs/demos/help-index--9cd80ca22b.webp",
+      "sha256": "8ba8654daa10974c1d6a2dacf5fcc03489eb5138c89b301bf40eb683282fdf9d",
+      "size": 233520
+    },
+    {
+      "path": "src/plugins/help/docs/demos/help-index--bceb543575.webp",
+      "sha256": "8ea99ae915360b12daec448b0403a993f5ada65c92b9cb345fbbd1e64d853bf8",
+      "size": 192928
+    },
+    {
+      "path": "src/plugins/help/docs/demos/help-index.webp",
+      "sha256": "67fc0bbb836f113559b428eba4ec270e82a146b28bd19c31403da93bae448b8d",
+      "size": 182670
+    },
+    {
+      "path": "src/plugins/help/docs/demos/help-main.webp",
+      "sha256": "ee9c4a5a9244b22db725afa55f9a278da13ac623f063ffd87cae1745b621a2b5",
+      "size": 185486
+    },
+    {
+      "path": "src/plugins/help/docs/demos/manifest.json",
+      "sha256": "90be5b585c13d9ad4409a3f0ec0edf85474997ca0d902cef642e6de485f9ca8c",
+      "size": 461
+    },
+    {
+      "path": "src/plugins/notice/docs/demos/README-guide--140c3f12c4.webp",
+      "sha256": "9f9602dc0347ab9731799ea02db916c2810a50d6501a558696419762c6ffa802",
+      "size": 254944
+    },
+    {
+      "path": "src/plugins/notice/docs/demos/README-guide--73493ea2eb.webp",
+      "sha256": "9f9602dc0347ab9731799ea02db916c2810a50d6501a558696419762c6ffa802",
+      "size": 254944
+    },
+    {
+      "path": "src/plugins/notice/docs/demos/README-summary--4947101b3b.webp",
+      "sha256": "89f2ca5cfbd87521e7269efb5e597f88f8caffe497392b13201ccf2f1210605e",
+      "size": 83226
+    },
+    {
+      "path": "src/plugins/notice/docs/demos/manifest.json",
+      "sha256": "95848a44d00e90b4fbd0272a15025b7878e6bcd7ffa163a171aa68cd52dc0efb",
+      "size": 1242
+    },
+    {
+      "path": "src/plugins/notice/docs/demos/notice-collection.webp",
+      "sha256": "3bbdd61d93fb496f4013550f8c441a17a27e92b16210e3100718ad95bd61f965",
+      "size": 73656
+    },
+    {
+      "path": "src/plugins/notice/docs/demos/notice-overview-group.webp",
+      "sha256": "16850e5a046c19e461f3c18db4d6d05d49c63db413715bb7274f8e5521caa20d",
+      "size": 143372
+    },
+    {
+      "path": "src/plugins/notice/docs/demos/notice-overview-invite.webp",
+      "sha256": "c034602a1b3c9fd3a0b7c23194a4278b9b213a8118f65ec3ef74fba5c9d5c836",
+      "size": 133310
+    },
+    {
+      "path": "src/plugins/notice/docs/demos/notice-overview-user.webp",
+      "sha256": "bb5dfbf1e4d02e01bd40e614a4d103534cdb94a0877da2f78256d7859509a45a",
+      "size": 124426
+    },
+    {
+      "path": "src/plugins/notice/docs/group/demos/README-guide--c9fb6bedf7.webp",
+      "sha256": "71d06acf26154b227de12f5262014ed51966cfa6c683a53daaa95fa99bdcf444",
+      "size": 308452
+    },
+    {
+      "path": "src/plugins/notice/docs/group/demos/README-summary--ee59ae9194.webp",
+      "sha256": "475550cf5d772e3f701c1a38fc402375c78e7d9ddeac75aba942ccf557c9ee62",
+      "size": 108278
+    },
+    {
+      "path": "src/plugins/notice/docs/group/demos/manifest.json",
+      "sha256": "3cbafc7aceafa27d2c08c65622ff8d6480cadeba57aa3b93224e5fd5289fb825",
+      "size": 1588
+    },
+    {
+      "path": "src/plugins/notice/docs/group/demos/notice-group-ban-cleanup.webp",
+      "sha256": "ce40ed5ddccd72cf44861ca3cd80a0524246ad16d420d518c2e39f403c497de1",
+      "size": 128136
+    },
+    {
+      "path": "src/plugins/notice/docs/group/demos/notice-group-collection.webp",
+      "sha256": "12202a6f53dff484b36bac5f44ec7888b3b9d5e71034e737949ffe5a172613a8",
+      "size": 95732
+    },
+    {
+      "path": "src/plugins/notice/docs/group/demos/notice-group-kick-cleanup.webp",
+      "sha256": "b957ca4acd1e2d4b606c101356d53edd99cd44a9be60ce89eb7b6b415d38733d",
+      "size": 129900
+    },
+    {
+      "path": "src/plugins/notice/docs/group/demos/notice-group-member-sync.webp",
+      "sha256": "f9363a076ca89c4ce4829b2b7830372d994d75b1f8e9573f54adafefe7fd2781",
+      "size": 128202
+    },
+    {
+      "path": "src/plugins/notice/docs/group/demos/notice-group-rename-sync.webp",
+      "sha256": "5788dbdf9423f17f03429bd4d371f750276bf295417e4c775d734ad10ec25887",
+      "size": 109330
+    },
+    {
+      "path": "src/plugins/notice/docs/invite/demos/README-guide--eb0ad27153.webp",
+      "sha256": "fdfcde1004b0d2d0a4ae030a34e803fe396ce070315c98dff7c1663e8008e37b",
+      "size": 678360
+    },
+    {
+      "path": "src/plugins/notice/docs/invite/demos/README-summary--e566ce4ada.webp",
+      "sha256": "45eb289238495e27b16955463c52be68316f7568716a114705606198e3a3ac96",
+      "size": 477028
+    },
+    {
+      "path": "src/plugins/notice/docs/invite/demos/manifest.json",
+      "sha256": "79df25f0d14048297eaa45e52581f7ba3253325fcc6d69cb0597f1786fc7e636",
+      "size": 1453
+    },
+    {
+      "path": "src/plugins/notice/docs/invite/demos/notice-invite-auto-approve-authorized.webp",
+      "sha256": "fbaefaf6ff81db98d70a5477ab7ea666c4e7b6386ae01bcee96b50eedbd7eab4",
+      "size": 159626
+    },
+    {
+      "path": "src/plugins/notice/docs/invite/demos/notice-invite-auto-reject-banned.webp",
+      "sha256": "d5d171679dbd8481558d943611da0a7084924359180cf88d4cff2731a806dcb1",
+      "size": 192218
+    },
+    {
+      "path": "src/plugins/notice/docs/invite/demos/notice-invite-collection.webp",
+      "sha256": "b885b7539e8a15fc7442832e7979a01343ab8d0542dbfa16261111ae733d612a",
+      "size": 93986
+    },
+    {
+      "path": "src/plugins/notice/docs/invite/demos/notice-invite-report-pending.webp",
+      "sha256": "be647f39d06db673d5511e3d87061ccd16ec57a5a9074f53305232e662cb31a8",
+      "size": 235706
+    },
+    {
+      "path": "src/plugins/notice/docs/user/demos/manifest.json",
+      "sha256": "3a7085284c589edddf128133ded9188f2363507f47d8df6844340cf64d5b5b4b",
+      "size": 143
+    },
+    {
+      "path": "src/plugins/notice/docs/user/demos/notice-user-main.webp",
+      "sha256": "20427d8c01e7c327893ae38e04d25e00380da6a0e6d102e3e43cf613f146127a",
+      "size": 194926
+    },
+    {
+      "path": "src/plugins/picsearch/docs/demos/manifest.json",
+      "sha256": "175e00b3fb69838d3f282c7166121a93a24bdb468c005f648df653176ccacb71",
+      "size": 274
+    },
+    {
+      "path": "src/plugins/picsearch/docs/demos/picsearch-search.webp",
+      "sha256": "28bdffd463f0e6a5008231eae4498ef632e9dba8b0a78a4e4a29ae9d77cb943e",
+      "size": 135182
+    },
+    {
+      "path": "src/plugins/remove/docs/demos/manifest.json",
+      "sha256": "b0633c124fc9ca9c8628e7e6d02ddc4b82943fa0460d75e76c97717de046b994",
+      "size": 218
+    },
+    {
+      "path": "src/plugins/remove/docs/demos/remove-guide.webp",
+      "sha256": "111c4cf6ca09c1101cf3d0ce2935aa44826eef743527ea034abe642f54e55d99",
+      "size": 137242
+    },
+    {
+      "path": "src/plugins/self_unban/docs/demos/manifest.json",
+      "sha256": "ffc32bbae32cc5b2080a8ee4638a45f3ca4b1c6ab7a34595d39637b0a594e259",
+      "size": 488
+    },
+    {
+      "path": "src/plugins/self_unban/docs/demos/self-unban-group.webp",
+      "sha256": "9de44e8ea5c83a8de647f25884bbf32a05ff919f54364617311ba4837c071e69",
+      "size": 271680
+    },
+    {
+      "path": "src/plugins/self_unban/docs/demos/self-unban-self.webp",
+      "sha256": "bed0cde938ee943b77663492ae123febaf71cdd70f5299d1458a1428e04378d7",
+      "size": 182628
+    },
+    {
+      "path": "src/plugins/sentry/docs/demos/manifest.json",
+      "sha256": "4430f42bd4c67c91e106b0e9c4430e0d211b1e078846d831d3e352e1371e18b8",
+      "size": 134
+    },
+    {
+      "path": "src/plugins/sentry/docs/demos/sentry-alert.webp",
+      "sha256": "a07373e11cbce3820ad4e54f9b9ad6b0aed33f6f004c28693ae779b9e6fa2a69",
+      "size": 128212
+    },
+    {
+      "path": "src/plugins/study/docs/demos/manifest.json",
+      "sha256": "3858754c62d414cd318d3103555400139dd68a58ea56148b454007ceaa9382ab",
+      "size": 246
+    },
+    {
+      "path": "src/plugins/study/docs/demos/study-main.webp",
+      "sha256": "ebb62c326ba3faa676a27c06f8c5ad35f5d53c31cf2a3d4fae94bca5f956492e",
+      "size": 683798
+    },
+    {
+      "path": "src/plugins/test/docs/demos/manifest.json",
+      "sha256": "6d8a9051bd89209784e1ec2e1875b131e7e859a5d66037c7fe9e3f44f382dc43",
+      "size": 133
+    },
+    {
+      "path": "src/plugins/test/docs/demos/test-listener.webp",
+      "sha256": "68155f25dc6e3cbfd710888e0dc8b0afb534a184705441d34454870dd4aaed47",
+      "size": 134544
+    },
+    {
+      "path": "src/plugins/water/docs/demos/README-guide--7cb5ad36b6.webp",
+      "sha256": "9b6a48a19f926c3b641a9ccd8beee9a57e15ca4385bafb5a86e878471a59f9b9",
+      "size": 685786
+    },
+    {
+      "path": "src/plugins/water/docs/demos/README-guide--f2b05240fd.webp",
+      "sha256": "0f6945f43e8d9a0f0e13db3dd1ed312dc81fc0346398e32def5a49589b43241d",
+      "size": 472920
+    },
+    {
+      "path": "src/plugins/water/docs/demos/README-summary--0c092fd5d6.webp",
+      "sha256": "1266837acd554ae9d16189d0032908c85bb8b06e672077a1f416fabf581dce74",
+      "size": 68924
+    },
+    {
+      "path": "src/plugins/water/docs/demos/manifest.json",
+      "sha256": "632776252a14308c80eb6711af9efb3a9a9f56ba0c554498ffd4726c47233e4e",
+      "size": 2016
+    },
+    {
+      "path": "src/plugins/water/docs/demos/water-achievement.webp",
+      "sha256": "f0c7ef8feedd45eb19cf60bfb4f3effeb5476817cb5f71b11a40977ee3d39208",
+      "size": 111486
+    },
+    {
+      "path": "src/plugins/water/docs/demos/water-admin-maintenance.webp",
+      "sha256": "c85380d322f244f1d379659e2d37ff0cca08e137cfa4047f4a9ea91bbb98908c",
+      "size": 215754
+    },
+    {
+      "path": "src/plugins/water/docs/demos/water-collection.webp",
+      "sha256": "c0dda10733380b7de759f08ce63d8f21994ed0db6d2fc0451c586a54ff80e617",
+      "size": 224440
+    },
+    {
+      "path": "src/plugins/water/docs/demos/water-merge-confirm.webp",
+      "sha256": "60e3440f4bd8f99add0a755b1b8bbcbb38d5d405f09b9935c6e539945109faf7",
+      "size": 140924
+    },
+    {
+      "path": "src/plugins/water/docs/demos/water-profile-full.webp",
+      "sha256": "6b3c2a1487897493e4284990b8fc08119accfc93ab7d68c3da47d83d8246010c",
+      "size": 115746
+    },
+    {
+      "path": "src/plugins/water/docs/demos/water-profile.webp",
+      "sha256": "0e69c45d6248d44346337b78651c8fd31601164fb160dbaa7dc546862f54da7d",
+      "size": 110680
+    },
+    {
+      "path": "src/plugins/water/docs/demos/water-ranking.webp",
+      "sha256": "2531ecd3da484fcfd3ef28a24716d6a48ce3fb37dabfa5b8bbfc0da3d4247a92",
+      "size": 219152
+    },
+    {
+      "path": "src/plugins/water/docs/demos/water-season-query.webp",
+      "sha256": "2b644b7ab8aa94539aae61d6e347c0646eb61ea0e5225bb1ef3b667880cb11d8",
+      "size": 147488
+    },
+    {
+      "path": "src/plugins/wordbank/docs/demos/README-guide--44590327a7.webp",
+      "sha256": "a997fb1b136803b9461a61a5707b24e9063ea153847f1d1b76006d28d05e5304",
+      "size": 707990
+    },
+    {
+      "path": "src/plugins/wordbank/docs/demos/README-guide--46c7fbcd94.webp",
+      "sha256": "b0e2dc396edd01eb2994fac675574a11db6a023b999a8b0c73056293bb00b744",
+      "size": 764712
+    },
+    {
+      "path": "src/plugins/wordbank/docs/demos/README-summary--ff08c32e9a.webp",
+      "sha256": "580e49e9ddf5ddac21d69dcbab18a2a48372e49b458f564ecdf774df9556f049",
+      "size": 74714
+    },
+    {
+      "path": "src/plugins/wordbank/docs/demos/manifest.json",
+      "sha256": "7214edfc5426818c03be0a78955986a4afe51ba839e1e8bfc8d948c3e5f6b215",
+      "size": 4667
+    },
+    {
+      "path": "src/plugins/wordbank/docs/demos/wordbank-add-call.webp",
+      "sha256": "4790fba665f25991634e2955b959c33886286b4b55fa3db8745d8e071f1c0300",
+      "size": 149018
+    },
+    {
+      "path": "src/plugins/wordbank/docs/demos/wordbank-add-prob.webp",
+      "sha256": "fc929447b70577e6ce27275a2776acca955897485cd485294223cadb37f72fef",
+      "size": 142532
+    },
+    {
+      "path": "src/plugins/wordbank/docs/demos/wordbank-add-role.webp",
+      "sha256": "338b48de0881fbd7d521c15cb9a44842557bdea6c9a2e745a75d61e41e65fda3",
+      "size": 146966
+    },
+    {
+      "path": "src/plugins/wordbank/docs/demos/wordbank-add-scope.webp",
+      "sha256": "cf134961370ef803b2a18777bf0dc0dc1cf5d4db5d867a61243379ef0c511298",
+      "size": 161014
+    },
+    {
+      "path": "src/plugins/wordbank/docs/demos/wordbank-add-weight.webp",
+      "sha256": "204bb280b8dc230e5ac6d7a53a07e56160c04ffda7b24e27e17238ab5146c7ed",
+      "size": 142360
+    },
+    {
+      "path": "src/plugins/wordbank/docs/demos/wordbank-add.webp",
+      "sha256": "2e95f72f8a07021b7aecef958a3561ec4fbcca9a46b25dfaeea66b0ab9d710f1",
+      "size": 680014
+    },
+    {
+      "path": "src/plugins/wordbank/docs/demos/wordbank-approval-approval-reply.webp",
+      "sha256": "05cff7e1e30bd1f5b879735cba9f158fce7c008ad4680c130d2b5690606391e1",
+      "size": 292214
+    },
+    {
+      "path": "src/plugins/wordbank/docs/demos/wordbank-approval-approve.webp",
+      "sha256": "9d22f7d75b39bc84e4993c0c4f63d33cbe9d1fd79eca9fdb7a5ec21845d19557",
+      "size": 167906
+    },
+    {
+      "path": "src/plugins/wordbank/docs/demos/wordbank-approval-pending.webp",
+      "sha256": "97c01af48b1e89b688d21d70e91e3fe310f90c9e0525f52f15cfb5139ed48c26",
+      "size": 232428
+    },
+    {
+      "path": "src/plugins/wordbank/docs/demos/wordbank-approval-reject.webp",
+      "sha256": "0280090591f4a8a3cd1edcba5e934df0c3760b4f08548dbdf35b8e09564ea157",
+      "size": 162096
+    },
+    {
+      "path": "src/plugins/wordbank/docs/demos/wordbank-collection.webp",
+      "sha256": "9998ed85378f336dc76224b6690221d8fc5a737ba38dc44cdff71d1288fdbae2",
+      "size": 398106
+    },
+    {
+      "path": "src/plugins/wordbank/docs/demos/wordbank-delete.webp",
+      "sha256": "0880050cab6797441b6737f09b315c38f2a1f9729f55e14ed2bd83f5349c63d9",
+      "size": 109134
+    },
+    {
+      "path": "src/plugins/wordbank/docs/demos/wordbank-passive.webp",
+      "sha256": "bc8f57340378df369d4b69d08bc9496df5c6608a4ebcc1f62683503267cfba4a",
+      "size": 154736
+    },
+    {
+      "path": "src/plugins/wordbank/docs/demos/wordbank-rank.webp",
+      "sha256": "d4e3ab5b427a16c6b7b38db7c8deb1d2d4e8e4068c44b3592a0e1195eedc8676",
+      "size": 117064
+    },
+    {
+      "path": "src/plugins/wordbank/docs/demos/wordbank-reply-shortcut.webp",
+      "sha256": "f7f2dc4b138b6f0a05d65246d873f7f8cf66e3e1818237c525c072ab064f1505",
+      "size": 234434
+    },
+    {
+      "path": "src/plugins/wordbank/docs/demos/wordbank-response.webp",
+      "sha256": "72078ca7fbd4f64bdf10f998601abb377a982e109461aed900fd83ac42235aef",
+      "size": 176860
+    },
+    {
+      "path": "src/plugins/wordbank/docs/demos/wordbank-restore.webp",
+      "sha256": "f64cc481dd2a9a3f09954533d5525a9767cacd6cf74665c2910f2eb8941dab93",
+      "size": 105648
+    },
+    {
+      "path": "src/plugins/wordbank/docs/demos/wordbank-search.webp",
+      "sha256": "9bacefa19f22cec382a4f4ac037d1f8444318066d2372e4597a15614bc3adfef",
+      "size": 142178
+    },
+    {
+      "path": "src/plugins/wordbank/docs/demos/wordbank-trigger.webp",
+      "sha256": "5077d483b8b42b0e5f053e84a85539f58fbf200a5230ea4d7e9e7c4d886a5fdf",
+      "size": 202302
+    }
+  ]
+}

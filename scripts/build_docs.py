@@ -7,7 +7,7 @@ import argparse
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from functools import lru_cache
 from hashlib import sha256
 from importlib import import_module
@@ -106,7 +106,7 @@ DOCS_ROOTS = (
     ROOT / "src" / "plugins",
     ROOT / "src" / "hooks",
 )
-BUILD_CACHE_VERSION = 1
+BUILD_CACHE_VERSION = 2
 BUILD_CACHE_HISTORY_LIMIT = 50
 
 
@@ -258,6 +258,25 @@ def _timed_call[T](
 
 def _build_docs_cache_path(*, root: Path | None = None) -> Path:
     return (root or ROOT) / "output" / "build_docs_cache.json"
+
+
+def stable_build_time() -> datetime:
+    """时间输入取构建源码最后一次提交，支持 SOURCE_DATE_EPOCH 和无 Git 导出。"""
+    raw = os.environ.get("SOURCE_DATE_EPOCH")
+    if raw is None:
+        paths = [
+            path.relative_to(ROOT).as_posix()
+            for path in _collect_build_input_paths()
+            if path.is_relative_to(ROOT)
+        ]
+        result = subprocess.run(
+            ["git", "-C", str(ROOT), "log", "-1", "--format=%ct", "--", *paths],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        raw = result.stdout.strip() if result.returncode == 0 else "0"
+    return datetime.fromtimestamp(int(raw or "0"), UTC)
 
 
 def _path_sort_key(path: Path) -> str:
@@ -1078,7 +1097,7 @@ def build_help_assets(
     contexts = _all_doc_contexts()
     nodes = _build_tree(contexts)
     tree = build_doc_tree(nodes)
-    build_time = datetime.fromtimestamp(get_current_time()).replace(microsecond=0)
+    build_time = stable_build_time()
     dashboard_outputs: dict[str, tuple[str, bytes]] = {}
     manifest_by_source: dict[Path, dict[str, dict[str, str]]] = {}
     target_filenames: dict[tuple[Path, str, str], dict[str, str]] = {}
@@ -1518,7 +1537,7 @@ def generate(
     worker_count = workers if workers is not None else default_worker_count()
     profiler = Profiler(enabled=profile, top_n=profile_top)
     total_files, jobs = collect_demo_jobs()
-    build_time = datetime.fromtimestamp(get_current_time()).replace(microsecond=0)
+    build_time = stable_build_time()
     _write_line(
         f"generate: discovered {total_files} README files, {len(jobs)} demo jobs"
     )

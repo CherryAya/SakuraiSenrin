@@ -1048,6 +1048,14 @@ def test_build_parser_accepts_profile_options() -> None:
     assert args.profile_top == 6
 
 
+def test_docs_build_time_uses_reproducible_epoch(monkeypatch: Any) -> None:
+    monkeypatch.setenv("SOURCE_DATE_EPOCH", "1700000000")
+    first = plugin_docs_script.stable_build_time()
+    monkeypatch.setattr(plugin_docs_script, "get_current_time", lambda: 1900000000)
+    assert plugin_docs_script.stable_build_time() == first
+    assert int(first.timestamp()) == 1700000000
+
+
 def test_validate_parser_accepts_worker_and_profile_options() -> None:
     args = plugin_docs_script.build_parser().parse_args(
         [
